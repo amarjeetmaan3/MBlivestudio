@@ -15,7 +15,6 @@ import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
 
 import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
-import com.pedro.encoder.utils.gl.ImageObject
 import com.pedro.encoder.utils.gl.TranslateTo
 import com.pedro.encoder.input.gl.render.filters.NoFilterRender
 
@@ -25,19 +24,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private lateinit var openGlView: OpenGlView
     private lateinit var btnGoLive: Button
     
-    // Buttons
     private lateinit var btnTitleText: Button
     private lateinit var btnScoreboard: Button
     private lateinit var btnLogo: Button
 
-    // Overlay States
     private var isTitleVisible = false
     private var isScoreVisible = false
     private var isLogoVisible = false
 
-    // Master Overlay Engine
+    // ImageObject हटा दिया गया है, अब सिर्फ Filter यूज़ करेंगे
     private val imageFilter = ImageObjectFilterRender()
-    private val imageObject = ImageObject()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,7 +53,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
         }
 
-        // --- BUTTON CLICKS ---
         btnTitleText.setOnClickListener {
             isTitleVisible = !isTitleVisible
             btnTitleText.text = if(isTitleVisible) "TITLE TEXT (ON)" else "TITLE TEXT (OFF)"
@@ -87,27 +82,34 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // --- MASTER OVERLAY ENGINE ---
-    // यह फ़ंक्शन एक अदृश्य (Transparent) स्क्रीन बनाता है और आपके चुने हुए ऑप्शंस उस पर ड्रॉ करता है
     private fun refreshMasterOverlay() {
         if (!isTitleVisible && !isScoreVisible && !isLogoVisible) {
             rtmpCamera.glInterface.setFilter(NoFilterRender())
             return
         }
 
-        // 1. पारदर्शी कैनवस बनाना (HD Resolution)
         val bitmap = Bitmap.createBitmap(1280, 720, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val paint = Paint().apply { isAntiAlias = true }
 
-        // 2. LOGO (Top Right)
+        // 1. LOGO (Custom Drawn on Canvas - Top Right)
         if (isLogoVisible) {
-            // अभी के लिए डिफ़ॉल्ट एंड्रॉइड आइकन यूज़ कर रहे हैं, बाद में आपकी कस्टम PNG लगा देंगे
-            val logo = BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher)
-            canvas.drawBitmap(logo, 1150f, 30f, paint)
+            // लाल रंग का गोल घेरा (Red Circle)
+            paint.color = Color.parseColor("#E53935")
+            canvas.drawCircle(1180f, 80f, 45f, paint)
+            
+            // अंदर 'MB' टेक्स्ट
+            paint.color = Color.WHITE
+            paint.typeface = Typeface.DEFAULT_BOLD
+            paint.textSize = 35f
+            paint.textAlign = Paint.Align.CENTER
+            canvas.drawText("MB", 1180f, 92f, paint)
+            
+            // टेक्स्ट अलाइनमेंट वापस नार्मल सेट करना
+            paint.textAlign = Paint.Align.LEFT
         }
 
-        // 3. TITLE TEXT (Bottom Left)
+        // 2. TITLE TEXT (Bottom Left)
         if (isTitleVisible) {
             paint.color = Color.YELLOW
             paint.textSize = 50f
@@ -115,13 +117,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             canvas.drawText("MB LIVE STUDIO", 40f, 680f, paint)
         }
 
-        // 4. CRICKET SCOREBOARD (Bottom Right)
+        // 3. CRICKET SCOREBOARD (Bottom Right)
         if (isScoreVisible) {
-            // स्कोर का बैकग्राउंड बॉक्स (Semi-transparent Black)
             paint.color = Color.parseColor("#99000000")
             canvas.drawRect(820f, 570f, 1260f, 700f, paint)
             
-            // स्कोर टेक्स्ट
             paint.typeface = Typeface.DEFAULT_BOLD
             paint.color = Color.WHITE
             paint.textSize = 45f
@@ -132,11 +132,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             canvas.drawText("Target: 312 | CRR: 6.08", 850f, 675f, paint)
         }
 
-        // 5. इस तैयार स्क्रीन को लाइव वीडियो पर ओवरले करना
-        imageObject.loadBitmap(bitmap)
-        imageFilter.setImageObject(imageObject)
+        // डायरेक्ट Bitmap को सेट करना
+        imageFilter.setImage(bitmap)
         imageFilter.setPosition(TranslateTo.CENTER)
-        imageFilter.setScale(100f, 100f) // पूरी स्क्रीन पर फिट
+        imageFilter.setScale(100f, 100f)
         
         rtmpCamera.glInterface.setFilter(imageFilter)
     }
