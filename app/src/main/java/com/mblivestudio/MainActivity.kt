@@ -3,6 +3,7 @@ package com.mblivestudio
 import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.view.SurfaceHolder
@@ -13,11 +14,19 @@ import com.pedro.common.ConnectChecker
 import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
 
+// नए Imports (Text Overlay और Filters के लिए)
+import com.pedro.encoder.input.gl.render.filters.object.TextObjectFilterRender
+import com.pedro.encoder.utils.gl.TextObject
+import com.pedro.encoder.input.gl.render.filters.NoFilterRender
+
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     
     private lateinit var rtmpCamera: RtmpCamera2
     private lateinit var openGlView: OpenGlView
     private lateinit var btnGoLive: Button
+    private lateinit var btnTextOverlay: Button
+    
+    private var isTextVisible = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -26,19 +35,44 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         openGlView = findViewById(R.id.surfaceView)
         btnGoLive = findViewById(R.id.btnGoLive)
+        btnTextOverlay = findViewById(R.id.btnTextOverlay)
+        
         rtmpCamera = RtmpCamera2(openGlView, this)
-
         openGlView.holder.addCallback(this)
 
-        // परमिशंस चेक करना
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !hasPermissions()) {
             requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
         }
 
-        // GO LIVE बटन सिर्फ स्ट्रीम चालू/बंद करेगा (कैमरा नहीं)
+        // --- TEXT OVERLAY LOGIC ---
+        btnTextOverlay.setOnClickListener {
+            if (!isTextVisible) {
+                // टेक्स्ट का डिज़ाइन सेट करना
+                val textObject = TextObject()
+                textObject.text = "MB LIVE STUDIO - EXCLUSIVE"
+                textObject.textSize = 60f
+                textObject.textColor = Color.YELLOW
+                
+                // टेक्स्ट को वीडियो स्ट्रीम के अंदर डालना
+                val textFilter = TextObjectFilterRender()
+                textFilter.setTextObject(textObject)
+                
+                rtmpCamera.glInterface.setFilter(textFilter)
+                
+                btnTextOverlay.text = "TEXT OVERLAY (ON)"
+                isTextVisible = true
+            } else {
+                // फिल्टर हटाना
+                rtmpCamera.glInterface.setFilter(NoFilterRender())
+                
+                btnTextOverlay.text = "TEXT OVERLAY (OFF)"
+                isTextVisible = false
+            }
+        }
+
+        // --- GO LIVE LOGIC ---
         btnGoLive.setOnClickListener {
             if (!rtmpCamera.isStreaming) {
-                // प्रीव्यू पहले से चल रहा है, यहाँ से सीधा डेटा YouTube पर जाएगा
                 rtmpCamera.startStream("rtmp://a.rtmp.youtube.com/live2/YOUR_STREAM_KEY")
                 btnGoLive.text = "STOP STREAM"
             } else {
@@ -56,18 +90,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         return true
     }
 
-    // कैमरा प्रीव्यू स्टार्ट करने का अलग लॉजिक
     private fun startCameraPreview() {
         if (!rtmpCamera.isOnPreview) {
             if (rtmpCamera.prepareAudio() && rtmpCamera.prepareVideo()) {
                 rtmpCamera.startPreview()
             } else {
-                Toast.makeText(this, "कैमरा लोड करने में एरर", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "कैमरा एरर", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    // अगर यूजर पहली बार परमिशन Allow करता है, तो तुरंत कैमरा ऑन कर दो
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (hasPermissions()) {
@@ -78,7 +110,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun surfaceCreated(holder: SurfaceHolder) {}
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-        // स्क्रीन रेडी होते ही (और परमिशन होने पर) प्रीव्यू चालू
         if (hasPermissions()) {
             startCameraPreview()
         }
