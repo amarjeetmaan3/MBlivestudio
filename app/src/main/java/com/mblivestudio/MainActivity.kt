@@ -14,9 +14,8 @@ import com.pedro.common.ConnectChecker
 import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
 
-// Fix: Kotlin में object कीवर्ड को एस्केप करने के लिए बैकटिक्स (``) का इस्तेमाल
+// अब हमें TextObject को इम्पोर्ट करने की जरूरत नहीं है
 import com.pedro.encoder.input.gl.render.filters.`object`.TextObjectFilterRender
-import com.pedro.encoder.utils.gl.TextObject
 import com.pedro.encoder.input.gl.render.filters.NoFilterRender
 
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
@@ -47,22 +46,15 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         // --- TEXT OVERLAY LOGIC ---
         btnTextOverlay.setOnClickListener {
             if (!isTextVisible) {
-                // टेक्स्ट का डिज़ाइन और सेटअप
-                val textObject = TextObject()
-                textObject.text = "MB LIVE STUDIO - EXCLUSIVE"
-                textObject.textSize = 60f
-                textObject.textColor = Color.YELLOW
-                
                 val textFilter = TextObjectFilterRender()
-                textFilter.setTextObject(textObject)
+                // टेक्स्ट, साइज, और कलर अब सीधे इसी लाइन में सेट हो जाएंगे
+                textFilter.setText("MB LIVE STUDIO - EXCLUSIVE", 60f, Color.YELLOW)
                 
-                // फिल्टर को वीडियो स्ट्रीम पर अप्लाई करना
                 rtmpCamera.glInterface.setFilter(textFilter)
                 
                 btnTextOverlay.text = "TEXT OVERLAY (ON)"
                 isTextVisible = true
             } else {
-                // टेक्स्ट हटाकर स्क्रीन साफ़ करना
                 rtmpCamera.glInterface.setFilter(NoFilterRender())
                 
                 btnTextOverlay.text = "TEXT OVERLAY (OFF)"
