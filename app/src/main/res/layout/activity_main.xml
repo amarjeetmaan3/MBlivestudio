@@ -5,7 +5,7 @@
     android:orientation="horizontal"
     android:background="#121212">
 
-    <!-- Camera Preview Area -->
+    <!-- Camera Preview & Overlay Area -->
     <FrameLayout
         android:layout_width="0dp"
         android:layout_height="match_parent"
@@ -17,30 +17,21 @@
             android:layout_height="match_parent" />
             
         <!-- INTERACTIVE OVERLAY CONTAINER -->
-        <!-- इस लेयर में जो भी होगा, वह लाइव स्ट्रीम पर जाएगा और ड्रैग भी होगा -->
         <RelativeLayout
             android:id="@+id/overlayContainer"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:background="@android:color/transparent">
             
-            <!-- 1. MOVABLE LOGO -->
-            <TextView
-                android:id="@+id/dragLogo"
-                android:layout_width="60dp"
-                android:layout_height="60dp"
-                android:text="MB"
-                android:textColor="#FFFFFF"
-                android:textSize="20sp"
-                android:textStyle="bold"
-                android:gravity="center"
-                android:background="#E53935"
-                android:layout_alignParentTop="true"
-                android:layout_alignParentRight="true"
-                android:layout_margin="20dp"
-                android:visibility="gone"/>
+            <!-- WEB OVERLAY LAYER (Transparent) -->
+            <WebView
+                android:id="@+id/webOverlay"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@android:color/transparent"
+                android:visibility="gone" />
 
-            <!-- 2. MOVABLE TITLE TEXT -->
+            <!-- आपका पुराना टेक्स्ट/स्कोरबोर्ड कोड यहाँ नीचे है -->
             <TextView
                 android:id="@+id/dragText"
                 android:layout_width="wrap_content"
@@ -49,45 +40,10 @@
                 android:textColor="#FFFF00"
                 android:textSize="30sp"
                 android:textStyle="bold"
-                android:shadowColor="#000000"
-                android:shadowDx="3"
-                android:shadowDy="3"
-                android:shadowRadius="5"
                 android:layout_alignParentBottom="true"
                 android:layout_alignParentLeft="true"
                 android:layout_margin="20dp"
                 android:visibility="gone"/>
-
-            <!-- 3. MOVABLE SCOREBOARD -->
-            <LinearLayout
-                android:id="@+id/dragScoreboard"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:background="#A6000000"
-                android:padding="15dp"
-                android:layout_alignParentBottom="true"
-                android:layout_alignParentRight="true"
-                android:layout_margin="20dp"
-                android:visibility="gone">
-                
-                <TextView
-                    android:id="@+id/scoreMainText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="IND 245/3 (40.2)"
-                    android:textColor="#FFFFFF"
-                    android:textSize="32sp"
-                    android:textStyle="bold" />
-                    
-                <TextView
-                    android:id="@+id/scoreSubText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Target: 312 | CRR: 6.08"
-                    android:textColor="#FFFF00"
-                    android:textSize="18sp" />
-            </LinearLayout>
         </RelativeLayout>
     </FrameLayout>
 
@@ -114,33 +70,26 @@
                 android:layout_marginBottom="20dp"
                 android:gravity="center"/>
 
-            <Button
-                android:id="@+id/btnTitleText"
+            <!-- WEB OVERLAY CONTROLS -->
+            <EditText
+                android:id="@+id/inputWebUrl"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="SHOW TITLE" />
+                android:hint="Enter Web Overlay URL"
+                android:textColorHint="#888888"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#4CAF50"
+                android:inputType="textUri"
+                android:layout_marginBottom="10dp"/>
 
             <Button
-                android:id="@+id/btnScoreboard"
+                android:id="@+id/btnLoadWeb"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="SHOW SCORECARD" />
-
-            <Button
-                android:id="@+id/btnLogo"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="SHOW LOGO" 
+                android:text="LOAD WEB OVERLAY"
                 android:layout_marginBottom="20dp"/>
-                
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="💡 Tip: Double Tap on any item on the screen to EDIT it. Drag to MOVE it anywhere."
-                android:textColor="#4CAF50"
-                android:textSize="14sp"
-                android:layout_marginBottom="30dp"/>
 
+            <!-- MAIN STREAM CONTROL -->
             <Button
                 android:id="@+id/btnGoLive"
                 android:layout_width="match_parent"
