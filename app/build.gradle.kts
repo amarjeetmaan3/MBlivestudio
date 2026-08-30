@@ -10,14 +10,14 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.mblivestudio"
+        // हमने ID में '.v2' लगा दिया है ताकि यह पुराने ऐप से ना टकराए और डायरेक्ट इंस्टॉल हो जाए
+        applicationId = "com.mblivestudio.v2"
         minSdk = 24
         targetSdk = 34
         versionCode = runNumber
-        versionName = "1.0.$runNumber"
+        versionName = "2.0.$runNumber"
     }
 
-    // यह ब्लॉक Java और Kotlin दोनों को Version 17 पर सिंक कर देगा
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
