@@ -10,6 +10,7 @@ import android.widget.Button
 import com.pedro.common.ConnectChecker
 import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
+import com.mblivestudio.R // Explicit import for layout and IDs
 
 class MainActivity : Activity(), ConnectChecker {
     
@@ -35,7 +36,7 @@ class MainActivity : Activity(), ConnectChecker {
         btnGoLive.setOnClickListener {
             if (!rtmpCamera.isStreaming) {
                 if (rtmpCamera.prepareAudio() && rtmpCamera.prepareVideo()) {
-                    // Test RTMP URL (Will be replaced by YouTube API later)
+                    // Test RTMP URL
                     rtmpCamera.startStream("rtmp://a.rtmp.youtube.com/live2/YOUR_STREAM_KEY")
                     btnGoLive.text = "STOP STREAM"
                 }
@@ -48,7 +49,6 @@ class MainActivity : Activity(), ConnectChecker {
 
     override fun onAuthError() {}
     override fun onAuthSuccess() {}
-    override fun onConnectionClosed() {}
     override fun onConnectionFailed(reason: String) {}
     override fun onConnectionStarted(url: String) {}
     override fun onConnectionSuccess() {}
