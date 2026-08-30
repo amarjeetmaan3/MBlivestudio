@@ -14,9 +14,10 @@ import com.pedro.common.ConnectChecker
 import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
 
-// अब हमें TextObject को इम्पोर्ट करने की जरूरत नहीं है
 import com.pedro.encoder.input.gl.render.filters.`object`.TextObjectFilterRender
 import com.pedro.encoder.input.gl.render.filters.NoFilterRender
+// पोज़िशन सेट करने के लिए नई लाइब्रेरी
+import com.pedro.encoder.utils.gl.TranslateTo
 
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     
@@ -43,12 +44,18 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
         }
 
-        // --- TEXT OVERLAY LOGIC ---
         btnTextOverlay.setOnClickListener {
             if (!isTextVisible) {
                 val textFilter = TextObjectFilterRender()
-                // टेक्स्ट, साइज, और कलर अब सीधे इसी लाइन में सेट हो जाएंगे
-                textFilter.setText("MB LIVE STUDIO - EXCLUSIVE", 60f, Color.YELLOW)
+                
+                // टेक्स्ट सेट करें
+                textFilter.setText("MB LIVE STUDIO", 40f, Color.YELLOW)
+                
+                // टेक्स्ट को स्क्रीन की चौड़ाई का 35% और ऊंचाई का 10% सेट करें
+                textFilter.setScale(35f, 10f)
+                
+                // टेक्स्ट को नीचे बाईं तरफ (Bottom Left) फिक्स करें
+                textFilter.setPosition(TranslateTo.BOTTOM_LEFT)
                 
                 rtmpCamera.glInterface.setFilter(textFilter)
                 
@@ -56,13 +63,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 isTextVisible = true
             } else {
                 rtmpCamera.glInterface.setFilter(NoFilterRender())
-                
                 btnTextOverlay.text = "TEXT OVERLAY (OFF)"
                 isTextVisible = false
             }
         }
 
-        // --- GO LIVE LOGIC ---
         btnGoLive.setOnClickListener {
             if (!rtmpCamera.isStreaming) {
                 rtmpCamera.startStream("rtmp://a.rtmp.youtube.com/live2/YOUR_STREAM_KEY")
