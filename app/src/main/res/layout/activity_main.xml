@@ -5,7 +5,6 @@
     android:orientation="horizontal"
     android:background="#121212">
 
-    <!-- Camera Preview & Overlay Area -->
     <FrameLayout
         android:layout_width="0dp"
         android:layout_height="match_parent"
@@ -16,14 +15,12 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
             
-        <!-- INTERACTIVE MASTER CONTAINER -->
         <RelativeLayout
             android:id="@+id/overlayContainer"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:background="@android:color/transparent">
             
-            <!-- 🌟 WEB OVERLAY LAYER (Transparent) 🌟 -->
             <WebView
                 android:id="@+id/webOverlay"
                 android:layout_width="match_parent"
@@ -31,7 +28,6 @@
                 android:background="@android:color/transparent"
                 android:visibility="gone" />
 
-            <!-- Movable Text & Scoreboard (Old Features) -->
             <TextView
                 android:id="@+id/dragText"
                 android:layout_width="wrap_content"
@@ -68,7 +64,6 @@
         </RelativeLayout>
     </FrameLayout>
 
-    <!-- Controls Area -->
     <ScrollView
         android:layout_width="0dp"
         android:layout_height="match_parent"
@@ -91,7 +86,6 @@
                 android:layout_marginBottom="20dp"
                 android:gravity="center"/>
 
-            <!-- 🌟 WEB OVERLAY CONTROLS 🌟 -->
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -138,74 +132,6 @@
                 android:text="SHOW SCORECARD" 
                 android:layout_marginBottom="30dp"/>
 
-            <Button
-                android:id="@+id/btnGoLive"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="GO LIVE"
-                android:backgroundTint="#D32F2F"
-                android:textColor="#FFFFFF"
-                android:textStyle="bold"
-                android:padding="16dp"/>
-                
-        </LinearLayout>
-    </ScrollView>
-</LinearLayout>                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="MB LIVE STUDIO"
-                android:textColor="#FFFF00"
-                android:textSize="30sp"
-                android:textStyle="bold"
-                android:layout_alignParentBottom="true"
-                android:layout_alignParentLeft="true"
-                android:layout_margin="20dp"
-                android:visibility="gone"/>
-        </RelativeLayout>
-    </FrameLayout>
-
-    <!-- Overlay Controls (Right Side) -->
-    <ScrollView
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="3"
-        android:background="#1E1E1E">
-        
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="16dp">
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="STUDIO CONTROLS"
-                android:textColor="#FFFFFF"
-                android:textStyle="bold"
-                android:textSize="18sp"
-                android:layout_marginBottom="20dp"
-                android:gravity="center"/>
-
-            <!-- WEB OVERLAY CONTROLS -->
-            <EditText
-                android:id="@+id/inputWebUrl"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="Enter Web Overlay URL"
-                android:textColorHint="#888888"
-                android:textColor="#FFFFFF"
-                android:backgroundTint="#4CAF50"
-                android:inputType="textUri"
-                android:layout_marginBottom="10dp"/>
-
-            <Button
-                android:id="@+id/btnLoadWeb"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="LOAD WEB OVERLAY"
-                android:layout_marginBottom="20dp"/>
-
-            <!-- MAIN STREAM CONTROL -->
             <Button
                 android:id="@+id/btnGoLive"
                 android:layout_width="match_parent"
