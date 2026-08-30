@@ -14,8 +14,8 @@ import com.pedro.common.ConnectChecker
 import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
 
-// नए Imports (Text Overlay और Filters के लिए)
-import com.pedro.encoder.input.gl.render.filters.object.TextObjectFilterRender
+// Fix: Kotlin में object कीवर्ड को एस्केप करने के लिए बैकटिक्स (``) का इस्तेमाल
+import com.pedro.encoder.input.gl.render.filters.`object`.TextObjectFilterRender
 import com.pedro.encoder.utils.gl.TextObject
 import com.pedro.encoder.input.gl.render.filters.NoFilterRender
 
@@ -47,22 +47,22 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         // --- TEXT OVERLAY LOGIC ---
         btnTextOverlay.setOnClickListener {
             if (!isTextVisible) {
-                // टेक्स्ट का डिज़ाइन सेट करना
+                // टेक्स्ट का डिज़ाइन और सेटअप
                 val textObject = TextObject()
                 textObject.text = "MB LIVE STUDIO - EXCLUSIVE"
                 textObject.textSize = 60f
                 textObject.textColor = Color.YELLOW
                 
-                // टेक्स्ट को वीडियो स्ट्रीम के अंदर डालना
                 val textFilter = TextObjectFilterRender()
                 textFilter.setTextObject(textObject)
                 
+                // फिल्टर को वीडियो स्ट्रीम पर अप्लाई करना
                 rtmpCamera.glInterface.setFilter(textFilter)
                 
                 btnTextOverlay.text = "TEXT OVERLAY (ON)"
                 isTextVisible = true
             } else {
-                // फिल्टर हटाना
+                // टेक्स्ट हटाकर स्क्रीन साफ़ करना
                 rtmpCamera.glInterface.setFilter(NoFilterRender())
                 
                 btnTextOverlay.text = "TEXT OVERLAY (OFF)"
@@ -95,7 +95,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             if (rtmpCamera.prepareAudio() && rtmpCamera.prepareVideo()) {
                 rtmpCamera.startPreview()
             } else {
-                Toast.makeText(this, "कैमरा एरर", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Camera Error", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -120,7 +120,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (rtmpCamera.isOnPreview) rtmpCamera.stopPreview()
     }
 
-    // --- नेटवर्क और स्ट्रीम स्टेटस के फंक्शन ---
     override fun onAuthError() {}
     override fun onAuthSuccess() {}
     override fun onConnectionFailed(reason: String) {}
