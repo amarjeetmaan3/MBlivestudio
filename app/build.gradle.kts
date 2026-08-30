@@ -1,51 +1,46 @@
-plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-}
+name: Build Android APK
 
-val runNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
 
-android {
-    namespace = "com.mblivestudio.v2"
-    compileSdk = 34
+jobs:
+  build:
+    runs-on: ubuntu-latest
 
-    // 🌟 STATIC KEYSTORE CONFIGURATION 🌟
-    signingConfigs {
-        create("release") {
-            // हम इसे 'static_keystore.jks' से लिंक कर रहे हैं
-            // (भविष्य में पूरी तरह फिक्स करने के लिए हम यह फाइल गिटहब में अपलोड करेंगे)
-            keyAlias = "mblive"
-            keyPassword = "mblivepassword"
-            storePassword = "mblivepassword"
-            // File setup logic will be attached here once the file is uploaded to GitHub
-        }
-    }
+    steps:
+    - uses: actions/checkout@v4
 
-    defaultConfig {
-        applicationId = "com.mblivestudio.v2"
-        minSdk = 24
-        targetSdk = 34
-        versionCode = runNumber
-        versionName = "2.0.$runNumber"
-    }
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
 
-    buildTypes {
-        getByName("debug") {
-            // Debug में भी कस्टम/स्टेटिक सिग्नेचर का इस्तेमाल करें
-            // signingConfig = signingConfigs.getByName("release") 
-        }
-    }
+    - name: Cache Debug Keystore
+      uses: actions/cache@v4
+      with:
+        path: ~/.android/debug.keystore
+        key: debug-keystore-${{ runner.os }}
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-}
+    - name: Cache Android Keystore
+      uses: actions/cache@v3
+      with:
+        path: ~/.android/debug.keystore
+        key: static-keystore-${{ runner.os }}
+        restore-keys: |
+          static-keystore-
 
-dependencies {
-    implementation("com.github.pedroSG94.RootEncoder:library:2.5.1")
-}
+    - name: Build APK
+      run: ./gradlew :app:assembleDebug
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: mblivestudio-apk
+        path: app/build/outputs/apk/debug/*.apk
