@@ -6,7 +6,8 @@ plugins {
 val runNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
 
 android {
-    namespace = "com.mblivestudio.v2"
+    // इसे वापस ओरिजिनल कर दिया गया है ताकि R फाइल सही जगह बने
+    namespace = "com.mblivestudio"
     compileSdk = 34
 
     // STATIC KEYSTORE CONFIGURATION
@@ -19,6 +20,7 @@ android {
     }
 
     defaultConfig {
+        // इसे v2 रखा गया है ताकि बिना अनइंस्टॉल किए ऐप अपडेट/इंस्टॉल हो सके
         applicationId = "com.mblivestudio.v2"
         minSdk = 24
         targetSdk = 34
