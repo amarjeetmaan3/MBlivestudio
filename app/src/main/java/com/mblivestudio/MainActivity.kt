@@ -10,7 +10,6 @@ import android.widget.Button
 import com.pedro.common.ConnectChecker
 import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
-import com.mblivestudio.R // Explicit import for layout and IDs
 
 class MainActivity : Activity(), ConnectChecker {
     
