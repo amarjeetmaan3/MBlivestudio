@@ -3,6 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val runNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+
 android {
     namespace = "com.mblivestudio"
     compileSdk = 34
@@ -11,8 +13,8 @@ android {
         applicationId = "com.mblivestudio"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = runNumber
+        versionName = "1.0.$runNumber"
     }
 }
 
