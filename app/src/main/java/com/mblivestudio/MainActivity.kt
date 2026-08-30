@@ -8,15 +8,16 @@ import android.os.Bundle
 import android.view.SurfaceHolder
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.Toast
 import com.pedro.common.ConnectChecker
 import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
 
-// यहाँ SurfaceHolder.Callback ऐड किया गया है
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     
     private lateinit var rtmpCamera: RtmpCamera2
     private lateinit var openGlView: OpenGlView
+    private lateinit var btnGoLive: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -24,25 +25,22 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         setContentView(R.layout.activity_main)
 
         openGlView = findViewById(R.id.surfaceView)
+        btnGoLive = findViewById(R.id.btnGoLive)
         rtmpCamera = RtmpCamera2(openGlView, this)
 
-        // स्क्रीन रेडी होते ही कैमरा ऑन करने का ट्रिगर
         openGlView.holder.addCallback(this)
 
-        // परमिशंस मांगना
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
-            }
+        // परमिशंस चेक करना
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !hasPermissions()) {
+            requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
         }
 
-        val btnGoLive = findViewById<Button>(R.id.btnGoLive)
+        // GO LIVE बटन सिर्फ स्ट्रीम चालू/बंद करेगा (कैमरा नहीं)
         btnGoLive.setOnClickListener {
             if (!rtmpCamera.isStreaming) {
-                if (rtmpCamera.prepareAudio() && rtmpCamera.prepareVideo()) {
-                    rtmpCamera.startStream("rtmp://a.rtmp.youtube.com/live2/YOUR_STREAM_KEY")
-                    btnGoLive.text = "STOP STREAM"
-                }
+                // प्रीव्यू पहले से चल रहा है, यहाँ से सीधा डेटा YouTube पर जाएगा
+                rtmpCamera.startStream("rtmp://a.rtmp.youtube.com/live2/YOUR_STREAM_KEY")
+                btnGoLive.text = "STOP STREAM"
             } else {
                 rtmpCamera.stopStream()
                 btnGoLive.text = "GO LIVE"
@@ -50,25 +48,45 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // --- कैमरा प्रीव्यू को आटोमेटिक कंट्रोल करने के फंक्शन ---
+    private fun hasPermissions(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            return checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED &&
+                   checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        }
+        return true
+    }
+
+    // कैमरा प्रीव्यू स्टार्ट करने का अलग लॉजिक
+    private fun startCameraPreview() {
+        if (!rtmpCamera.isOnPreview) {
+            if (rtmpCamera.prepareAudio() && rtmpCamera.prepareVideo()) {
+                rtmpCamera.startPreview()
+            } else {
+                Toast.makeText(this, "कैमरा लोड करने में एरर", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    // अगर यूजर पहली बार परमिशन Allow करता है, तो तुरंत कैमरा ऑन कर दो
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (hasPermissions()) {
+            startCameraPreview()
+        }
+    }
 
     override fun surfaceCreated(holder: SurfaceHolder) {}
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-        // जैसे ही काली स्क्रीन लोड होगी, कैमरा प्रीव्यू स्टार्ट हो जाएगा
-        if (!rtmpCamera.isOnPreview) {
-            rtmpCamera.startPreview()
+        // स्क्रीन रेडी होते ही (और परमिशन होने पर) प्रीव्यू चालू
+        if (hasPermissions()) {
+            startCameraPreview()
         }
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
-        // ऐप बंद करने पर कैमरा और स्ट्रीम दोनों स्टॉप हो जाएंगे
-        if (rtmpCamera.isStreaming) {
-            rtmpCamera.stopStream()
-        }
-        if (rtmpCamera.isOnPreview) {
-            rtmpCamera.stopPreview()
-        }
+        if (rtmpCamera.isStreaming) rtmpCamera.stopStream()
+        if (rtmpCamera.isOnPreview) rtmpCamera.stopPreview()
     }
 
     // --- नेटवर्क और स्ट्रीम स्टेटस के फंक्शन ---
