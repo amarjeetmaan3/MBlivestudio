@@ -16,14 +16,14 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
             
-        <!-- INTERACTIVE OVERLAY CONTAINER -->
+        <!-- INTERACTIVE MASTER CONTAINER -->
         <RelativeLayout
             android:id="@+id/overlayContainer"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:background="@android:color/transparent">
             
-            <!-- WEB OVERLAY LAYER (Transparent) -->
+            <!-- 🌟 WEB OVERLAY LAYER (Transparent) 🌟 -->
             <WebView
                 android:id="@+id/webOverlay"
                 android:layout_width="match_parent"
@@ -31,10 +31,126 @@
                 android:background="@android:color/transparent"
                 android:visibility="gone" />
 
-            <!-- आपका पुराना टेक्स्ट/स्कोरबोर्ड कोड यहाँ नीचे है -->
+            <!-- Movable Text & Scoreboard (Old Features) -->
             <TextView
                 android:id="@+id/dragText"
                 android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="MB LIVE STUDIO"
+                android:textColor="#FFFF00"
+                android:textSize="30sp"
+                android:textStyle="bold"
+                android:layout_alignParentBottom="true"
+                android:layout_margin="20dp"
+                android:visibility="gone"/>
+
+            <LinearLayout
+                android:id="@+id/dragScoreboard"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="#A6000000"
+                android:padding="15dp"
+                android:layout_alignParentBottom="true"
+                android:layout_alignParentRight="true"
+                android:layout_margin="20dp"
+                android:visibility="gone">
+                
+                <TextView
+                    android:id="@+id/scoreMainText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="IND 245/3 (40.2)"
+                    android:textColor="#FFFFFF"
+                    android:textSize="32sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </RelativeLayout>
+    </FrameLayout>
+
+    <!-- Controls Area -->
+    <ScrollView
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="3"
+        android:background="#1E1E1E">
+        
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="MB STUDIO CONTROLS"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold"
+                android:textSize="18sp"
+                android:layout_marginBottom="20dp"
+                android:gravity="center"/>
+
+            <!-- 🌟 WEB OVERLAY CONTROLS 🌟 -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="WEB URL OVERLAY"
+                android:textColor="#4CAF50"
+                android:textStyle="bold"
+                android:layout_marginBottom="5dp"/>
+                
+            <EditText
+                android:id="@+id/etWebUrl"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="https://your-overlay-url.com"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#888888"
+                android:background="#333333"
+                android:padding="12dp"
+                android:inputType="textUri"
+                android:layout_marginBottom="10dp"/>
+
+            <Button
+                android:id="@+id/btnApplyWeb"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="SHOW WEB OVERLAY" 
+                android:layout_marginBottom="20dp"/>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="#444444"
+                android:layout_marginBottom="20dp"/>
+
+            <Button
+                android:id="@+id/btnTitleText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="SHOW TITLE" />
+
+            <Button
+                android:id="@+id/btnScoreboard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="SHOW SCORECARD" 
+                android:layout_marginBottom="30dp"/>
+
+            <Button
+                android:id="@+id/btnGoLive"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="GO LIVE"
+                android:backgroundTint="#D32F2F"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold"
+                android:padding="16dp"/>
+                
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="MB LIVE STUDIO"
                 android:textColor="#FFFF00"
