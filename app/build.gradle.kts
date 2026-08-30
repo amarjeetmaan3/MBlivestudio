@@ -1,46 +1,47 @@
-name: Build Android APK
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}
 
-on:
-  push:
-    branches: [ "main" ]
-  workflow_dispatch:
+val runNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+android {
+    namespace = "com.mblivestudio.v2"
+    compileSdk = 34
 
-    steps:
-    - uses: actions/checkout@v4
+    // STATIC KEYSTORE CONFIGURATION
+    signingConfigs {
+        create("release") {
+            keyAlias = "mblive"
+            keyPassword = "mblivepassword"
+            storePassword = "mblivepassword"
+        }
+    }
 
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        cache: gradle
+    defaultConfig {
+        applicationId = "com.mblivestudio.v2"
+        minSdk = 24
+        targetSdk = 34
+        versionCode = runNumber
+        versionName = "2.0.$runNumber"
+    }
 
-    - name: Cache Debug Keystore
-      uses: actions/cache@v4
-      with:
-        path: ~/.android/debug.keystore
-        key: debug-keystore-${{ runner.os }}
+    buildTypes {
+        getByName("debug") {
+            // signingConfig = signingConfigs.getByName("release") 
+        }
+    }
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
 
-    - name: Cache Android Keystore
-      uses: actions/cache@v3
-      with:
-        path: ~/.android/debug.keystore
-        key: static-keystore-${{ runner.os }}
-        restore-keys: |
-          static-keystore-
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}
 
-    - name: Build APK
-      run: ./gradlew :app:assembleDebug
-
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: mblivestudio-apk
-        path: app/build/outputs/apk/debug/*.apk
+dependencies {
+    implementation("com.github.pedroSG94.RootEncoder:library:2.5.1")
+}
