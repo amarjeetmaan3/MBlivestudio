@@ -16,6 +16,16 @@ android {
         versionCode = runNumber
         versionName = "1.0.$runNumber"
     }
+
+    // यह ब्लॉक Java और Kotlin दोनों को Version 17 पर सिंक कर देगा
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
 }
 
 dependencies {
