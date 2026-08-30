@@ -63,14 +63,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
         }
 
-        // मास्टर स्क्रीन फिल्टर
         viewFilterRender = AndroidViewFilterRender()
         viewFilterRender.view = overlayContainer
         rtmpCamera.glInterface.setFilter(viewFilterRender)
 
-        // --- WEB OVERLAY SETUP ---
+        // WEB OVERLAY SETUP
         webOverlay.setBackgroundColor(Color.TRANSPARENT)
-        // वीडियो एन्कोडर के लिए वेबव्यू को सॉफ्टवेयर मोड में रेंडर करना जरूरी है
         webOverlay.setLayerType(View.LAYER_TYPE_SOFTWARE, null) 
         webOverlay.settings.javaScriptEnabled = true
         webOverlay.settings.domStorageEnabled = true
@@ -82,7 +80,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             if (webOverlay.visibility == View.GONE) {
                 val url = etWebUrl.text.toString().trim()
                 if (url.isNotEmpty()) {
-                    // अगर यूजर ने http नहीं लगाया है
                     val finalUrl = if (!url.startsWith("http")) "https://$url" else url
                     webOverlay.loadUrl(finalUrl)
                     webOverlay.visibility = View.VISIBLE
@@ -97,7 +94,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
         }
 
-        // पुराने कंट्रोल्स
         btnTitleText.setOnClickListener {
             val isVis = dragText.visibility == View.VISIBLE
             dragText.visibility = if(isVis) View.GONE else View.VISIBLE
@@ -131,6 +127,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         startCameraPreview()
     }
+    
     override fun surfaceCreated(holder: SurfaceHolder) {}
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
         startCameraPreview()
@@ -139,90 +136,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (rtmpCamera.isStreaming) rtmpCamera.stopStream()
         if (rtmpCamera.isOnPreview) rtmpCamera.stopPreview()
     }
-    override fun onAuthError() {}
-    override fun onAuthSuccess() {}
-    override fun onConnectionFailed(reason: String) {}
-    override fun onConnectionStarted(url: String) {}
-    override fun onConnectionSuccess() {}
-    override fun onDisconnect() {}
-    override fun onNewBitrate(bitrate: Long) {}
-}        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        setContentView(R.layout.activity_main)
-
-        openGlView = findViewById(R.id.surfaceView)
-        overlayContainer = findViewById(R.id.overlayContainer)
-        webOverlay = findViewById(R.id.webOverlay)
-        inputWebUrl = findViewById(R.id.inputWebUrl)
-        btnLoadWeb = findViewById(R.id.btnLoadWeb)
-        btnGoLive = findViewById(R.id.btnGoLive)
-        
-        rtmpCamera = RtmpCamera2(openGlView, this)
-        openGlView.holder.addCallback(this)
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
-        }
-
-        // मास्टर फिल्टर जो WebView को भी स्ट्रीम में भेजेगा
-        viewFilterRender = AndroidViewFilterRender()
-        viewFilterRender.view = overlayContainer
-        rtmpCamera.glInterface.setFilter(viewFilterRender)
-
-        // WEB OVERLAY SETUP (Transparent & JavaScript Enabled)
-        webOverlay.setBackgroundColor(Color.TRANSPARENT)
-        webOverlay.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-        webOverlay.settings.javaScriptEnabled = true
-        webOverlay.settings.domStorageEnabled = true
-        webOverlay.settings.mediaPlaybackRequiresUserGesture = false
-        webOverlay.settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-        webOverlay.webViewClient = WebViewClient()
-
-        // WEB OVERLAY BUTTON LOGIC
-        btnLoadWeb.setOnClickListener {
-            if (!isWebVisible) {
-                val url = inputWebUrl.text.toString()
-                if (url.isNotEmpty()) {
-                    webOverlay.loadUrl(url)
-                    webOverlay.visibility = View.VISIBLE
-                    btnLoadWeb.text = "CLOSE WEB OVERLAY"
-                    isWebVisible = true
-                } else {
-                    Toast.makeText(this, "Please enter a valid URL", Toast.LENGTH_SHORT).show()
-                }
-            } else {
-                webOverlay.loadUrl("about:blank")
-                webOverlay.visibility = View.GONE
-                btnLoadWeb.text = "LOAD WEB OVERLAY"
-                isWebVisible = false
-            }
-        }
-
-        btnGoLive.setOnClickListener {
-            if (!rtmpCamera.isStreaming) {
-                rtmpCamera.startStream("rtmp://a.rtmp.youtube.com/live2/YOUR_STREAM_KEY")
-                btnGoLive.text = "STOP STREAM"
-            } else {
-                rtmpCamera.stopStream()
-                btnGoLive.text = "GO LIVE"
-            }
-        }
-    }
-
-    private fun startCameraPreview() {
-        if (!rtmpCamera.isOnPreview) {
-            if (rtmpCamera.prepareAudio() && rtmpCamera.prepareVideo()) rtmpCamera.startPreview()
-        }
-    }
-
-    override fun surfaceCreated(holder: SurfaceHolder) {}
-    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-        startCameraPreview()
-    }
-    override fun surfaceDestroyed(holder: SurfaceHolder) {
-        if (rtmpCamera.isStreaming) rtmpCamera.stopStream()
-        if (rtmpCamera.isOnPreview) rtmpCamera.stopPreview()
-    }
-
+    
     override fun onAuthError() {}
     override fun onAuthSuccess() {}
     override fun onConnectionFailed(reason: String) {}
