@@ -326,11 +326,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     return@Thread
                 }
 
-                if (!rtmpCamera.startStream(finalUrl)) {
+              try {
+                    rtmpCamera.startStream(finalUrl)
+                } catch (e: Exception) {
                     runOnUiThread {
                         btnGoLive.text = "GO LIVE"
                         btnGoLive.isEnabled = true
-                        Toast.makeText(this@MainActivity, "Network Error: Failed to connect to YouTube Server.", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this@MainActivity, "Network Error: Failed to connect.", Toast.LENGTH_LONG).show()
                     }
                     return@Thread
                 }
