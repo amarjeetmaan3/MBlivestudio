@@ -166,6 +166,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 generatedRtmpUrl = null 
                 return@setOnClickListener
             } 
+
+            // 🌟 SECURITY LOCK: Camera must be prepared before hitting API 🌟
+            if (!rtmpCamera.isOnPreview) {
+                Toast.makeText(this@MainActivity, "Camera not ready! Preparing...", Toast.LENGTH_LONG).show()
+                startCameraPreview()
+                return@setOnClickListener
+            }
             
             val currentAccount = GoogleSignIn.getLastSignedInAccount(this)
             if (currentAccount == null) {
@@ -198,12 +205,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
         }
 
+        // --- UI Listeners ---
         etControlText.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) {
-                if (selectedOverlay is TextView && selectedOverlay != scoreMainText && selectedOverlay != scoreSubText) {
-                    (selectedOverlay as TextView).text = s.toString()
-                }
-            }
+            override fun afterTextChanged(s: Editable?) { if (selectedOverlay is TextView && selectedOverlay != scoreMainText && selectedOverlay != scoreSubText) { (selectedOverlay as TextView).text = s.toString() } }
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         })
@@ -220,36 +224,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         })
 
-        btnAddText.setOnClickListener {
-            val text = etControlText.text.toString().trim()
-            if (text.isNotEmpty()) {
-                addTextOverlayToScreen(text)
-                etControlText.text.clear()
-            }
-        }
-
-        btnAddLogo.setOnClickListener {
-            val intent = Intent(Intent.ACTION_GET_CONTENT)
-            intent.type = "image/*"
-            startActivityForResult(intent, PICK_IMAGE_REQUEST)
-        }
-
-        btnRemoveSelected.setOnClickListener {
-            selectedOverlay?.let {
-                if (it != dragScoreboard) {
-                    overlayContainer.removeView(it)
-                    selectedOverlay = null
-                }
-            }
-        }
-
-        btnToggleScore.setOnClickListener {
-            val isVis = dragScoreboard.visibility == View.VISIBLE
-            dragScoreboard.visibility = if(isVis) View.GONE else View.VISIBLE
-            btnToggleScore.text = if(isVis) "SHOW SCORECARD ON SCREEN" else "HIDE SCORECARD"
-        }
+        btnAddText.setOnClickListener { val text = etControlText.text.toString().trim(); if (text.isNotEmpty()) { addTextOverlayToScreen(text); etControlText.text.clear() } }
+        btnAddLogo.setOnClickListener { val intent = Intent(Intent.ACTION_GET_CONTENT); intent.type = "image/*"; startActivityForResult(intent, PICK_IMAGE_REQUEST) }
+        btnRemoveSelected.setOnClickListener { selectedOverlay?.let { if (it != dragScoreboard) { overlayContainer.removeView(it); selectedOverlay = null } } }
+        btnToggleScore.setOnClickListener { val isVis = dragScoreboard.visibility == View.VISIBLE; dragScoreboard.visibility = if(isVis) View.GONE else View.VISIBLE; btnToggleScore.text = if(isVis) "SHOW SCORECARD ON SCREEN" else "HIDE SCORECARD" }
 
         makeDraggableAndScalable(dragScoreboard)
+        
         btnApplyWeb.setOnClickListener {
             if (webOverlay.visibility == View.GONE) {
                 val url = etWebUrl.text.toString().trim()
@@ -267,7 +248,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-  // 🌟 FORCE LIVE ENGINE (FIXED) 🌟
     private fun createYouTubeBroadcast() {
         btnGoLive.text = "1/5: CONNECTING API..."
         btnGoLive.isEnabled = false
@@ -276,29 +256,19 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val descInput = etStreamDesc.text.toString().trim()
         val privacyInput = spinnerPrivacy.selectedItem.toString().lowercase()
 
-        val finalTitle = if (titleInput.isNotEmpty()) titleInput else "Live from MB Live Studio"
-        val finalDesc = if (descInput.isNotEmpty()) descInput else "Streaming via MB Live Studio Android App"
+        val finalTitle = if (titleInput.isNotEmpty()) titleInput else "Live from M.B. Live Studio"
+        val finalDesc = if (descInput.isNotEmpty()) descInput else "Streaming via M.B. Live Studio Android App"
 
         Thread {
             try {
-                val credential = GoogleAccountCredential.usingOAuth2(
-                    this@MainActivity, 
-                    listOf("https://www.googleapis.com/auth/youtube")
-                )
-                
+                val credential = GoogleAccountCredential.usingOAuth2(this@MainActivity, listOf("https://www.googleapis.com/auth/youtube"))
                 val signInAccount = GoogleSignIn.getLastSignedInAccount(this@MainActivity)
-                if (signInAccount?.account != null) {
-                    credential.selectedAccount = signInAccount.account
-                } else {
-                    credential.selectedAccountName = connectedAccountEmail
-                }
+                if (signInAccount?.account != null) credential.selectedAccount = signInAccount.account
+                else credential.selectedAccountName = connectedAccountEmail
 
                 val transport = NetHttpTransport()
                 val jsonFactory = GsonFactory.getDefaultInstance()
-
-                val youtube = YouTube.Builder(transport, jsonFactory, credential)
-                    .setApplicationName("MBLiveStudio")
-                    .build()
+                val youtube = YouTube.Builder(transport, jsonFactory, credential).setApplicationName("MBLiveStudio").build()
 
                 runOnUiThread { btnGoLive.text = "2/5: CREATING ROOM..." }
 
@@ -314,7 +284,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 var broadcast = LiveBroadcast()
                 broadcast.snippet = broadcastSnippet
                 broadcast.status = broadcastStatus
-                
                 broadcast = youtube.liveBroadcasts().insert("snippet,status", broadcast).execute()
 
                 runOnUiThread { btnGoLive.text = "3/5: GETTING KEY..." }
@@ -338,7 +307,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 bindRequest.streamId = stream.id
                 bindRequest.execute()
 
-               // ... (ऊपर का कोड सेम रहेगा)
                 val streamUrl = stream.cdn.ingestionInfo.ingestionAddress
                 val streamKey = stream.cdn.ingestionInfo.streamName
                 val finalUrl = "$streamUrl/$streamKey"
@@ -349,7 +317,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     try {
                         rtmpCamera.startStream(finalUrl)
                     } catch (e: Exception) {
-                        Toast.makeText(this@MainActivity, "Camera failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@MainActivity, "Encoder Error: ${e.message}", Toast.LENGTH_LONG).show()
                     }
                 }
 
@@ -361,19 +329,15 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     try {
                         val streamResponse = youtube.liveStreams().list("status").setId(stream.id).execute()
                         val streamStatus = streamResponse.items.firstOrNull()?.status?.streamStatus
-                        
                         if (streamStatus == "active") {
                             isVideoActive = true
                             break
                         }
-                    } catch (e: Exception) {
-                        // इग्नोर करें
-                    }
+                    } catch (e: Exception) { }
                 }
 
                 if (isVideoActive) {
                     runOnUiThread { btnGoLive.text = "PUBLISHING LIVE..." }
-                    
                     youtube.liveBroadcasts().transition("live", broadcast.id, "status").execute()
                     
                     runOnUiThread {
@@ -402,25 +366,21 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
         }.start()
     }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        
         if (requestCode == REQUEST_AUTHORIZATION) {
             val account = GoogleSignIn.getLastSignedInAccount(this)
             if (GoogleSignIn.hasPermissions(account, Scope("https://www.googleapis.com/auth/youtube"))) {
                 Toast.makeText(this, "Permission Granted! Click GO LIVE again to start.", Toast.LENGTH_LONG).show()
-            } else {
-                Toast.makeText(this, "Permission Denied by User.", Toast.LENGTH_LONG).show()
             }
         }
-
         if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK && data != null) {
             data.data?.let { uri ->
                 val bitmap = MediaStore.Images.Media.getBitmap(contentResolver, uri)
                 addImageOverlayToScreen(bitmap)
             }
         }
-        
         if (requestCode == SIGN_IN_REQUEST) {
             val task = GoogleSignIn.getSignedInAccountFromIntent(data)
             try {
@@ -429,43 +389,31 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 btnSignInYouTube.text = "SIGNED IN AS: ${account?.email}"
                 btnSignInYouTube.setBackgroundColor(Color.parseColor("#4CAF50"))
                 btnSignInYouTube.setTextColor(Color.WHITE)
-            } catch (e: ApiException) {
-                Toast.makeText(this, "Sign-In Failed", Toast.LENGTH_LONG).show()
-            }
+            } catch (e: ApiException) { }
         }
     }
 
     private fun addTextOverlayToScreen(text: String) {
         val textView = TextView(this).apply {
-            this.text = text
-            setTextColor(Color.YELLOW)
-            textSize = 30f
-            setTypeface(null, android.graphics.Typeface.BOLD)
+            this.text = text; setTextColor(Color.YELLOW); textSize = 30f; setTypeface(null, android.graphics.Typeface.BOLD)
             layoutParams = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) }
         }
         overlayContainer.addView(textView)
-        makeDraggableAndScalable(textView)
-        selectedOverlay = textView
+        makeDraggableAndScalable(textView); selectedOverlay = textView
     }
 
     private fun addImageOverlayToScreen(bitmap: Bitmap) {
         val imageView = ImageView(this).apply {
-            setImageBitmap(bitmap)
-            layoutParams = RelativeLayout.LayoutParams(300, 300).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) }
+            setImageBitmap(bitmap); layoutParams = RelativeLayout.LayoutParams(300, 300).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) }
         }
         overlayContainer.addView(imageView)
-        makeDraggableAndScalable(imageView)
-        selectedOverlay = imageView
+        makeDraggableAndScalable(imageView); selectedOverlay = imageView
     }
 
     @SuppressLint("ClickableViewAccessibility")
     private fun makeDraggableAndScalable(view: View) {
         val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            override fun onScale(detector: ScaleGestureDetector): Boolean {
-                view.scaleX *= detector.scaleFactor
-                view.scaleY *= detector.scaleFactor
-                return true
-            }
+            override fun onScale(detector: ScaleGestureDetector): Boolean { view.scaleX *= detector.scaleFactor; view.scaleY *= detector.scaleFactor; return true }
         })
         var dX = 0f; var dY = 0f
         view.setOnTouchListener { v, event ->
@@ -480,7 +428,26 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    private fun startCameraPreview() { if (!rtmpCamera.isOnPreview) { if (rtmpCamera.prepareAudio() && rtmpCamera.prepareVideo()) rtmpCamera.startPreview() } }
+    // 🌟 CAMERA FIX ENGINE 🌟
+    private fun startCameraPreview() { 
+        if (!rtmpCamera.isOnPreview) { 
+            // 1. Try standard Tablet 720p resolution
+            var videoPrepared = rtmpCamera.prepareVideo(1280, 720, 30, 2500 * 1024)
+            if (!videoPrepared) {
+                // 2. Fallback to device default if 720p fails
+                videoPrepared = rtmpCamera.prepareVideo()
+            }
+            
+            val audioPrepared = rtmpCamera.prepareAudio()
+            
+            if (videoPrepared && audioPrepared) {
+                rtmpCamera.startPreview() 
+            } else {
+                Toast.makeText(this, "CAMERA ERROR: Device blocked video preparation.", Toast.LENGTH_LONG).show()
+            }
+        } 
+    }
+    
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) { super.onRequestPermissionsResult(requestCode, permissions, grantResults); startCameraPreview() }
     override fun surfaceCreated(holder: SurfaceHolder) {}
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) { startCameraPreview() }
