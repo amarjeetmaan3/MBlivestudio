@@ -36,16 +36,22 @@ jobs:
             echo "Permanent keystore already exists!"
           fi
 
+      - name: Get Permanent SHA-1 Fingerprint
+        if: always()
+        run: |
+          echo "====================================================="
+          echo "HERE IS YOUR PERMANENT SHA-1 FINGERPRINT:"
+          keytool -list -v -keystore app/mblive.jks -alias mblive -storepass mblive123 | grep "SHA1:"
+          echo "====================================================="
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
       - name: Build APK
         run: ./gradlew :app:assembleDebug
 
-      - name: Get Permanent SHA-1 Fingerprint
-        run: keytool -list -v -keystore app/mblive.jks -alias mblive -storepass mblive123 -keypass mblive123
-
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: mblivestudio-apk
