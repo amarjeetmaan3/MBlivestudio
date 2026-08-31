@@ -5,6 +5,7 @@
     android:orientation="horizontal"
     android:background="#121212">
 
+    <!-- Camera Preview Area -->
     <FrameLayout
         android:layout_width="0dp"
         android:layout_height="match_parent"
@@ -60,6 +61,7 @@
         </RelativeLayout>
     </FrameLayout>
 
+    <!-- Side Panel Controls -->
     <ScrollView
         android:layout_width="0dp"
         android:layout_height="match_parent"
@@ -92,6 +94,39 @@
                 android:textStyle="bold"
                 android:padding="12dp"
                 android:layout_marginBottom="10dp"/>
+
+            <!-- 🌟 NEW: BROADCAST SETTINGS 🌟 -->
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="BROADCAST SETTINGS" android:textColor="#03A9F4" android:textStyle="bold" android:layout_marginBottom="5dp"/>
+            
+            <EditText
+                android:id="@+id/etStreamTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Broadcast Title"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#888888"
+                android:background="#333333"
+                android:padding="12dp"
+                android:layout_marginBottom="5dp"/>
+
+            <EditText
+                android:id="@+id/etStreamDesc"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Description"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#888888"
+                android:background="#333333"
+                android:padding="12dp"
+                android:layout_marginBottom="5dp"/>
+
+            <Spinner
+                android:id="@+id/spinnerPrivacy"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="#333333"
+                android:padding="12dp"
+                android:layout_marginBottom="15dp"/>
 
             <Button
                 android:id="@+id/btnGoLive"
@@ -134,7 +169,6 @@
             <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#444444" android:layout_marginBottom="15dp"/>
 
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="CUSTOM TEXT (ADD MULTIPLE)" android:textColor="#4CAF50" android:textStyle="bold"/>
-            
             <EditText
                 android:id="@+id/etControlText"
                 android:layout_width="match_parent"
@@ -146,85 +180,23 @@
                 android:padding="12dp"
                 android:layout_marginTop="5dp"
                 android:layout_marginBottom="5dp"/>
-                
-            <Button
-                android:id="@+id/btnAddText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="ADD NEW TEXT TO SCREEN" />
+            <Button android:id="@+id/btnAddText" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="ADD NEW TEXT TO SCREEN" />
 
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="PHOTO LOGO (ADD MULTIPLE)" android:textColor="#FF9800" android:textStyle="bold" android:layout_marginTop="15dp"/>
-            
-            <Button
-                android:id="@+id/btnAddLogo"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="CHOOSE PHOTO FROM GALLERY" 
-                android:layout_marginTop="5dp"/>
-
-            <Button
-                android:id="@+id/btnRemoveSelected"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="REMOVE SELECTED ITEM" 
-                android:backgroundTint="#E53935"
-                android:textColor="#FFFFFF"
-                android:layout_marginTop="10dp"/>
+            <Button android:id="@+id/btnAddLogo" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="CHOOSE PHOTO FROM GALLERY" android:layout_marginTop="5dp"/>
+            <Button android:id="@+id/btnRemoveSelected" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="REMOVE SELECTED ITEM" android:backgroundTint="#E53935" android:textColor="#FFFFFF" android:layout_marginTop="10dp"/>
 
             <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#444444" android:layout_marginTop="15dp" android:layout_marginBottom="15dp"/>
 
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="CRICKET SCORECARD" android:textColor="#9C27B0" android:textStyle="bold"/>
-            
-            <EditText
-                android:id="@+id/etScoreMain"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="Main Score (ex: IND 245/3)"
-                android:textColor="#FFFFFF"
-                android:textColorHint="#888888"
-                android:background="#333333"
-                android:padding="12dp"
-                android:layout_marginTop="5dp"
-                android:layout_marginBottom="5dp"/>
-                
-            <EditText
-                android:id="@+id/etScoreSub"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="Sub Text (Target: 312)"
-                android:textColor="#FFFFFF"
-                android:textColorHint="#888888"
-                android:background="#333333"
-                android:padding="12dp"
-                android:layout_marginBottom="5dp"/>
-
-            <Button
-                android:id="@+id/btnToggleScore"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="SHOW SCORECARD ON SCREEN" />
+            <EditText android:id="@+id/etScoreMain" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Main Score (ex: IND 245/3)" android:textColor="#FFFFFF" android:textColorHint="#888888" android:background="#333333" android:padding="12dp" android:layout_marginTop="5dp" android:layout_marginBottom="5dp"/>
+            <EditText android:id="@+id/etScoreSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Sub Text (Target: 312)" android:textColor="#FFFFFF" android:textColorHint="#888888" android:background="#333333" android:padding="12dp" android:layout_marginBottom="5dp"/>
+            <Button android:id="@+id/btnToggleScore" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="SHOW SCORECARD ON SCREEN" />
 
             <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#444444" android:layout_marginTop="15dp" android:layout_marginBottom="15dp"/>
 
-            <EditText
-                android:id="@+id/etWebUrl"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="https://your-overlay-url.com"
-                android:textColor="#FFFFFF"
-                android:textColorHint="#888888"
-                android:background="#333333"
-                android:padding="12dp"
-                android:inputType="textUri"
-                android:layout_marginBottom="5dp"/>
-
-            <Button
-                android:id="@+id/btnApplyWeb"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="SHOW WEB OVERLAY"
-                android:layout_marginBottom="20dp"/>
-
+            <EditText android:id="@+id/etWebUrl" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="https://your-overlay-url.com" android:textColor="#FFFFFF" android:textColorHint="#888888" android:background="#333333" android:padding="12dp" android:inputType="textUri" android:layout_marginBottom="5dp"/>
+            <Button android:id="@+id/btnApplyWeb" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="SHOW WEB OVERLAY" android:layout_marginBottom="20dp"/>
         </LinearLayout>
     </ScrollView>
 </LinearLayout>
