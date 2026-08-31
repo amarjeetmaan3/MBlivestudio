@@ -89,7 +89,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private val MAX_RETRIES = 3
     private var generatedRtmpUrl: String? = null
 
-    // 🌟 FIX 1: सेटिंग्स को बिल्कुल ऐप शुरू होने से पहले (attachBaseContext) फोर्स करें 🌟
     override fun attachBaseContext(newBase: Context?) {
         super.attachBaseContext(newBase)
         System.setProperty("java.net.preferIPv4Stack", "true")
@@ -171,11 +170,27 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
 
         btnGoLive.setOnClickListener {
+            // 🌟 FIX 1: Deep Clean Reset (जब आप STOP दबाते हैं) 🌟
             if (rtmpCamera.isStreaming) {
-                rtmpCamera.stopStream()
-                btnGoLive.text = "GO LIVE"
-                btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
-                Toast.makeText(this@MainActivity, "Stream Stopped.", Toast.LENGTH_SHORT).show()
+                btnGoLive.isEnabled = false
+                btnGoLive.text = "STOPPING..."
+                
+                Thread {
+                    try { rtmpCamera.stopStream() } catch (e: Exception) {}
+                    
+                    runOnUiThread {
+                        try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+                        
+                        // कैमरे को पूरी तरह रिफ्रेश करें ताकि वह अगले लाइव के लिए रेडी हो जाए
+                        startCameraPreview() 
+                        
+                        btnGoLive.text = "GO LIVE"
+                        btnGoLive.isEnabled = true
+                        btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
+                        Toast.makeText(this@MainActivity, "Stream Stopped & YouTube Notified.", Toast.LENGTH_SHORT).show()
+                        generatedRtmpUrl = null
+                    }
+                }.start()
                 return@setOnClickListener
             } 
             
@@ -290,12 +305,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 val transport = NetHttpTransport()
                 val jsonFactory = GsonFactory.getDefaultInstance()
                 
-                // 🌟 FIX 2: YouTube API के 5-Minute वाले Timeout/Retry लूप को बंद करना 🌟
                 val youtube = YouTube.Builder(transport, jsonFactory, com.google.api.client.http.HttpRequestInitializer { request ->
                     credential.initialize(request)
-                    request.connectTimeout = 10000 // 10 सेकंड में फेल होगा, 5 मिनट नहीं
+                    request.connectTimeout = 10000 
                     request.readTimeout = 10000
-                    request.numberOfRetries = 0 // Google का Auto-Retry ऑफ
+                    request.numberOfRetries = 0 
                 }).setApplicationName("MBLiveStudio").build()
 
                 runOnUiThread { btnGoLive.text = "2/4: CREATING ROOM..." }
@@ -309,8 +323,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 broadcastStatus.privacyStatus = privacyInput
                 broadcastStatus.selfDeclaredMadeForKids = false
 
+                // 🌟 FIX 2: YouTube Auto-Stop Engine (अब YouTube पुरानी स्ट्रीम को ऑटोमैटिक खत्म कर देगा) 🌟
                 val broadcastContentDetails = LiveBroadcastContentDetails()
                 broadcastContentDetails.enableAutoStart = true
+                broadcastContentDetails.enableAutoStop = true 
                 broadcastContentDetails.latencyPreference = "ultraLow" 
 
                 var broadcast = LiveBroadcast()
@@ -318,7 +334,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 broadcast.status = broadcastStatus
                 broadcast.contentDetails = broadcastContentDetails
                 
-                // अगर इंटरनेट ख़राब है, तो अब ये 5 मिनट नहीं, 10 सेकंड में Timeout बता देगा
                 broadcast = youtube.liveBroadcasts().insert("snippet,status,contentDetails", broadcast).execute()
 
                 runOnUiThread { btnGoLive.text = "3/4: GETTING KEY..." }
@@ -340,22 +355,18 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 bindRequest.streamId = stream.id
                 bindRequest.execute()
 
-                // 🌟 FIX 3: Tablet DNS/IPv6 Bypass Engine 🌟 
-                var ingestionUrl = stream.cdn.ingestionInfo.ingestionAddress // e.g. rtmp://a.rtmp.youtube.com/live2
+                var ingestionUrl = stream.cdn.ingestionInfo.ingestionAddress 
                 var resolvedIp: String? = null
                 
                 try {
-                    // YouTube के सर्वर का सीधा (Direct) IPv4 एड्रेस निकालो
                     val host = if (ingestionUrl.contains("b.rtmp")) "b.rtmp.youtube.com" else "a.rtmp.youtube.com"
                     val addresses = InetAddress.getAllByName(host)
                     resolvedIp = addresses.firstOrNull { it is Inet4Address }?.hostAddress
                 } catch (e: Exception) { e.printStackTrace() }
 
                 val finalUrl = if (resolvedIp != null && ingestionUrl.contains("a.rtmp.youtube.com")) {
-                    // अगर IP मिल गया, तो नाम (a.rtmp) की जगह सीधा IP डाल दो (DNS बाईपास)
                     ingestionUrl.replace("a.rtmp.youtube.com", resolvedIp) + "/" + stream.cdn.ingestionInfo.streamName
                 } else {
-                    // नहीं तो बैकअप सर्वर यूज़ करो
                     ingestionUrl.replace("a.rtmp", "b.rtmp") + "/" + stream.cdn.ingestionInfo.streamName
                 }
                 
@@ -495,6 +506,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }.start()
         } else {
             runOnUiThread {
+                // कनेक्शन फेल होने पर भी कैमरे को रिफ्रेश करें
+                try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+                startCameraPreview()
+                
                 btnGoLive.text = "GO LIVE"
                 btnGoLive.isEnabled = true
                 try { rtmpCamera.stopStream() } catch (e: Exception) {}
@@ -509,6 +524,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             btnGoLive.text = "GO LIVE"
             btnGoLive.isEnabled = true
             btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
+            
+            // डिसकनेक्ट होने पर कैमरा रिफ्रेश करें
+            try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+            startCameraPreview()
         }
     }
 
