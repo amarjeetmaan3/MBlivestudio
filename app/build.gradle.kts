@@ -26,34 +26,26 @@ android {
         jvmTarget = "17"
     }
 
-    // Google API फाइलों के टकराव (Crash) को रोकने के लिए
     packaging {
         resources {
             excludes += setOf(
-                "META-INF/DEPENDENCIES",
-                "META-INF/LICENSE",
-                "META-INF/LICENSE.txt",
-                "META-INF/license.txt",
-                "META-INF/NOTICE",
-                "META-INF/NOTICE.txt",
-                "META-INF/notice.txt"
+                "META-INF/DEPENDENCIES", "META-INF/LICENSE", "META-INF/LICENSE.txt",
+                "META-INF/license.txt", "META-INF/NOTICE", "META-INF/NOTICE.txt", "META-INF/notice.txt"
             )
         }
     }
 }
 
 dependencies {
-    // Live Streaming Engine
     implementation("com.github.pedroSG94.RootEncoder:library:2.5.1")
-    
-    // AndroidX Components
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("androidx.activity:activity-ktx:1.8.2")
 
-    // Google Sign-In & YouTube Live API v3 
+    // Google Sign-In & YouTube Live API
     implementation("com.google.android.gms:play-services-auth:20.7.0")
     implementation("com.google.api-client:google-api-client-android:1.32.2")
+    implementation("com.google.api-client:google-api-client-gson:1.32.2") // NEW: For JSON parsing
     implementation("com.google.apis:google-api-services-youtube:v3-rev222-1.25.0") {
         exclude(group = "org.apache.httpcomponents")
     }
