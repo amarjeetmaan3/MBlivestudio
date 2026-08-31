@@ -255,7 +255,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // --- YOUTUBE BROADCAST CREATION ENGINE ---
+  // --- YOUTUBE BROADCAST CREATION ENGINE ---
     private fun createYouTubeBroadcast() {
         btnGoLive.text = "CREATING BROADCAST..."
         btnGoLive.isEnabled = false
@@ -281,12 +281,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 broadcastSnippet.scheduledStartTime = DateTime(System.currentTimeMillis() + 5000)
 
                 val broadcastStatus = LiveBroadcastStatus()
-                broadcastStatus.privacyStatus = "unlisted" // Test mode (Change to "public" for actual live)
+                broadcastStatus.privacyStatus = "unlisted" // Test mode
 
                 var broadcast = LiveBroadcast()
                 broadcast.snippet = broadcastSnippet
                 broadcast.status = broadcastStatus
-                broadcast = youtube.liveBroadcasts().insert(listOf("snippet", "status"), broadcast).execute()
+                // FIX: Removed listOf()
+                broadcast = youtube.liveBroadcasts().insert("snippet,status", broadcast).execute()
 
                 // 2. Create Stream Key
                 val streamSnippet = LiveStreamSnippet()
@@ -300,10 +301,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 var stream = LiveStream()
                 stream.snippet = streamSnippet
                 stream.cdn = cdn
-                stream = youtube.liveStreams().insert(listOf("snippet", "cdn"), stream).execute()
+                // FIX: Removed listOf()
+                stream = youtube.liveStreams().insert("snippet,cdn", stream).execute()
 
                 // 3. Bind Broadcast & Stream
-                val bindRequest = youtube.liveBroadcasts().bind(broadcast.id, listOf("id", "contentDetails"))
+                // FIX: Removed listOf()
+                val bindRequest = youtube.liveBroadcasts().bind(broadcast.id, "id,contentDetails")
                 bindRequest.streamId = stream.id
                 bindRequest.execute()
 
@@ -329,14 +332,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     private fun startRtmpStream(url: String) {
-        if (rtmpCamera.startStream(url)) {
+        // FIX: Removed 'if' condition because startStream() returns Unit
+        try {
+            rtmpCamera.startStream(url)
             btnGoLive.text = "STOP STREAM"
             btnGoLive.isEnabled = true
-            Toast.makeText(this@MainActivity, "You are LIVE on YouTube!", Toast.LENGTH_SHORT).show()
-        } else {
+            Toast.makeText(this@MainActivity, "Connecting to YouTube...", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
             btnGoLive.text = "GO LIVE"
             btnGoLive.isEnabled = true
-            Toast.makeText(this@MainActivity, "Failed to connect to YouTube Server", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@MainActivity, "Failed to start stream", Toast.LENGTH_SHORT).show()
         }
     }
 
