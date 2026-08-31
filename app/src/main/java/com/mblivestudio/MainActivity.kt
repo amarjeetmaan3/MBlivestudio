@@ -26,12 +26,19 @@ import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
 import com.pedro.encoder.input.gl.render.filters.AndroidViewFilterRender
 
-// Google APIs
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.Scope
 import com.google.android.gms.common.api.ApiException
+
+// YOUTUBE API IMPORTS
+import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
+import com.google.api.client.http.javanet.NetHttpTransport
+import com.google.api.client.json.gson.GsonFactory
+import com.google.api.client.util.DateTime
+import com.google.api.services.youtube.YouTube
+import com.google.api.services.youtube.model.*
 
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     
@@ -67,8 +74,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private val PICK_IMAGE_REQUEST = 101
     private val SIGN_IN_REQUEST = 102
 
-    // Google Sign-In Client
     private lateinit var googleSignInClient: GoogleSignInClient
+    
+    // YOUTUBE STREAMING VARIABLES
+    private var connectedAccountEmail: String? = null
+    private var generatedRtmpUrl: String? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -117,31 +127,64 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         webOverlay.setLayerType(View.LAYER_TYPE_SOFTWARE, null) 
         webOverlay.settings.javaScriptEnabled = true
         webOverlay.settings.domStorageEnabled = true
-        webOverlay.settings.mediaPlaybackRequiresUserGesture = false
         webOverlay.webViewClient = WebViewClient()
         webOverlay.webChromeClient = WebChromeClient()
 
-        // 🌟 GOOGLE SIGN-IN SETUP FOR YOUTUBE 🌟
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
-            .requestScopes(Scope("https://www.googleapis.com/auth/youtube")) // YouTube एक्सेस की परमिशन
+            .requestScopes(Scope("https://www.googleapis.com/auth/youtube"))
             .build()
         googleSignInClient = GoogleSignIn.getClient(this, gso)
 
-        // पहले से लॉगिन है तो बटन अपडेट कर दें
         val account = GoogleSignIn.getLastSignedInAccount(this)
         if (account != null) {
+            connectedAccountEmail = account.email
             btnSignInYouTube.text = "SIGNED IN AS: ${account.email}"
-            btnSignInYouTube.setBackgroundColor(Color.parseColor("#4CAF50")) // Green
+            btnSignInYouTube.setBackgroundColor(Color.parseColor("#4CAF50"))
             btnSignInYouTube.setTextColor(Color.WHITE)
         }
 
         btnSignInYouTube.setOnClickListener {
-            val signInIntent = googleSignInClient.signInIntent
-            startActivityForResult(signInIntent, SIGN_IN_REQUEST)
+            startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST)
         }
 
-        // SIDE PANEL EDITORS
+        // --- GO LIVE ENGINE ---
+        btnGoLive.setOnClickListener {
+            if (rtmpCamera.isStreaming) {
+                rtmpCamera.stopStream()
+                btnGoLive.text = "GO LIVE"
+                Toast.makeText(this@MainActivity, "Stream Stopped", Toast.LENGTH_SHORT).show()
+            } else {
+                if (connectedAccountEmail == null) {
+                    Toast.makeText(this@MainActivity, "Please Sign In with YouTube first!", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                
+                if (generatedRtmpUrl != null) {
+                    startRtmpStream(generatedRtmpUrl!!)
+                } else {
+                    createYouTubeBroadcast()
+                }
+            }
+        }
+
+        btnSwitchCamera.setOnClickListener { rtmpCamera.switchCamera() }
+
+        btnMicToggle.setOnClickListener {
+            if (isAudioMuted) {
+                rtmpCamera.enableAudio()
+                isAudioMuted = false
+                btnMicToggle.text = "MIC: ON"
+                btnMicToggle.setBackgroundColor(Color.parseColor("#4CAF50"))
+            } else {
+                rtmpCamera.disableAudio()
+                isAudioMuted = true
+                btnMicToggle.text = "MIC: OFF"
+                btnMicToggle.setBackgroundColor(Color.parseColor("#E53935"))
+            }
+        }
+
+        // TEXT AND LOGO EDITORS...
         etControlText.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) {
                 if (selectedOverlay is TextView && selectedOverlay != scoreMainText && selectedOverlay != scoreSubText) {
@@ -164,43 +207,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         })
 
-        // TOP CONTROLS ACTIONS
-        btnGoLive.setOnClickListener {
-            if (!rtmpCamera.isStreaming) {
-                rtmpCamera.startStream("rtmp://a.rtmp.youtube.com/live2/YOUR_STREAM_KEY")
-                btnGoLive.text = "STOP STREAM"
-            } else {
-                rtmpCamera.stopStream()
-                btnGoLive.text = "GO LIVE"
-            }
-        }
-
-        btnSwitchCamera.setOnClickListener {
-            rtmpCamera.switchCamera()
-        }
-
-        btnMicToggle.setOnClickListener {
-            if (isAudioMuted) {
-                rtmpCamera.enableAudio()
-                isAudioMuted = false
-                btnMicToggle.text = "MIC: ON"
-                btnMicToggle.setBackgroundColor(Color.parseColor("#4CAF50"))
-            } else {
-                rtmpCamera.disableAudio()
-                isAudioMuted = true
-                btnMicToggle.text = "MIC: OFF"
-                btnMicToggle.setBackgroundColor(Color.parseColor("#E53935"))
-            }
-        }
-
-        // OTHER ACTIONS
         btnAddText.setOnClickListener {
             val text = etControlText.text.toString().trim()
             if (text.isNotEmpty()) {
                 addTextOverlayToScreen(text)
                 etControlText.text.clear()
-            } else {
-                Toast.makeText(this, "Please type some text first", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -215,7 +226,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 if (it != dragScoreboard) {
                     overlayContainer.removeView(it)
                     selectedOverlay = null
-                    Toast.makeText(this, "Item Removed", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -245,10 +255,94 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
+    // --- YOUTUBE BROADCAST CREATION ENGINE ---
+    private fun createYouTubeBroadcast() {
+        btnGoLive.text = "CREATING BROADCAST..."
+        btnGoLive.isEnabled = false
+
+        Thread {
+            try {
+                val credential = GoogleAccountCredential.usingOAuth2(
+                    this@MainActivity, 
+                    listOf("https://www.googleapis.com/auth/youtube")
+                )
+                credential.selectedAccountName = connectedAccountEmail
+
+                val transport = NetHttpTransport()
+                val jsonFactory = GsonFactory.getDefaultInstance()
+
+                val youtube = YouTube.Builder(transport, jsonFactory, credential)
+                    .setApplicationName("MBLiveStudio")
+                    .build()
+
+                // 1. Create Broadcast
+                val broadcastSnippet = LiveBroadcastSnippet()
+                broadcastSnippet.title = "Live from MB Live Studio"
+                broadcastSnippet.scheduledStartTime = DateTime(System.currentTimeMillis() + 5000)
+
+                val broadcastStatus = LiveBroadcastStatus()
+                broadcastStatus.privacyStatus = "unlisted" // Test mode (Change to "public" for actual live)
+
+                var broadcast = LiveBroadcast()
+                broadcast.snippet = broadcastSnippet
+                broadcast.status = broadcastStatus
+                broadcast = youtube.liveBroadcasts().insert(listOf("snippet", "status"), broadcast).execute()
+
+                // 2. Create Stream Key
+                val streamSnippet = LiveStreamSnippet()
+                streamSnippet.title = "MB Studio Stream Key"
+
+                val cdn = CdnSettings()
+                cdn.ingestionType = "rtmp"
+                cdn.resolution = "1080p"
+                cdn.frameRate = "30fps"
+
+                var stream = LiveStream()
+                stream.snippet = streamSnippet
+                stream.cdn = cdn
+                stream = youtube.liveStreams().insert(listOf("snippet", "cdn"), stream).execute()
+
+                // 3. Bind Broadcast & Stream
+                val bindRequest = youtube.liveBroadcasts().bind(broadcast.id, listOf("id", "contentDetails"))
+                bindRequest.streamId = stream.id
+                bindRequest.execute()
+
+                // 4. Extract Final RTMP URL
+                val streamUrl = stream.cdn.ingestionInfo.ingestionAddress
+                val streamKey = stream.cdn.ingestionInfo.streamName
+                val finalUrl = "$streamUrl/$streamKey"
+
+                runOnUiThread {
+                    generatedRtmpUrl = finalUrl
+                    startRtmpStream(finalUrl)
+                }
+
+            } catch (e: Exception) {
+                e.printStackTrace()
+                runOnUiThread {
+                    btnGoLive.text = "GO LIVE"
+                    btnGoLive.isEnabled = true
+                    Toast.makeText(this@MainActivity, "API Error: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
+    }
+
+    private fun startRtmpStream(url: String) {
+        if (rtmpCamera.startStream(url)) {
+            btnGoLive.text = "STOP STREAM"
+            btnGoLive.isEnabled = true
+            Toast.makeText(this@MainActivity, "You are LIVE on YouTube!", Toast.LENGTH_SHORT).show()
+        } else {
+            btnGoLive.text = "GO LIVE"
+            btnGoLive.isEnabled = true
+            Toast.makeText(this@MainActivity, "Failed to connect to YouTube Server", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         
-        // Gallery Image Result
         if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK && data != null) {
             data.data?.let { uri ->
                 val bitmap = MediaStore.Images.Media.getBitmap(contentResolver, uri)
@@ -256,17 +350,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
         }
         
-        // Google Sign-In Result
         if (requestCode == SIGN_IN_REQUEST) {
             val task = GoogleSignIn.getSignedInAccountFromIntent(data)
             try {
                 val account = task.getResult(ApiException::class.java)
-                Toast.makeText(this, "Signed in as: ${account?.email}", Toast.LENGTH_SHORT).show()
+                connectedAccountEmail = account?.email
                 btnSignInYouTube.text = "SIGNED IN AS: ${account?.email}"
                 btnSignInYouTube.setBackgroundColor(Color.parseColor("#4CAF50"))
                 btnSignInYouTube.setTextColor(Color.WHITE)
             } catch (e: ApiException) {
-                Toast.makeText(this, "Sign-In Failed: ${e.statusCode}", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Sign-In Failed", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -312,17 +405,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         var dX = 0f; var dY = 0f
         view.setOnTouchListener { v, event ->
             scaleGestureDetector.onTouchEvent(event)
-            
             if (!scaleGestureDetector.isInProgress) {
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
                         dX = v.x - event.rawX
                         dY = v.y - event.rawY
-                        
                         selectedOverlay = v
-                        if (v is TextView && v != dragScoreboard) {
-                            etControlText.setText(v.text)
-                        }
+                        if (v is TextView && v != dragScoreboard) { etControlText.setText(v.text) }
                     }
                     MotionEvent.ACTION_MOVE -> {
                         v.x = event.rawX + dX
