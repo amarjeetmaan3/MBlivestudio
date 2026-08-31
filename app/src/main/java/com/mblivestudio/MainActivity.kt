@@ -161,7 +161,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             if (rtmpCamera.isStreaming) {
                 rtmpCamera.stopStream()
                 btnGoLive.text = "GO LIVE"
-                Toast.makeText(this@MainActivity, "Stream Stopped. Video is saving on YouTube.", Toast.LENGTH_SHORT).show()
+                btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
+                Toast.makeText(this@MainActivity, "Stream Stopped.", Toast.LENGTH_SHORT).show()
                 generatedRtmpUrl = null 
                 return@setOnClickListener
             } 
@@ -266,8 +267,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
+    // 🌟 FORCE LIVE ENGINE 🌟
     private fun createYouTubeBroadcast() {
-        btnGoLive.text = "CREATING BROADCAST..."
+        btnGoLive.text = "1/5: CONNECTING API..."
         btnGoLive.isEnabled = false
 
         val titleInput = etStreamTitle.text.toString().trim()
@@ -298,27 +300,28 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     .setApplicationName("MBLiveStudio")
                     .build()
 
+                runOnUiThread { btnGoLive.text = "2/5: CREATING ROOM..." }
+
                 val broadcastSnippet = LiveBroadcastSnippet()
                 broadcastSnippet.title = finalTitle
                 broadcastSnippet.description = finalDesc
-                broadcastSnippet.scheduledStartTime = DateTime(System.currentTimeMillis()) 
+                broadcastSnippet.scheduledStartTime = DateTime(System.currentTimeMillis() + 5000) 
 
                 val broadcastStatus = LiveBroadcastStatus()
                 broadcastStatus.privacyStatus = privacyInput
-
-                val broadcastContentDetails = LiveBroadcastContentDetails()
-                broadcastContentDetails.enableAutoStart = true
-                broadcastContentDetails.latencyPreference = "ultraLow" 
+                broadcastStatus.selfDeclaredMadeForKids = false
 
                 var broadcast = LiveBroadcast()
                 broadcast.snippet = broadcastSnippet
                 broadcast.status = broadcastStatus
-                broadcast.contentDetails = broadcastContentDetails
                 
-                broadcast = youtube.liveBroadcasts().insert("snippet,status,contentDetails", broadcast).execute()
+                // (बिना किसी Auto-Start झंझट के सिंपल इन्सर्ट)
+                broadcast = youtube.liveBroadcasts().insert("snippet,status", broadcast).execute()
+
+                runOnUiThread { btnGoLive.text = "3/5: GETTING KEY..." }
 
                 val streamSnippet = LiveStreamSnippet()
-                streamSnippet.title = "$finalTitle - Stream Key"
+                streamSnippet.title = "$finalTitle - Key"
 
                 val cdn = CdnSettings()
                 cdn.ingestionType = "rtmp"
@@ -330,6 +333,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 stream.cdn = cdn
                 stream = youtube.liveStreams().insert("snippet,cdn", stream).execute()
 
+                runOnUiThread { btnGoLive.text = "4/5: LINKING VIDEO..." }
+
                 val bindRequest = youtube.liveBroadcasts().bind(broadcast.id, "id,contentDetails")
                 bindRequest.streamId = stream.id
                 bindRequest.execute()
@@ -337,10 +342,55 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 val streamUrl = stream.cdn.ingestionInfo.ingestionAddress
                 val streamKey = stream.cdn.ingestionInfo.streamName
                 val finalUrl = "$streamUrl/$streamKey"
+                generatedRtmpUrl = finalUrl
 
-                runOnUiThread {
-                    generatedRtmpUrl = finalUrl
-                    startRtmpStream(finalUrl)
+                runOnUiThread { 
+                    btnGoLive.text = "5/5: SENDING CAMERA..." 
+                    if (!rtmpCamera.startStream(finalUrl)) {
+                        throw Exception("Camera failed to connect to RTMP.")
+                    }
+                }
+
+                // 🌟 जादुई कोड: अब हम YouTube को खुद चेक करेंगे कि वीडियो पहुँचा या नहीं 🌟
+                runOnUiThread { btnGoLive.text = "SYNCING YOUTUBE..." }
+                
+                var isVideoActive = false
+                // हम 30 सेकंड तक लगातार YouTube से पूछेंगे (15 बार x 2 सेकंड)
+                for (i in 1..15) {
+                    Thread.sleep(2000)
+                    try {
+                        val streamResponse = youtube.liveStreams().list("status").setId(stream.id).execute()
+                        val streamStatus = streamResponse.items.firstOrNull()?.status?.streamStatus
+                        
+                        if (streamStatus == "active") {
+                            isVideoActive = true
+                            break
+                        }
+                    } catch (e: Exception) {
+                        // इग्नोर करें, चेकिंग चालू रखें
+                    }
+                }
+
+                if (isVideoActive) {
+                    runOnUiThread { btnGoLive.text = "PUBLISHING LIVE..." }
+                    
+                    // 🌟 FORCE TRANSITION: जैसे ही वीडियो पहुंचा, धक्के से लाइव कर दो! 🌟
+                    youtube.liveBroadcasts().transition("live", broadcast.id, "status").execute()
+                    
+                    runOnUiThread {
+                        btnGoLive.text = "STOP STREAM"
+                        btnGoLive.isEnabled = true
+                        btnGoLive.setBackgroundColor(Color.parseColor("#E53935")) // Red color
+                        Toast.makeText(this@MainActivity, "🔥 YOU ARE LIVE ON YOUTUBE! 🔥", Toast.LENGTH_LONG).show()
+                    }
+                } else {
+                    // अगर 30 सेकंड में भी YouTube को वीडियो नहीं मिला, तो क्रैश होने से बचाएं
+                    runOnUiThread {
+                        btnGoLive.text = "GO LIVE"
+                        btnGoLive.isEnabled = true
+                        rtmpCamera.stopStream()
+                        Toast.makeText(this@MainActivity, "Timeout: YouTube Server didn't receive video.", Toast.LENGTH_LONG).show()
+                    }
                 }
 
             } catch (e: Exception) {
@@ -348,23 +398,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 runOnUiThread {
                     btnGoLive.text = "GO LIVE"
                     btnGoLive.isEnabled = true
-                    Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, "API Error: ${e.message}", Toast.LENGTH_LONG).show()
+                    etControlText.setText("ERROR: ${e.message}") 
                 }
             }
         }.start()
-    }
-
-    private fun startRtmpStream(url: String) {
-        try {
-            rtmpCamera.startStream(url)
-            btnGoLive.text = "STOP STREAM"
-            btnGoLive.isEnabled = true
-            Toast.makeText(this@MainActivity, "Live API Started! YouTube will be live in ~15 seconds.", Toast.LENGTH_LONG).show()
-        } catch (e: Exception) {
-            btnGoLive.text = "GO LIVE"
-            btnGoLive.isEnabled = true
-            Toast.makeText(this@MainActivity, "Failed to start stream", Toast.LENGTH_SHORT).show()
-        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
