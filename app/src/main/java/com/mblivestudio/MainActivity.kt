@@ -32,9 +32,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.Scope
 import com.google.android.gms.common.api.ApiException
 
-// YOUTUBE API IMPORTS
 import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
-import com.google.api.client.googleapis.extensions.android.gms.auth.UserRecoverableAuthIOException
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.client.util.DateTime
@@ -69,6 +67,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private lateinit var btnSwitchCamera: Button
     private lateinit var btnMicToggle: Button
 
+    // 🌟 NEW: BROADCAST UI ELEMENTS 🌟
+    private lateinit var etStreamTitle: EditText
+    private lateinit var etStreamDesc: EditText
+    private lateinit var spinnerPrivacy: Spinner
+
     private var selectedOverlay: View? = null
     private var isAudioMuted = false
 
@@ -77,7 +80,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private val REQUEST_AUTHORIZATION = 1001
 
     private lateinit var googleSignInClient: GoogleSignInClient
-    
     private var connectedAccountEmail: String? = null
     private var generatedRtmpUrl: String? = null
 
@@ -110,14 +112,23 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnGoLive = findViewById(R.id.btnGoLive)
         btnSwitchCamera = findViewById(R.id.btnSwitchCamera)
         btnMicToggle = findViewById(R.id.btnMicToggle)
+
+        // 🌟 INIT BROADCAST UI 🌟
+        etStreamTitle = findViewById(R.id.etStreamTitle)
+        etStreamDesc = findViewById(R.id.etStreamDesc)
+        spinnerPrivacy = findViewById(R.id.spinnerPrivacy)
+
+        // Setup Privacy Spinner
+        val privacyOptions = arrayOf("Public", "Unlisted", "Private")
+        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, privacyOptions)
+        spinnerPrivacy.adapter = adapter
+        spinnerPrivacy.setSelection(1) // Default to Unlisted for safety
         
         rtmpCamera = RtmpCamera2(openGlView, this)
         openGlView.holder.addCallback(this)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
-            }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
         }
 
         viewFilterRender = AndroidViewFilterRender()
@@ -155,17 +166,26 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 rtmpCamera.stopStream()
                 btnGoLive.text = "GO LIVE"
                 Toast.makeText(this@MainActivity, "Stream Stopped", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            } 
+            
+            val currentAccount = GoogleSignIn.getLastSignedInAccount(this)
+            if (currentAccount == null) {
+                Toast.makeText(this@MainActivity, "Please Sign In with YouTube first!", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            // 🌟 NEW PERMISSION CHECK: यह स्क्रीन को अटकने नहीं देगा और सीधा पॉप-अप लाएगा 🌟
+            val youtubeScope = Scope("https://www.googleapis.com/auth/youtube")
+            if (!GoogleSignIn.hasPermissions(currentAccount, youtubeScope)) {
+                GoogleSignIn.requestPermissions(this, REQUEST_AUTHORIZATION, currentAccount, youtubeScope)
+                return@setOnClickListener
+            }
+            
+            if (generatedRtmpUrl != null) {
+                startRtmpStream(generatedRtmpUrl!!)
             } else {
-                if (connectedAccountEmail == null) {
-                    Toast.makeText(this@MainActivity, "Please Sign In with YouTube first!", Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
-                
-                if (generatedRtmpUrl != null) {
-                    startRtmpStream(generatedRtmpUrl!!)
-                } else {
-                    createYouTubeBroadcast()
-                }
+                createYouTubeBroadcast()
             }
         }
 
@@ -237,7 +257,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
 
         makeDraggableAndScalable(dragScoreboard)
-
         btnApplyWeb.setOnClickListener {
             if (webOverlay.visibility == View.GONE) {
                 val url = etWebUrl.text.toString().trim()
@@ -255,10 +274,17 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // --- YOUTUBE BROADCAST CREATION ENGINE ---
     private fun createYouTubeBroadcast() {
         btnGoLive.text = "CREATING BROADCAST..."
         btnGoLive.isEnabled = false
+
+        // 🌟 GET DATA FROM UI 🌟
+        val titleInput = etStreamTitle.text.toString().trim()
+        val descInput = etStreamDesc.text.toString().trim()
+        val privacyInput = spinnerPrivacy.selectedItem.toString().lowercase()
+
+        val finalTitle = if (titleInput.isNotEmpty()) titleInput else "Live from MB Live Studio"
+        val finalDesc = if (descInput.isNotEmpty()) descInput else "Streaming via MB Live Studio Android App"
 
         Thread {
             try {
@@ -267,7 +293,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     listOf("https://www.googleapis.com/auth/youtube")
                 )
                 
-                // Account Manager Fix
                 val signInAccount = GoogleSignIn.getLastSignedInAccount(this@MainActivity)
                 if (signInAccount?.account != null) {
                     credential.selectedAccount = signInAccount.account
@@ -283,11 +308,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     .build()
 
                 val broadcastSnippet = LiveBroadcastSnippet()
-                broadcastSnippet.title = "Live from MB Live Studio"
-                broadcastSnippet.scheduledStartTime = DateTime(System.currentTimeMillis() + 5000)
+                broadcastSnippet.title = finalTitle
+                broadcastSnippet.description = finalDesc
+                broadcastSnippet.scheduledStartTime = DateTime(System.currentTimeMillis() + 10000)
 
                 val broadcastStatus = LiveBroadcastStatus()
-                broadcastStatus.privacyStatus = "unlisted" // Change to public for real stream
+                broadcastStatus.privacyStatus = privacyInput
 
                 var broadcast = LiveBroadcast()
                 broadcast.snippet = broadcastSnippet
@@ -295,7 +321,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 broadcast = youtube.liveBroadcasts().insert("snippet,status", broadcast).execute()
 
                 val streamSnippet = LiveStreamSnippet()
-                streamSnippet.title = "MB Studio Stream Key"
+                streamSnippet.title = "$finalTitle - Stream Key"
 
                 val cdn = CdnSettings()
                 cdn.ingestionType = "rtmp"
@@ -320,22 +346,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     startRtmpStream(finalUrl)
                 }
 
-            } catch (userRecoverableAuthIOException: UserRecoverableAuthIOException) {
-                // यह वह पॉप-अप है जो पहले ब्लॉक हो रहा था
-                runOnUiThread {
-                    btnGoLive.text = "GO LIVE"
-                    btnGoLive.isEnabled = true
-                    startActivityForResult(userRecoverableAuthIOException.intent, REQUEST_AUTHORIZATION)
-                }
-            } catch (e: Throwable) {
+            } catch (e: Exception) {
                 e.printStackTrace()
                 runOnUiThread {
                     btnGoLive.text = "GO LIVE"
                     btnGoLive.isEnabled = true
-                    val errorMsg = e.message ?: "Unknown Error"
-                    Toast.makeText(this@MainActivity, "API Error Occurred!", Toast.LENGTH_LONG).show()
-                    // स्क्रीन पर मौजूद बॉक्स में एरर दिखाएँ ताकि आपको पता चले
-                    etControlText.setText("ERROR: $errorMsg")
+                    Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }.start()
@@ -346,7 +362,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             rtmpCamera.startStream(url)
             btnGoLive.text = "STOP STREAM"
             btnGoLive.isEnabled = true
-            Toast.makeText(this@MainActivity, "Connecting to YouTube...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@MainActivity, "You are LIVE!", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             btnGoLive.text = "GO LIVE"
             btnGoLive.isEnabled = true
@@ -357,10 +373,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         
-        // जब यूजर YouTube की परमिशन Allow कर दे
-        if (requestCode == REQUEST_AUTHORIZATION && resultCode == RESULT_OK) {
-            Toast.makeText(this, "Permission Granted! Creating Broadcast...", Toast.LENGTH_SHORT).show()
-            createYouTubeBroadcast()
+        // 🌟 NEW: Handles Permission Dialog Result 🌟
+        if (requestCode == REQUEST_AUTHORIZATION) {
+            val account = GoogleSignIn.getLastSignedInAccount(this)
+            if (GoogleSignIn.hasPermissions(account, Scope("https://www.googleapis.com/auth/youtube"))) {
+                Toast.makeText(this, "Permission Granted! Click GO LIVE again to start.", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(this, "Permission Denied by User.", Toast.LENGTH_LONG).show()
+            }
         }
 
         if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK && data != null) {
@@ -390,9 +410,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             setTextColor(Color.YELLOW)
             textSize = 30f
             setTypeface(null, android.graphics.Typeface.BOLD)
-            layoutParams = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT).apply {
-                addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE)
-            }
+            layoutParams = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) }
         }
         overlayContainer.addView(textView)
         makeDraggableAndScalable(textView)
@@ -402,9 +420,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private fun addImageOverlayToScreen(bitmap: Bitmap) {
         val imageView = ImageView(this).apply {
             setImageBitmap(bitmap)
-            layoutParams = RelativeLayout.LayoutParams(300, 300).apply {
-                addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE)
-            }
+            layoutParams = RelativeLayout.LayoutParams(300, 300).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) }
         }
         overlayContainer.addView(imageView)
         makeDraggableAndScalable(imageView)
@@ -415,52 +431,29 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private fun makeDraggableAndScalable(view: View) {
         val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
-                val scaleFactor = detector.scaleFactor
-                view.scaleX *= scaleFactor
-                view.scaleY *= scaleFactor
+                view.scaleX *= detector.scaleFactor
+                view.scaleY *= detector.scaleFactor
                 return true
             }
         })
-
         var dX = 0f; var dY = 0f
         view.setOnTouchListener { v, event ->
             scaleGestureDetector.onTouchEvent(event)
             if (!scaleGestureDetector.isInProgress) {
                 when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> {
-                        dX = v.x - event.rawX
-                        dY = v.y - event.rawY
-                        selectedOverlay = v
-                        if (v is TextView && v != dragScoreboard) { etControlText.setText(v.text) }
-                    }
-                    MotionEvent.ACTION_MOVE -> {
-                        v.x = event.rawX + dX
-                        v.y = event.rawY + dY
-                    }
+                    MotionEvent.ACTION_DOWN -> { dX = v.x - event.rawX; dY = v.y - event.rawY; selectedOverlay = v; if (v is TextView && v != dragScoreboard) { etControlText.setText(v.text) } }
+                    MotionEvent.ACTION_MOVE -> { v.x = event.rawX + dX; v.y = event.rawY + dY }
                 }
             }
             true
         }
     }
 
-    private fun startCameraPreview() {
-        if (!rtmpCamera.isOnPreview) {
-            if (rtmpCamera.prepareAudio() && rtmpCamera.prepareVideo()) rtmpCamera.startPreview()
-        }
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        startCameraPreview()
-    }
-    
+    private fun startCameraPreview() { if (!rtmpCamera.isOnPreview) { if (rtmpCamera.prepareAudio() && rtmpCamera.prepareVideo()) rtmpCamera.startPreview() } }
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) { super.onRequestPermissionsResult(requestCode, permissions, grantResults); startCameraPreview() }
     override fun surfaceCreated(holder: SurfaceHolder) {}
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) { startCameraPreview() }
-    override fun surfaceDestroyed(holder: SurfaceHolder) {
-        if (rtmpCamera.isStreaming) rtmpCamera.stopStream()
-        if (rtmpCamera.isOnPreview) rtmpCamera.stopPreview()
-    }
-    
+    override fun surfaceDestroyed(holder: SurfaceHolder) { if (rtmpCamera.isStreaming) rtmpCamera.stopStream(); if (rtmpCamera.isOnPreview) rtmpCamera.stopPreview() }
     override fun onAuthError() {}
     override fun onAuthSuccess() {}
     override fun onConnectionFailed(reason: String) {}
