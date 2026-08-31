@@ -5,6 +5,7 @@
     android:orientation="horizontal"
     android:background="#121212">
 
+    <!-- Camera Preview Area -->
     <FrameLayout
         android:layout_width="0dp"
         android:layout_height="match_parent"
@@ -15,12 +16,14 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
             
+        <!-- INTERACTIVE MASTER CONTAINER -->
         <RelativeLayout
             android:id="@+id/overlayContainer"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:background="@android:color/transparent">
             
+            <!-- WEB OVERLAY LAYER (सबसे नीचे) -->
             <WebView
                 android:id="@+id/webOverlay"
                 android:layout_width="match_parent"
@@ -28,6 +31,23 @@
                 android:background="@android:color/transparent"
                 android:visibility="gone" />
 
+            <!-- 1. MOVABLE LOGO -->
+            <TextView
+                android:id="@+id/dragLogo"
+                android:layout_width="60dp"
+                android:layout_height="60dp"
+                android:text="MB"
+                android:textColor="#FFFFFF"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:gravity="center"
+                android:background="#E53935"
+                android:layout_alignParentTop="true"
+                android:layout_alignParentRight="true"
+                android:layout_margin="20dp"
+                android:visibility="gone"/>
+
+            <!-- 2. MOVABLE TITLE TEXT -->
             <TextView
                 android:id="@+id/dragText"
                 android:layout_width="wrap_content"
@@ -40,6 +60,7 @@
                 android:layout_margin="20dp"
                 android:visibility="gone"/>
 
+            <!-- 3. MOVABLE SCOREBOARD -->
             <LinearLayout
                 android:id="@+id/dragScoreboard"
                 android:layout_width="wrap_content"
@@ -60,10 +81,19 @@
                     android:textColor="#FFFFFF"
                     android:textSize="32sp"
                     android:textStyle="bold" />
+                    
+                <TextView
+                    android:id="@+id/scoreSubText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Target: 312 | CRR: 6.08"
+                    android:textColor="#FFFF00"
+                    android:textSize="18sp" />
             </LinearLayout>
         </RelativeLayout>
     </FrameLayout>
 
+    <!-- Right Controls Panel -->
     <ScrollView
         android:layout_width="0dp"
         android:layout_height="match_parent"
@@ -86,6 +116,18 @@
                 android:layout_marginBottom="20dp"
                 android:gravity="center"/>
 
+            <!-- CAMERA SWITCH BUTTON -->
+            <Button
+                android:id="@+id/btnSwitchCamera"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="SWITCH CAMERA (F/B)"
+                android:backgroundTint="#FF9800"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold"
+                android:layout_marginBottom="15dp"/>
+
+            <!-- WEB OVERLAY CONTROLS -->
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -119,6 +161,7 @@
                 android:background="#444444"
                 android:layout_marginBottom="20dp"/>
 
+            <!-- NORMAL OVERLAY CONTROLS -->
             <Button
                 android:id="@+id/btnTitleText"
                 android:layout_width="match_parent"
@@ -129,7 +172,13 @@
                 android:id="@+id/btnScoreboard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="SHOW SCORECARD" 
+                android:text="SHOW SCORECARD" />
+
+            <Button
+                android:id="@+id/btnLogo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="SHOW LOGO" 
                 android:layout_marginBottom="30dp"/>
 
             <Button
