@@ -301,7 +301,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 val broadcastSnippet = LiveBroadcastSnippet()
                 broadcastSnippet.title = finalTitle
                 broadcastSnippet.description = finalDesc
-                // 🌟 FIX 1: Time set to Current Time (Right Now) 🌟
                 broadcastSnippet.scheduledStartTime = DateTime(System.currentTimeMillis()) 
 
                 val broadcastStatus = LiveBroadcastStatus()
@@ -309,8 +308,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
                 val broadcastContentDetails = LiveBroadcastContentDetails()
                 broadcastContentDetails.enableAutoStart = true
-                broadcastContentDetails.enableAutoStop = true
-                // लेटेंसी कम करने के लिए सेटिंग
                 broadcastContentDetails.latencyPreference = "ultraLow" 
 
                 var broadcast = LiveBroadcast()
@@ -325,7 +322,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
                 val cdn = CdnSettings()
                 cdn.ingestionType = "rtmp"
-                // 🌟 FIX 2: Variable Resolution & FrameRate (यह वीडियो को अटकने नहीं देगा) 🌟
                 cdn.resolution = "variable" 
                 cdn.frameRate = "variable"
 
