@@ -28,5 +28,11 @@ android {
 }
 
 dependencies {
+    // RootEncoder for live streaming
     implementation("com.github.pedroSG94.RootEncoder:library:2.5.1")
+    
+    // AndroidX libraries needed for ComponentActivity and ActivityResultContracts
+    implementation("androidx.core:core-ktx:1.12.0")
+    implementation("androidx.appcompat:appcompat:1.6.1")
+    implementation("androidx.activity:activity-ktx:1.8.2")
 }
