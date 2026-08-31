@@ -80,7 +80,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     private lateinit var googleSignInClient: GoogleSignInClient
     private var connectedAccountEmail: String? = null
-    private var generatedRtmpUrl: String? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -117,8 +116,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         spinnerPrivacy = findViewById(R.id.spinnerPrivacy)
 
         val privacyOptions = arrayOf("Public", "Unlisted", "Private")
-        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, privacyOptions)
-        spinnerPrivacy.adapter = adapter
+        spinnerPrivacy.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, privacyOptions)
         spinnerPrivacy.setSelection(1)
         
         rtmpCamera = RtmpCamera2(openGlView, this)
@@ -163,7 +161,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 btnGoLive.text = "GO LIVE"
                 btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
                 Toast.makeText(this@MainActivity, "Stream Stopped.", Toast.LENGTH_SHORT).show()
-                generatedRtmpUrl = null 
                 return@setOnClickListener
             } 
             
@@ -228,6 +225,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnToggleScore.setOnClickListener { val isVis = dragScoreboard.visibility == View.VISIBLE; dragScoreboard.visibility = if(isVis) View.GONE else View.VISIBLE; btnToggleScore.text = if(isVis) "SHOW SCORECARD ON SCREEN" else "HIDE SCORECARD" }
 
         makeDraggableAndScalable(dragScoreboard)
+        
         btnApplyWeb.setOnClickListener {
             if (webOverlay.visibility == View.GONE) {
                 val url = etWebUrl.text.toString().trim()
@@ -253,8 +251,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val descInput = etStreamDesc.text.toString().trim()
         val privacyInput = spinnerPrivacy.selectedItem.toString().lowercase()
 
-        val finalTitle = if (titleInput.isNotEmpty()) titleInput else "Live from MB Live Studio"
-        val finalDesc = if (descInput.isNotEmpty()) descInput else "Streaming via MB Live Studio Android App"
+        val finalTitle = if (titleInput.isNotEmpty()) titleInput else "Live from M.B. Live Studio"
+        val finalDesc = if (descInput.isNotEmpty()) descInput else "Streaming via M.B. Live Studio Android App"
 
         Thread {
             try {
@@ -305,36 +303,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 bindRequest.execute()
 
                 val finalUrl = "${stream.cdn.ingestionInfo.ingestionAddress}/${stream.cdn.ingestionInfo.streamName}"
-                generatedRtmpUrl = finalUrl
 
-                runOnUiThread { btnGoLive.text = "5/5: SENDING CAMERA..." }
-
-                // 🌟 FIX: यह कैमरा एनकोडर को स्ट्रीम भेजने से ठीक 1 सेकंड पहले रेडी करेगा 🌟
-                var vReady = try { rtmpCamera.prepareVideo(1280, 720, 30) } catch (e: Exception) { false }
-                if (!vReady) vReady = try { rtmpCamera.prepareVideo(854, 480, 30) } catch (e: Exception) { false }
-                if (!vReady) vReady = try { rtmpCamera.prepareVideo(640, 480, 30) } catch (e: Exception) { false }
-                if (!vReady) vReady = try { rtmpCamera.prepareVideo() } catch (e: Exception) { false }
-                
-                val aReady = try { rtmpCamera.prepareAudio() } catch (e: Exception) { false }
-
-                if (!vReady || !aReady) {
-                    runOnUiThread {
-                        btnGoLive.text = "GO LIVE"
-                        btnGoLive.isEnabled = true
-                        Toast.makeText(this@MainActivity, "Hardware Error: Tablet camera failed to prepare video encoder.", Toast.LENGTH_LONG).show()
-                    }
-                    return@Thread
-                }
-
-              try {
-                    rtmpCamera.startStream(finalUrl)
-                } catch (e: Exception) {
-                    runOnUiThread {
+                runOnUiThread { 
+                    btnGoLive.text = "5/5: SENDING CAMERA..." 
+                    try {
+                        rtmpCamera.startStream(finalUrl)
+                    } catch (e: Exception) {
                         btnGoLive.text = "GO LIVE"
                         btnGoLive.isEnabled = true
                         Toast.makeText(this@MainActivity, "Network Error: Failed to connect.", Toast.LENGTH_LONG).show()
                     }
-                    return@Thread
                 }
 
                 runOnUiThread { btnGoLive.text = "SYNCING YOUTUBE..." }
@@ -443,10 +421,18 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // 🌟 CLEAN PREVIEW ENGINE (सिर्फ प्रीव्यू चलाएगा, एनकोडर को लॉक नहीं करेगा) 🌟
+    // 🌟 CORRECTED PREVIEW & ENCODER ENGINE 🌟
     private fun startCameraPreview() { 
         if (!rtmpCamera.isOnPreview) { 
-            rtmpCamera.startPreview() 
+            // बिना किसी हार्डकोडेड नंबर के, यह टैबलेट की बेस्ट सेटिंग खुद सेट कर लेगा।
+            val isVideoPrepared = rtmpCamera.prepareVideo()
+            val isAudioPrepared = rtmpCamera.prepareAudio()
+
+            if (isVideoPrepared && isAudioPrepared) {
+                rtmpCamera.startPreview() 
+            } else {
+                Toast.makeText(this, "Camera Error: Tablet blocked encoder preparation.", Toast.LENGTH_LONG).show()
+            }
         } 
     }
     
