@@ -2,7 +2,6 @@ package com.mblivestudio
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.app.Activity
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -22,13 +21,16 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.pedro.common.ConnectChecker
 import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
 import com.pedro.encoder.input.gl.render.filters.AndroidViewFilterRender
 
-class MainActivity : ComponentActivity(), ConnectChecker, SurfaceHolder.Callback {
+class MainActivity : AppCompatActivity(), ConnectChecker, SurfaceHolder.Callback {
     
     private lateinit var rtmpCamera: RtmpCamera2
     private lateinit var openGlView: OpenGlView
@@ -53,10 +55,9 @@ class MainActivity : ComponentActivity(), ConnectChecker, SurfaceHolder.Callback
     private lateinit var btnSwitchCamera: Button
     private lateinit var btnGoLive: Button
 
-    // जो आइटम (टेक्स्ट/लोगो) स्क्रीन पर सेलेक्टेड होगा, वो यहाँ सेव होगा
     private var selectedOverlay: View? = null
 
-    // गैलरी से फोटो चुनने का लॉजिक
+    // गैलरी लॉन्चर
     private val pickImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
             val bitmap = MediaStore.Images.Media.getBitmap(contentResolver, it)
@@ -94,8 +95,10 @@ class MainActivity : ComponentActivity(), ConnectChecker, SurfaceHolder.Callback
         rtmpCamera = RtmpCamera2(openGlView, this)
         openGlView.holder.addCallback(this)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
+            }
         }
 
         viewFilterRender = AndroidViewFilterRender()
@@ -111,8 +114,6 @@ class MainActivity : ComponentActivity(), ConnectChecker, SurfaceHolder.Callback
         webOverlay.webChromeClient = WebChromeClient()
 
         // --- SIDE PANEL LIVE EDITING LOGIC ---
-        
-        // 1. Text Overlay Editor
         etControlText.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) {
                 if (selectedOverlay is TextView && selectedOverlay != scoreMainText && selectedOverlay != scoreSubText) {
@@ -123,7 +124,6 @@ class MainActivity : ComponentActivity(), ConnectChecker, SurfaceHolder.Callback
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         })
 
-        // 2. Scoreboard Live Editor
         etScoreMain.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) { scoreMainText.text = s.toString() }
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -136,28 +136,26 @@ class MainActivity : ComponentActivity(), ConnectChecker, SurfaceHolder.Callback
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         })
 
-        // --- BUTTON ACTIONS ---
-
         btnAddText.setOnClickListener {
             val text = etControlText.text.toString().trim()
             if (text.isNotEmpty()) {
                 addTextOverlayToScreen(text)
-                etControlText.text.clear() // Clear box for next input
+                etControlText.text.clear()
             } else {
-                Toast.makeText(this, "Please type some text first", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "Please type some text first", Toast.LENGTH_SHORT).show()
             }
         }
 
         btnAddLogo.setOnClickListener {
-            pickImageLauncher.launch("image/*") // ओपन गैलरी
+            pickImageLauncher.launch("image/*")
         }
 
         btnRemoveSelected.setOnClickListener {
             selectedOverlay?.let {
-                if (it != dragScoreboard) { // स्कोरबोर्ड को डिलीट नहीं करेंगे, सिर्फ हाईड करेंगे
+                if (it != dragScoreboard) {
                     overlayContainer.removeView(it)
                     selectedOverlay = null
-                    Toast.makeText(this, "Item Removed", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, "Item Removed", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -201,8 +199,6 @@ class MainActivity : ComponentActivity(), ConnectChecker, SurfaceHolder.Callback
         }
     }
 
-    // --- DYNAMIC CREATION ENGINES ---
-
     private fun addTextOverlayToScreen(text: String) {
         val textView = TextView(this).apply {
             this.text = text
@@ -215,13 +211,13 @@ class MainActivity : ComponentActivity(), ConnectChecker, SurfaceHolder.Callback
         }
         overlayContainer.addView(textView)
         makeDraggableAndScalable(textView)
-        selectedOverlay = textView // नया टेक्स्ट तुरंत सेलेक्ट हो जाएगा
+        selectedOverlay = textView
     }
 
     private fun addImageOverlayToScreen(bitmap: Bitmap) {
         val imageView = ImageView(this).apply {
             setImageBitmap(bitmap)
-            layoutParams = RelativeLayout.LayoutParams(250, 250).apply {
+            layoutParams = RelativeLayout.LayoutParams(300, 300).apply {
                 addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE)
             }
         }
@@ -230,7 +226,6 @@ class MainActivity : ComponentActivity(), ConnectChecker, SurfaceHolder.Callback
         selectedOverlay = imageView
     }
 
-    // --- DRAG, ZOOM (SCALE) AND SELECT LOGIC ---
     @SuppressLint("ClickableViewAccessibility")
     private fun makeDraggableAndScalable(view: View) {
         val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
@@ -244,20 +239,17 @@ class MainActivity : ComponentActivity(), ConnectChecker, SurfaceHolder.Callback
 
         var dX = 0f; var dY = 0f
         view.setOnTouchListener { v, event ->
-            // पिंच-टू-ज़ूम चेक करें
             scaleGestureDetector.onTouchEvent(event)
             
-            // अगर ज़ूम नहीं हो रहा, तो ड्रैग (मूव) करें
             if (!scaleGestureDetector.isInProgress) {
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
                         dX = v.x - event.rawX
                         dY = v.y - event.rawY
                         
-                        // टच करते ही आइटम 'Select' हो जाएगा
                         selectedOverlay = v
                         if (v is TextView && v != dragScoreboard) {
-                            etControlText.setText(v.text) // साइड पैनल बॉक्स में उसका टेक्स्ट आ जाएगा
+                            etControlText.setText(v.text)
                         }
                     }
                     MotionEvent.ACTION_MOVE -> {
