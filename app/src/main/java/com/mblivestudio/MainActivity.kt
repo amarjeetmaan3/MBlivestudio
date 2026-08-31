@@ -267,7 +267,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // 🌟 FORCE LIVE ENGINE 🌟
+  // 🌟 FORCE LIVE ENGINE (FIXED) 🌟
     private fun createYouTubeBroadcast() {
         btnGoLive.text = "1/5: CONNECTING API..."
         btnGoLive.isEnabled = false
@@ -315,7 +315,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 broadcast.snippet = broadcastSnippet
                 broadcast.status = broadcastStatus
                 
-                // (बिना किसी Auto-Start झंझट के सिंपल इन्सर्ट)
                 broadcast = youtube.liveBroadcasts().insert("snippet,status", broadcast).execute()
 
                 runOnUiThread { btnGoLive.text = "3/5: GETTING KEY..." }
@@ -346,16 +345,17 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
                 runOnUiThread { 
                     btnGoLive.text = "5/5: SENDING CAMERA..." 
-                    if (!rtmpCamera.startStream(finalUrl)) {
-                        throw Exception("Camera failed to connect to RTMP.")
+                    // 🌟 FIX: Removed the '!' error condition 🌟
+                    try {
+                        rtmpCamera.startStream(finalUrl)
+                    } catch (e: Exception) {
+                        Toast.makeText(this@MainActivity, "Camera failed to connect", Toast.LENGTH_SHORT).show()
                     }
                 }
 
-                // 🌟 जादुई कोड: अब हम YouTube को खुद चेक करेंगे कि वीडियो पहुँचा या नहीं 🌟
                 runOnUiThread { btnGoLive.text = "SYNCING YOUTUBE..." }
                 
                 var isVideoActive = false
-                // हम 30 सेकंड तक लगातार YouTube से पूछेंगे (15 बार x 2 सेकंड)
                 for (i in 1..15) {
                     Thread.sleep(2000)
                     try {
@@ -366,25 +366,21 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                             isVideoActive = true
                             break
                         }
-                    } catch (e: Exception) {
-                        // इग्नोर करें, चेकिंग चालू रखें
-                    }
+                    } catch (e: Exception) {}
                 }
 
                 if (isVideoActive) {
                     runOnUiThread { btnGoLive.text = "PUBLISHING LIVE..." }
                     
-                    // 🌟 FORCE TRANSITION: जैसे ही वीडियो पहुंचा, धक्के से लाइव कर दो! 🌟
                     youtube.liveBroadcasts().transition("live", broadcast.id, "status").execute()
                     
                     runOnUiThread {
                         btnGoLive.text = "STOP STREAM"
                         btnGoLive.isEnabled = true
-                        btnGoLive.setBackgroundColor(Color.parseColor("#E53935")) // Red color
+                        btnGoLive.setBackgroundColor(Color.parseColor("#E53935"))
                         Toast.makeText(this@MainActivity, "🔥 YOU ARE LIVE ON YOUTUBE! 🔥", Toast.LENGTH_LONG).show()
                     }
                 } else {
-                    // अगर 30 सेकंड में भी YouTube को वीडियो नहीं मिला, तो क्रैश होने से बचाएं
                     runOnUiThread {
                         btnGoLive.text = "GO LIVE"
                         btnGoLive.isEnabled = true
