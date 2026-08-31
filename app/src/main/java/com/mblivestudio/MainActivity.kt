@@ -185,7 +185,18 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             createYouTubeBroadcast()
         }
 
-        btnSwitchCamera.setOnClickListener { rtmpCamera.switchCamera() }
+        // 🌟 SAFE CAMERA FLIP ENGINE 🌟
+        btnSwitchCamera.setOnClickListener { 
+            try {
+                rtmpCamera.switchCamera()
+                if (!rtmpCamera.isStreaming) {
+                    rtmpCamera.stopPreview()
+                    startCameraPreview()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity, "Cannot flip camera right now.", Toast.LENGTH_SHORT).show()
+            }
+        }
 
         btnMicToggle.setOnClickListener {
             if (isAudioMuted) {
@@ -210,253 +221,71 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         etScoreMain.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) { scoreMainText.text = s.toString() }
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-        })
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}Apne `MainActivity.kt` mein purane `startCameraPreview()` method ko is naye **Smart Auto-Detect Engine** wale code se replace kar dijiye. Yeh **M.B. Live Studio** ko tablet par crash hone se bachaane ke liye device ke supported hardware resolutions ko dynamically fetch karega aur sabse stable settings auto-apply karega.
 
-        etScoreSub.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) { scoreSubText.text = s.toString() }
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-        })
-
-        btnAddText.setOnClickListener { val text = etControlText.text.toString().trim(); if (text.isNotEmpty()) { addTextOverlayToScreen(text); etControlText.text.clear() } }
-        btnAddLogo.setOnClickListener { val intent = Intent(Intent.ACTION_GET_CONTENT); intent.type = "image/*"; startActivityForResult(intent, PICK_IMAGE_REQUEST) }
-        btnRemoveSelected.setOnClickListener { selectedOverlay?.let { if (it != dragScoreboard) { overlayContainer.removeView(it); selectedOverlay = null } } }
-        btnToggleScore.setOnClickListener { val isVis = dragScoreboard.visibility == View.VISIBLE; dragScoreboard.visibility = if(isVis) View.GONE else View.VISIBLE; btnToggleScore.text = if(isVis) "SHOW SCORECARD ON SCREEN" else "HIDE SCORECARD" }
-        makeDraggableAndScalable(dragScoreboard)
-        
-        btnApplyWeb.setOnClickListener {
-            if (webOverlay.visibility == View.GONE) {
-                val url = etWebUrl.text.toString().trim()
-                if (url.isNotEmpty()) {
-                    val finalUrl = if (!url.startsWith("http")) "https://$url" else url
-                    webOverlay.loadUrl(finalUrl)
-                    webOverlay.visibility = View.VISIBLE
-                    btnApplyWeb.text = "HIDE WEB OVERLAY"
-                }
-            } else {
-                webOverlay.visibility = View.GONE
-                webOverlay.loadUrl("about:blank")
-                btnApplyWeb.text = "SHOW WEB OVERLAY"
-            }
-        }
-    }
-
-    private fun createYouTubeBroadcast() {
-        btnGoLive.text = "1/4: CONNECTING API..."
-        btnGoLive.isEnabled = false
-
-        val titleInput = etStreamTitle.text.toString().trim()
-        val descInput = etStreamDesc.text.toString().trim()
-        val privacyInput = spinnerPrivacy.selectedItem.toString().lowercase()
-
-        val finalTitle = if (titleInput.isNotEmpty()) titleInput else "Live from M.B. Live Studio"
-        val finalDesc = if (descInput.isNotEmpty()) descInput else "Streaming via Android App"
-
-        Thread {
-            try {
-                val credential = GoogleAccountCredential.usingOAuth2(this@MainActivity, listOf("https://www.googleapis.com/auth/youtube"))
-                val signInAccount = GoogleSignIn.getLastSignedInAccount(this@MainActivity)
-                if (signInAccount?.account != null) credential.selectedAccount = signInAccount.account
-                else credential.selectedAccountName = connectedAccountEmail
-
-                val transport = NetHttpTransport()
-                val jsonFactory = GsonFactory.getDefaultInstance()
-                val youtube = YouTube.Builder(transport, jsonFactory, credential).setApplicationName("MBLiveStudio").build()
-
-                runOnUiThread { btnGoLive.text = "2/4: CREATING ROOM..." }
-
-                val broadcastSnippet = LiveBroadcastSnippet()
-                broadcastSnippet.title = finalTitle
-                broadcastSnippet.description = finalDesc
-                broadcastSnippet.scheduledStartTime = DateTime(System.currentTimeMillis()) 
-
-                val broadcastStatus = LiveBroadcastStatus()
-                broadcastStatus.privacyStatus = privacyInput
-                broadcastStatus.selfDeclaredMadeForKids = false
-
-                // 🌟 RESTORED AUTO-START 🌟
-                val broadcastContentDetails = LiveBroadcastContentDetails()
-                broadcastContentDetails.enableAutoStart = true
-                broadcastContentDetails.latencyPreference = "ultraLow" 
-
-                var broadcast = LiveBroadcast()
-                broadcast.snippet = broadcastSnippet
-                broadcast.status = broadcastStatus
-                broadcast.contentDetails = broadcastContentDetails
-                broadcast = youtube.liveBroadcasts().insert("snippet,status,contentDetails", broadcast).execute()
-
-                runOnUiThread { btnGoLive.text = "3/4: GETTING KEY..." }
-
-                val streamSnippet = LiveStreamSnippet()
-                streamSnippet.title = "$finalTitle - Key"
-
-                val cdn = CdnSettings()
-                cdn.ingestionType = "rtmp"
-                cdn.resolution = "variable" 
-                cdn.frameRate = "variable"
-
-                var stream = LiveStream()
-                stream.snippet = streamSnippet
-                stream.cdn = cdn
-                stream = youtube.liveStreams().insert("snippet,cdn", stream).execute()
-
-                val bindRequest = youtube.liveBroadcasts().bind(broadcast.id, "id,contentDetails")
-                bindRequest.streamId = stream.id
-                bindRequest.execute()
-
-                val finalUrl = "${stream.cdn.ingestionInfo.ingestionAddress}/${stream.cdn.ingestionInfo.streamName}"
-
-                runOnUiThread { 
-                    btnGoLive.text = "4/4: CONNECTING CAMERA..." 
-                    try {
-                        rtmpCamera.startStream(finalUrl)
-                        // अब यह बैकग्राउंड में कनेक्ट होगा और ConnectChecker (नीचे) रिजल्ट बताएगा
-                    } catch (e: Exception) {
-                        btnGoLive.text = "GO LIVE"
-                        btnGoLive.isEnabled = true
-                        Toast.makeText(this@MainActivity, "Encoder Error: Tablet failed to start streaming.", Toast.LENGTH_LONG).show()
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                runOnUiThread {
-                    btnGoLive.text = "GO LIVE"
-                    btnGoLive.isEnabled = true
-                    Toast.makeText(this@MainActivity, "API Error: ${e.message}", Toast.LENGTH_LONG).show()
-                }
-            }
-        }.start()
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQUEST_AUTHORIZATION) {
-            val account = GoogleSignIn.getLastSignedInAccount(this)
-            if (GoogleSignIn.hasPermissions(account, Scope("https://www.googleapis.com/auth/youtube"))) {
-                Toast.makeText(this, "Permission Granted! Click GO LIVE again.", Toast.LENGTH_LONG).show()
-            }
-        }
-        if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK && data != null) {
-            data.data?.let { uri ->
-                val bitmap = MediaStore.Images.Media.getBitmap(contentResolver, uri)
-                addImageOverlayToScreen(bitmap)
-            }
-        }
-        if (requestCode == SIGN_IN_REQUEST) {
-            val task = GoogleSignIn.getSignedInAccountFromIntent(data)
-            try {
-                val account = task.getResult(ApiException::class.java)
-                connectedAccountEmail = account?.email
-                btnSignInYouTube.text = "SIGNED IN AS: ${account?.email}"
-                btnSignInYouTube.setBackgroundColor(Color.parseColor("#4CAF50"))
-                btnSignInYouTube.setTextColor(Color.WHITE)
-            } catch (e: ApiException) { }
-        }
-    }
-
-    private fun addTextOverlayToScreen(text: String) {
-        val textView = TextView(this).apply {
-            this.text = text; setTextColor(Color.YELLOW); textSize = 30f; setTypeface(null, android.graphics.Typeface.BOLD)
-            layoutParams = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) }
-        }
-        overlayContainer.addView(textView)
-        makeDraggableAndScalable(textView); selectedOverlay = textView
-    }
-
-    private fun addImageOverlayToScreen(bitmap: Bitmap) {
-        val imageView = ImageView(this).apply {
-            setImageBitmap(bitmap); layoutParams = RelativeLayout.LayoutParams(300, 300).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) }
-        }
-        overlayContainer.addView(imageView)
-        makeDraggableAndScalable(imageView); selectedOverlay = imageView
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun makeDraggableAndScalable(view: View) {
-        val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            override fun onScale(detector: ScaleGestureDetector): Boolean { view.scaleX *= detector.scaleFactor; view.scaleY *= detector.scaleFactor; return true }
-        })
-        var dX = 0f; var dY = 0f
-        view.setOnTouchListener { v, event ->
-            scaleGestureDetector.onTouchEvent(event)
-            if (!scaleGestureDetector.isInProgress) {
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { dX = v.x - event.rawX; dY = v.y - event.rawY; selectedOverlay = v; if (v is TextView && v != dragScoreboard) { etControlText.setText(v.text) } }
-                    MotionEvent.ACTION_MOVE -> { v.x = event.rawX + dX; v.y = event.rawY + dY }
-                }
-            }
-            true
-        }
-    }
-
-    // 🌟 TABLET AUTO-RESOLUTION ENGINE 🌟
+```kotlin
+    // 🌟 SMART AUTO-DETECT ENGINE (Tablet Optimized) 🌟
     private fun startCameraPreview() { 
-        if (!rtmpCamera.isOnPreview) { 
-            var vReady = false
-            val widths = intArrayOf(1280, 854, 640)
-            val heights = intArrayOf(720, 480, 480)
-            
-            // यह आपके टैबलेट का बेस्ट सपोर्टेड रेजोल्यूशन खुद ढूंढेगा
-            for (i in widths.indices) {
+        if (rtmpCamera.isOnPreview) return
+
+        var vReady = false
+
+        // Engine Phase 1: Dynamically fetch hardware-supported resolutions
+        val supportedSizes = rtmpCamera.resolutionsBack
+        if (supportedSizes != null && supportedSizes.isNotEmpty()) {
+            // Filter for safe streaming resolutions (Max 720p to prevent tablet MediaCodec crashes)
+            val safeResolutions = supportedSizes.filter { it.width <= 1280 && it.height <= 720 }
+                                                .sortedByDescending { it.width * it.height }
+
+            for (size in safeResolutions) {
                 try {
-                    if (rtmpCamera.prepareVideo(widths[i], heights[i], 30)) {
+                    // Smart Bitrate Allocation (2 Mbps for HD, 1.2 Mbps for SD)
+                    val targetBitrate = if (size.width >= 1280) 2000 * 1024 else 1200 * 1024
+                    if (rtmpCamera.prepareVideo(size.width, size.height, 30, targetBitrate, false, 0)) {
+                        vReady = true
+                        runOnUiThread { 
+                            Toast.makeText(this, "Engine Active: ${size.width}x${size.height}", Toast.LENGTH_SHORT).show() 
+                        }
+                        break
+                    }
+                } catch (e: Exception) {
+                    continue // Agar ek fail ho jaye, toh next safe resolution try karega
+                }
+            }
+        }
+
+        // Engine Phase 2: Failsafe Hardcoded Fallback
+        if (!vReady) {
+            val fallbackWidths = intArrayOf(1280, 854, 640)
+            val fallbackHeights = intArrayOf(720, 480, 360)
+            for (i in fallbackWidths.indices) {
+                try {
+                    if (rtmpCamera.prepareVideo(fallbackWidths[i], fallbackHeights[i], 30)) {
                         vReady = true
                         break
                     }
                 } catch (e: Exception) {}
             }
-            
-            if (!vReady) {
-                try { vReady = rtmpCamera.prepareVideo() } catch (e: Exception) {}
+        }
+
+        // Engine Phase 3: Absolute Library Default
+        if (!vReady) {
+            try { vReady = rtmpCamera.prepareVideo() } catch (e: Exception) {}
+        }
+
+        // Smart Audio Detector
+        var aReady = false
+        try {
+            // Try High-Quality Stereo AAC first
+            aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, true, false, false) 
+            if (!aReady) aReady = rtmpCamera.prepareAudio() // Standard fallback
+        } catch (e: Exception) {}
+
+        if (vReady && aReady) {
+            rtmpCamera.startPreview()
+        } else {
+            runOnUiThread { 
+                Toast.makeText(this, "CAMERA ERROR: Tablet hardware encoder not supported.", Toast.LENGTH_LONG).show() 
             }
-
-            val aReady = try { rtmpCamera.prepareAudio() } catch (e: Exception) { false }
-
-            if (vReady && aReady) {
-                rtmpCamera.startPreview()
-            } else {
-                runOnUiThread { 
-                    Toast.makeText(this, "CAMERA ERROR: Tablet does not support encoder.", Toast.LENGTH_LONG).show() 
-                }
-            }
-        } 
-    }
-    
-    // 🌟 RTMP LIVE STATUS TRACKER 🌟
-    override fun onConnectionSuccess() {
-        runOnUiThread {
-            btnGoLive.text = "STOP STREAM"
-            btnGoLive.isEnabled = true
-            btnGoLive.setBackgroundColor(Color.parseColor("#E53935"))
-            Toast.makeText(this@MainActivity, "🔥 YOU ARE LIVE! (YouTube will Auto-Start in ~10s)", Toast.LENGTH_LONG).show()
         }
     }
-
-    override fun onConnectionFailed(reason: String) {
-        runOnUiThread {
-            btnGoLive.text = "GO LIVE"
-            btnGoLive.isEnabled = true
-            rtmpCamera.stopStream()
-            Toast.makeText(this@MainActivity, "RTMP ERROR: $reason", Toast.LENGTH_LONG).show()
-            etControlText.setText("RTMP FAILED: $reason")
-        }
-    }
-
-    override fun onDisconnect() {
-        runOnUiThread {
-            btnGoLive.text = "GO LIVE"
-            btnGoLive.isEnabled = true
-            btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
-        }
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) { super.onRequestPermissionsResult(requestCode, permissions, grantResults); startCameraPreview() }
-    override fun surfaceCreated(holder: SurfaceHolder) {}
-    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) { startCameraPreview() }
-    override fun surfaceDestroyed(holder: SurfaceHolder) { if (rtmpCamera.isStreaming) rtmpCamera.stopStream(); if (rtmpCamera.isOnPreview) rtmpCamera.stopPreview() }
-    override fun onAuthError() {}
-    override fun onAuthSuccess() {}
-    override fun onConnectionStarted(url: String) {}
-    override fun onNewBitrate(bitrate: Long) {}
-}
