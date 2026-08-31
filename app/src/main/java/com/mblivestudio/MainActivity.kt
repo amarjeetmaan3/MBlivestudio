@@ -326,11 +326,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 // 🌟 FIX 2: YouTube Auto-Stop Engine (अब YouTube पुरानी स्ट्रीम को ऑटोमैटिक खत्म कर देगा) 🌟
                 val broadcastContentDetails = LiveBroadcastContentDetails()
                 broadcastContentDetails.enableAutoStart = true
-              val broadcastContentDetails = LiveBroadcastContentDetails()
-                broadcastContentDetails.enableAutoStart = true
-                broadcastContentDetails.latencyPreference = "ultraLow" 
-                
-                var broadcast = LiveBroadcast()
                 broadcastContentDetails.latencyPreference = "ultraLow" 
 
                 var broadcast = LiveBroadcast()
