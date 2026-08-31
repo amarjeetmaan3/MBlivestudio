@@ -119,7 +119,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val privacyOptions = arrayOf("Public", "Unlisted", "Private")
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, privacyOptions)
         spinnerPrivacy.adapter = adapter
-        spinnerPrivacy.setSelection(1) // Default: Unlisted (ताकि टेस्टिंग में सबको नोटिफिकेशन न जाए)
+        spinnerPrivacy.setSelection(1)
         
         rtmpCamera = RtmpCamera2(openGlView, this)
         openGlView.holder.addCallback(this)
@@ -162,7 +162,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 rtmpCamera.stopStream()
                 btnGoLive.text = "GO LIVE"
                 Toast.makeText(this@MainActivity, "Stream Stopped. Video is saving on YouTube.", Toast.LENGTH_SHORT).show()
-                generatedRtmpUrl = null // Reset for next stream
+                generatedRtmpUrl = null 
                 return@setOnClickListener
             } 
             
@@ -301,22 +301,23 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 val broadcastSnippet = LiveBroadcastSnippet()
                 broadcastSnippet.title = finalTitle
                 broadcastSnippet.description = finalDesc
-                broadcastSnippet.scheduledStartTime = DateTime(System.currentTimeMillis() + 5000)
+                // 🌟 FIX 1: Time set to Current Time (Right Now) 🌟
+                broadcastSnippet.scheduledStartTime = DateTime(System.currentTimeMillis()) 
 
                 val broadcastStatus = LiveBroadcastStatus()
                 broadcastStatus.privacyStatus = privacyInput
 
-                // 🌟 AUTO-START ENGINE: यह YouTube को बताएगा कि वीडियो आते ही सीधा लाइव जाना है 🌟
                 val broadcastContentDetails = LiveBroadcastContentDetails()
                 broadcastContentDetails.enableAutoStart = true
                 broadcastContentDetails.enableAutoStop = true
+                // लेटेंसी कम करने के लिए सेटिंग
+                broadcastContentDetails.latencyPreference = "ultraLow" 
 
                 var broadcast = LiveBroadcast()
                 broadcast.snippet = broadcastSnippet
                 broadcast.status = broadcastStatus
                 broadcast.contentDetails = broadcastContentDetails
                 
-                // ध्यान दें: अब हम 'contentDetails' को भी API में भेज रहे हैं
                 broadcast = youtube.liveBroadcasts().insert("snippet,status,contentDetails", broadcast).execute()
 
                 val streamSnippet = LiveStreamSnippet()
@@ -324,8 +325,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
                 val cdn = CdnSettings()
                 cdn.ingestionType = "rtmp"
-                cdn.resolution = "1080p"
-                cdn.frameRate = "30fps"
+                // 🌟 FIX 2: Variable Resolution & FrameRate (यह वीडियो को अटकने नहीं देगा) 🌟
+                cdn.resolution = "variable" 
+                cdn.frameRate = "variable"
 
                 var stream = LiveStream()
                 stream.snippet = streamSnippet
@@ -361,8 +363,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             rtmpCamera.startStream(url)
             btnGoLive.text = "STOP STREAM"
             btnGoLive.isEnabled = true
-            // मैसेज अपडेट किया गया है
-            Toast.makeText(this@MainActivity, "You are LIVE! It may take 10-15 sec for YouTube to show it.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this@MainActivity, "Live API Started! YouTube will be live in ~15 seconds.", Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
             btnGoLive.text = "GO LIVE"
             btnGoLive.isEnabled = true
