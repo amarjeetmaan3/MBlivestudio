@@ -431,8 +431,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     // 🌟 CAMERA FIX ENGINE 🌟
     private fun startCameraPreview() { 
         if (!rtmpCamera.isOnPreview) { 
-            // 1. Try standard Tablet 720p resolution
-            var videoPrepared = rtmpCamera.prepareVideo(1280, 720, 30, 2500 * 1024)
+            // 1. Try standard Tablet 720p resolution (Passed 3 parameters: width, height, fps)
+            var videoPrepared = try {
+                rtmpCamera.prepareVideo(1280, 720, 30)
+            } catch (e: Exception) {
+                false
+            }
+            
             if (!videoPrepared) {
                 // 2. Fallback to device default if 720p fails
                 videoPrepared = rtmpCamera.prepareVideo()
