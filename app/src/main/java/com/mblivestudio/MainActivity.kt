@@ -166,14 +166,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 generatedRtmpUrl = null 
                 return@setOnClickListener
             } 
-
-            // 🌟 SECURITY LOCK: Camera must be prepared before hitting API 🌟
+            
             if (!rtmpCamera.isOnPreview) {
-                Toast.makeText(this@MainActivity, "Camera not ready! Preparing...", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@MainActivity, "Camera not ready! Starting preview...", Toast.LENGTH_SHORT).show()
                 startCameraPreview()
                 return@setOnClickListener
             }
-            
+
             val currentAccount = GoogleSignIn.getLastSignedInAccount(this)
             if (currentAccount == null) {
                 Toast.makeText(this@MainActivity, "Please Sign In with YouTube first!", Toast.LENGTH_SHORT).show()
@@ -205,7 +204,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
         }
 
-        // --- UI Listeners ---
         etControlText.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) { if (selectedOverlay is TextView && selectedOverlay != scoreMainText && selectedOverlay != scoreSubText) { (selectedOverlay as TextView).text = s.toString() } }
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -230,7 +228,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnToggleScore.setOnClickListener { val isVis = dragScoreboard.visibility == View.VISIBLE; dragScoreboard.visibility = if(isVis) View.GONE else View.VISIBLE; btnToggleScore.text = if(isVis) "SHOW SCORECARD ON SCREEN" else "HIDE SCORECARD" }
 
         makeDraggableAndScalable(dragScoreboard)
-        
         btnApplyWeb.setOnClickListener {
             if (webOverlay.visibility == View.GONE) {
                 val url = etWebUrl.text.toString().trim()
@@ -256,8 +253,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val descInput = etStreamDesc.text.toString().trim()
         val privacyInput = spinnerPrivacy.selectedItem.toString().lowercase()
 
-        val finalTitle = if (titleInput.isNotEmpty()) titleInput else "Live from M.B. Live Studio"
-        val finalDesc = if (descInput.isNotEmpty()) descInput else "Streaming via M.B. Live Studio Android App"
+        val finalTitle = if (titleInput.isNotEmpty()) titleInput else "Live from MB Live Studio"
+        val finalDesc = if (descInput.isNotEmpty()) descInput else "Streaming via MB Live Studio Android App"
 
         Thread {
             try {
@@ -307,18 +304,35 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 bindRequest.streamId = stream.id
                 bindRequest.execute()
 
-                val streamUrl = stream.cdn.ingestionInfo.ingestionAddress
-                val streamKey = stream.cdn.ingestionInfo.streamName
-                val finalUrl = "$streamUrl/$streamKey"
+                val finalUrl = "${stream.cdn.ingestionInfo.ingestionAddress}/${stream.cdn.ingestionInfo.streamName}"
                 generatedRtmpUrl = finalUrl
 
-                runOnUiThread { 
-                    btnGoLive.text = "5/5: SENDING CAMERA..." 
-                    try {
-                        rtmpCamera.startStream(finalUrl)
-                    } catch (e: Exception) {
-                        Toast.makeText(this@MainActivity, "Encoder Error: ${e.message}", Toast.LENGTH_LONG).show()
+                runOnUiThread { btnGoLive.text = "5/5: SENDING CAMERA..." }
+
+                // 🌟 FIX: यह कैमरा एनकोडर को स्ट्रीम भेजने से ठीक 1 सेकंड पहले रेडी करेगा 🌟
+                var vReady = try { rtmpCamera.prepareVideo(1280, 720, 30) } catch (e: Exception) { false }
+                if (!vReady) vReady = try { rtmpCamera.prepareVideo(854, 480, 30) } catch (e: Exception) { false }
+                if (!vReady) vReady = try { rtmpCamera.prepareVideo(640, 480, 30) } catch (e: Exception) { false }
+                if (!vReady) vReady = try { rtmpCamera.prepareVideo() } catch (e: Exception) { false }
+                
+                val aReady = try { rtmpCamera.prepareAudio() } catch (e: Exception) { false }
+
+                if (!vReady || !aReady) {
+                    runOnUiThread {
+                        btnGoLive.text = "GO LIVE"
+                        btnGoLive.isEnabled = true
+                        Toast.makeText(this@MainActivity, "Hardware Error: Tablet camera failed to prepare video encoder.", Toast.LENGTH_LONG).show()
                     }
+                    return@Thread
+                }
+
+                if (!rtmpCamera.startStream(finalUrl)) {
+                    runOnUiThread {
+                        btnGoLive.text = "GO LIVE"
+                        btnGoLive.isEnabled = true
+                        Toast.makeText(this@MainActivity, "Network Error: Failed to connect to YouTube Server.", Toast.LENGTH_LONG).show()
+                    }
+                    return@Thread
                 }
 
                 runOnUiThread { btnGoLive.text = "SYNCING YOUTUBE..." }
@@ -361,7 +375,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     btnGoLive.text = "GO LIVE"
                     btnGoLive.isEnabled = true
                     Toast.makeText(this@MainActivity, "API Error: ${e.message}", Toast.LENGTH_LONG).show()
-                    etControlText.setText("ERROR: ${e.message}") 
                 }
             }
         }.start()
@@ -428,28 +441,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // 🌟 CAMERA FIX ENGINE 🌟
+    // 🌟 CLEAN PREVIEW ENGINE (सिर्फ प्रीव्यू चलाएगा, एनकोडर को लॉक नहीं करेगा) 🌟
     private fun startCameraPreview() { 
         if (!rtmpCamera.isOnPreview) { 
-            // 1. Try standard Tablet 720p resolution (Passed 3 parameters: width, height, fps)
-            var videoPrepared = try {
-                rtmpCamera.prepareVideo(1280, 720, 30)
-            } catch (e: Exception) {
-                false
-            }
-            
-            if (!videoPrepared) {
-                // 2. Fallback to device default if 720p fails
-                videoPrepared = rtmpCamera.prepareVideo()
-            }
-            
-            val audioPrepared = rtmpCamera.prepareAudio()
-            
-            if (videoPrepared && audioPrepared) {
-                rtmpCamera.startPreview() 
-            } else {
-                Toast.makeText(this, "CAMERA ERROR: Device blocked video preparation.", Toast.LENGTH_LONG).show()
-            }
+            rtmpCamera.startPreview() 
         } 
     }
     
