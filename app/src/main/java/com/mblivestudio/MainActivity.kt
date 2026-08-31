@@ -26,6 +26,13 @@ import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
 import com.pedro.encoder.input.gl.render.filters.AndroidViewFilterRender
 
+// Google APIs
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInClient
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.Scope
+import com.google.android.gms.common.api.ApiException
+
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     
     private lateinit var rtmpCamera: RtmpCamera2
@@ -49,7 +56,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private lateinit var btnAddLogo: Button
     private lateinit var btnRemoveSelected: Button
     
-    // नए टॉप बटन्स
+    private lateinit var btnSignInYouTube: Button
     private lateinit var btnGoLive: Button
     private lateinit var btnSwitchCamera: Button
     private lateinit var btnMicToggle: Button
@@ -58,6 +65,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private var isAudioMuted = false
 
     private val PICK_IMAGE_REQUEST = 101
+    private val SIGN_IN_REQUEST = 102
+
+    // Google Sign-In Client
+    private lateinit var googleSignInClient: GoogleSignInClient
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -84,6 +95,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnAddLogo = findViewById(R.id.btnAddLogo)
         btnRemoveSelected = findViewById(R.id.btnRemoveSelected)
         
+        btnSignInYouTube = findViewById(R.id.btnSignInYouTube)
         btnGoLive = findViewById(R.id.btnGoLive)
         btnSwitchCamera = findViewById(R.id.btnSwitchCamera)
         btnMicToggle = findViewById(R.id.btnMicToggle)
@@ -108,6 +120,26 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         webOverlay.settings.mediaPlaybackRequiresUserGesture = false
         webOverlay.webViewClient = WebViewClient()
         webOverlay.webChromeClient = WebChromeClient()
+
+        // 🌟 GOOGLE SIGN-IN SETUP FOR YOUTUBE 🌟
+        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestEmail()
+            .requestScopes(Scope("https://www.googleapis.com/auth/youtube")) // YouTube एक्सेस की परमिशन
+            .build()
+        googleSignInClient = GoogleSignIn.getClient(this, gso)
+
+        // पहले से लॉगिन है तो बटन अपडेट कर दें
+        val account = GoogleSignIn.getLastSignedInAccount(this)
+        if (account != null) {
+            btnSignInYouTube.text = "SIGNED IN AS: ${account.email}"
+            btnSignInYouTube.setBackgroundColor(Color.parseColor("#4CAF50")) // Green
+            btnSignInYouTube.setTextColor(Color.WHITE)
+        }
+
+        btnSignInYouTube.setOnClickListener {
+            val signInIntent = googleSignInClient.signInIntent
+            startActivityForResult(signInIntent, SIGN_IN_REQUEST)
+        }
 
         // SIDE PANEL EDITORS
         etControlText.addTextChangedListener(object : TextWatcher {
@@ -152,12 +184,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 rtmpCamera.enableAudio()
                 isAudioMuted = false
                 btnMicToggle.text = "MIC: ON"
-                btnMicToggle.setBackgroundColor(Color.parseColor("#4CAF50")) // Green
+                btnMicToggle.setBackgroundColor(Color.parseColor("#4CAF50"))
             } else {
                 rtmpCamera.disableAudio()
                 isAudioMuted = true
                 btnMicToggle.text = "MIC: OFF"
-                btnMicToggle.setBackgroundColor(Color.parseColor("#E53935")) // Red
+                btnMicToggle.setBackgroundColor(Color.parseColor("#E53935"))
             }
         }
 
@@ -168,7 +200,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 addTextOverlayToScreen(text)
                 etControlText.text.clear()
             } else {
-                Toast.makeText(this@MainActivity, "Please type some text first", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Please type some text first", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -183,7 +215,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 if (it != dragScoreboard) {
                     overlayContainer.removeView(it)
                     selectedOverlay = null
-                    Toast.makeText(this@MainActivity, "Item Removed", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Item Removed", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -215,10 +247,26 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        
+        // Gallery Image Result
         if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK && data != null) {
             data.data?.let { uri ->
                 val bitmap = MediaStore.Images.Media.getBitmap(contentResolver, uri)
                 addImageOverlayToScreen(bitmap)
+            }
+        }
+        
+        // Google Sign-In Result
+        if (requestCode == SIGN_IN_REQUEST) {
+            val task = GoogleSignIn.getSignedInAccountFromIntent(data)
+            try {
+                val account = task.getResult(ApiException::class.java)
+                Toast.makeText(this, "Signed in as: ${account?.email}", Toast.LENGTH_SHORT).show()
+                btnSignInYouTube.text = "SIGNED IN AS: ${account?.email}"
+                btnSignInYouTube.setBackgroundColor(Color.parseColor("#4CAF50"))
+                btnSignInYouTube.setTextColor(Color.WHITE)
+            } catch (e: ApiException) {
+                Toast.makeText(this, "Sign-In Failed: ${e.statusCode}", Toast.LENGTH_LONG).show()
             }
         }
     }
