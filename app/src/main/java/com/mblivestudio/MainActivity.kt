@@ -34,6 +34,7 @@ import com.google.android.gms.common.api.ApiException
 
 // YOUTUBE API IMPORTS
 import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
+import com.google.api.client.googleapis.extensions.android.gms.auth.UserRecoverableAuthIOException
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.client.util.DateTime
@@ -73,10 +74,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     private val PICK_IMAGE_REQUEST = 101
     private val SIGN_IN_REQUEST = 102
+    private val REQUEST_AUTHORIZATION = 1001
 
     private lateinit var googleSignInClient: GoogleSignInClient
     
-    // YOUTUBE STREAMING VARIABLES
     private var connectedAccountEmail: String? = null
     private var generatedRtmpUrl: String? = null
 
@@ -184,7 +185,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
         }
 
-        // TEXT AND LOGO EDITORS...
         etControlText.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) {
                 if (selectedOverlay is TextView && selectedOverlay != scoreMainText && selectedOverlay != scoreSubText) {
@@ -255,7 +255,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-  // --- YOUTUBE BROADCAST CREATION ENGINE ---
+    // --- YOUTUBE BROADCAST CREATION ENGINE ---
     private fun createYouTubeBroadcast() {
         btnGoLive.text = "CREATING BROADCAST..."
         btnGoLive.isEnabled = false
@@ -266,7 +266,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     this@MainActivity, 
                     listOf("https://www.googleapis.com/auth/youtube")
                 )
-                credential.selectedAccountName = connectedAccountEmail
+                
+                // Account Manager Fix
+                val signInAccount = GoogleSignIn.getLastSignedInAccount(this@MainActivity)
+                if (signInAccount?.account != null) {
+                    credential.selectedAccount = signInAccount.account
+                } else {
+                    credential.selectedAccountName = connectedAccountEmail
+                }
 
                 val transport = NetHttpTransport()
                 val jsonFactory = GsonFactory.getDefaultInstance()
@@ -275,21 +282,18 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     .setApplicationName("MBLiveStudio")
                     .build()
 
-                // 1. Create Broadcast
                 val broadcastSnippet = LiveBroadcastSnippet()
                 broadcastSnippet.title = "Live from MB Live Studio"
                 broadcastSnippet.scheduledStartTime = DateTime(System.currentTimeMillis() + 5000)
 
                 val broadcastStatus = LiveBroadcastStatus()
-                broadcastStatus.privacyStatus = "unlisted" // Test mode
+                broadcastStatus.privacyStatus = "unlisted" // Change to public for real stream
 
                 var broadcast = LiveBroadcast()
                 broadcast.snippet = broadcastSnippet
                 broadcast.status = broadcastStatus
-                // FIX: Removed listOf()
                 broadcast = youtube.liveBroadcasts().insert("snippet,status", broadcast).execute()
 
-                // 2. Create Stream Key
                 val streamSnippet = LiveStreamSnippet()
                 streamSnippet.title = "MB Studio Stream Key"
 
@@ -301,16 +305,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 var stream = LiveStream()
                 stream.snippet = streamSnippet
                 stream.cdn = cdn
-                // FIX: Removed listOf()
                 stream = youtube.liveStreams().insert("snippet,cdn", stream).execute()
 
-                // 3. Bind Broadcast & Stream
-                // FIX: Removed listOf()
                 val bindRequest = youtube.liveBroadcasts().bind(broadcast.id, "id,contentDetails")
                 bindRequest.streamId = stream.id
                 bindRequest.execute()
 
-                // 4. Extract Final RTMP URL
                 val streamUrl = stream.cdn.ingestionInfo.ingestionAddress
                 val streamKey = stream.cdn.ingestionInfo.streamName
                 val finalUrl = "$streamUrl/$streamKey"
@@ -320,19 +320,28 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     startRtmpStream(finalUrl)
                 }
 
-            } catch (e: Exception) {
+            } catch (userRecoverableAuthIOException: UserRecoverableAuthIOException) {
+                // यह वह पॉप-अप है जो पहले ब्लॉक हो रहा था
+                runOnUiThread {
+                    btnGoLive.text = "GO LIVE"
+                    btnGoLive.isEnabled = true
+                    startActivityForResult(userRecoverableAuthIOException.intent, REQUEST_AUTHORIZATION)
+                }
+            } catch (e: Throwable) {
                 e.printStackTrace()
                 runOnUiThread {
                     btnGoLive.text = "GO LIVE"
                     btnGoLive.isEnabled = true
-                    Toast.makeText(this@MainActivity, "API Error: ${e.message}", Toast.LENGTH_LONG).show()
+                    val errorMsg = e.message ?: "Unknown Error"
+                    Toast.makeText(this@MainActivity, "API Error Occurred!", Toast.LENGTH_LONG).show()
+                    // स्क्रीन पर मौजूद बॉक्स में एरर दिखाएँ ताकि आपको पता चले
+                    etControlText.setText("ERROR: $errorMsg")
                 }
             }
         }.start()
     }
 
     private fun startRtmpStream(url: String) {
-        // FIX: Removed 'if' condition because startStream() returns Unit
         try {
             rtmpCamera.startStream(url)
             btnGoLive.text = "STOP STREAM"
@@ -348,6 +357,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         
+        // जब यूजर YouTube की परमिशन Allow कर दे
+        if (requestCode == REQUEST_AUTHORIZATION && resultCode == RESULT_OK) {
+            Toast.makeText(this, "Permission Granted! Creating Broadcast...", Toast.LENGTH_SHORT).show()
+            createYouTubeBroadcast()
+        }
+
         if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK && data != null) {
             data.data?.let { uri ->
                 val bitmap = MediaStore.Images.Media.getBitmap(contentResolver, uri)
