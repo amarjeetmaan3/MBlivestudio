@@ -81,6 +81,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     private lateinit var googleSignInClient: GoogleSignInClient
     private var connectedAccountEmail: String? = null
+    
+    // 🌟 NEW: Retry Engine Variables 🌟
+    private var retryCount = 0
+    private val MAX_RETRIES = 3
+    private var generatedRtmpUrl: String? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -183,6 +188,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 return@setOnClickListener
             }
             
+            retryCount = 0 // Reset retries before starting
             createYouTubeBroadcast()
         }
 
@@ -345,6 +351,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 bindRequest.execute()
 
                 val finalUrl = "${stream.cdn.ingestionInfo.ingestionAddress}/${stream.cdn.ingestionInfo.streamName}"
+                generatedRtmpUrl = finalUrl // Save for retry
 
                 runOnUiThread { 
                     btnGoLive.text = "4/4: CONNECTING CAMERA..." 
@@ -493,6 +500,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     
     override fun onConnectionSuccess() {
         runOnUiThread {
+            retryCount = 0 // Reset retries on success
             btnGoLive.text = "STOP STREAM"
             btnGoLive.isEnabled = true
             btnGoLive.setBackgroundColor(Color.parseColor("#E53935"))
@@ -500,13 +508,31 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
+    // 🌟 AUTO-RETRY LOGIC 🌟
     override fun onConnectionFailed(reason: String) {
-        runOnUiThread {
-            btnGoLive.text = "GO LIVE"
-            btnGoLive.isEnabled = true
-            try { rtmpCamera.stopStream() } catch (e: Exception) {}
-            Toast.makeText(this@MainActivity, "RTMP ERROR: $reason", Toast.LENGTH_LONG).show()
-            etControlText.setText("RTMP FAILED: $reason")
+        if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) {
+            retryCount++
+            runOnUiThread {
+                btnGoLive.text = "RETRYING ($retryCount/3)..."
+                Toast.makeText(this@MainActivity, "Network slow, retrying connection...", Toast.LENGTH_SHORT).show()
+            }
+            
+            // 2 सेकंड इंतज़ार करें ताकि नेटवर्क रिफ्रेश हो सके, फिर दोबारा कनेक्ट करें
+            Thread {
+                Thread.sleep(2000)
+                try {
+                    rtmpCamera.startStream(generatedRtmpUrl!!)
+                } catch (e: Exception) {}
+            }.start()
+            
+        } else {
+            runOnUiThread {
+                btnGoLive.text = "GO LIVE"
+                btnGoLive.isEnabled = true
+                try { rtmpCamera.stopStream() } catch (e: Exception) {}
+                Toast.makeText(this@MainActivity, "RTMP ERROR: $reason", Toast.LENGTH_LONG).show()
+                etControlText.setText("RTMP FAILED: $reason")
+            }
         }
     }
 
