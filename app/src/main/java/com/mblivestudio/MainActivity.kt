@@ -67,7 +67,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private lateinit var btnSwitchCamera: Button
     private lateinit var btnMicToggle: Button
 
-    // 🌟 NEW: BROADCAST UI ELEMENTS 🌟
     private lateinit var etStreamTitle: EditText
     private lateinit var etStreamDesc: EditText
     private lateinit var spinnerPrivacy: Spinner
@@ -113,16 +112,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnSwitchCamera = findViewById(R.id.btnSwitchCamera)
         btnMicToggle = findViewById(R.id.btnMicToggle)
 
-        // 🌟 INIT BROADCAST UI 🌟
         etStreamTitle = findViewById(R.id.etStreamTitle)
         etStreamDesc = findViewById(R.id.etStreamDesc)
         spinnerPrivacy = findViewById(R.id.spinnerPrivacy)
 
-        // Setup Privacy Spinner
         val privacyOptions = arrayOf("Public", "Unlisted", "Private")
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, privacyOptions)
         spinnerPrivacy.adapter = adapter
-        spinnerPrivacy.setSelection(1) // Default to Unlisted for safety
+        spinnerPrivacy.setSelection(1) // Default: Unlisted (ताकि टेस्टिंग में सबको नोटिफिकेशन न जाए)
         
         rtmpCamera = RtmpCamera2(openGlView, this)
         openGlView.holder.addCallback(this)
@@ -160,12 +157,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST)
         }
 
-        // --- GO LIVE ENGINE ---
         btnGoLive.setOnClickListener {
             if (rtmpCamera.isStreaming) {
                 rtmpCamera.stopStream()
                 btnGoLive.text = "GO LIVE"
-                Toast.makeText(this@MainActivity, "Stream Stopped", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "Stream Stopped. Video is saving on YouTube.", Toast.LENGTH_SHORT).show()
+                generatedRtmpUrl = null // Reset for next stream
                 return@setOnClickListener
             } 
             
@@ -175,18 +172,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 return@setOnClickListener
             }
 
-            // 🌟 NEW PERMISSION CHECK: यह स्क्रीन को अटकने नहीं देगा और सीधा पॉप-अप लाएगा 🌟
             val youtubeScope = Scope("https://www.googleapis.com/auth/youtube")
             if (!GoogleSignIn.hasPermissions(currentAccount, youtubeScope)) {
                 GoogleSignIn.requestPermissions(this, REQUEST_AUTHORIZATION, currentAccount, youtubeScope)
                 return@setOnClickListener
             }
             
-            if (generatedRtmpUrl != null) {
-                startRtmpStream(generatedRtmpUrl!!)
-            } else {
-                createYouTubeBroadcast()
-            }
+            createYouTubeBroadcast()
         }
 
         btnSwitchCamera.setOnClickListener { rtmpCamera.switchCamera() }
@@ -278,7 +270,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnGoLive.text = "CREATING BROADCAST..."
         btnGoLive.isEnabled = false
 
-        // 🌟 GET DATA FROM UI 🌟
         val titleInput = etStreamTitle.text.toString().trim()
         val descInput = etStreamDesc.text.toString().trim()
         val privacyInput = spinnerPrivacy.selectedItem.toString().lowercase()
@@ -310,15 +301,23 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 val broadcastSnippet = LiveBroadcastSnippet()
                 broadcastSnippet.title = finalTitle
                 broadcastSnippet.description = finalDesc
-                broadcastSnippet.scheduledStartTime = DateTime(System.currentTimeMillis() + 10000)
+                broadcastSnippet.scheduledStartTime = DateTime(System.currentTimeMillis() + 5000)
 
                 val broadcastStatus = LiveBroadcastStatus()
                 broadcastStatus.privacyStatus = privacyInput
 
+                // 🌟 AUTO-START ENGINE: यह YouTube को बताएगा कि वीडियो आते ही सीधा लाइव जाना है 🌟
+                val broadcastContentDetails = LiveBroadcastContentDetails()
+                broadcastContentDetails.enableAutoStart = true
+                broadcastContentDetails.enableAutoStop = true
+
                 var broadcast = LiveBroadcast()
                 broadcast.snippet = broadcastSnippet
                 broadcast.status = broadcastStatus
-                broadcast = youtube.liveBroadcasts().insert("snippet,status", broadcast).execute()
+                broadcast.contentDetails = broadcastContentDetails
+                
+                // ध्यान दें: अब हम 'contentDetails' को भी API में भेज रहे हैं
+                broadcast = youtube.liveBroadcasts().insert("snippet,status,contentDetails", broadcast).execute()
 
                 val streamSnippet = LiveStreamSnippet()
                 streamSnippet.title = "$finalTitle - Stream Key"
@@ -362,7 +361,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             rtmpCamera.startStream(url)
             btnGoLive.text = "STOP STREAM"
             btnGoLive.isEnabled = true
-            Toast.makeText(this@MainActivity, "You are LIVE!", Toast.LENGTH_SHORT).show()
+            // मैसेज अपडेट किया गया है
+            Toast.makeText(this@MainActivity, "You are LIVE! It may take 10-15 sec for YouTube to show it.", Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
             btnGoLive.text = "GO LIVE"
             btnGoLive.isEnabled = true
@@ -373,7 +373,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         
-        // 🌟 NEW: Handles Permission Dialog Result 🌟
         if (requestCode == REQUEST_AUTHORIZATION) {
             val account = GoogleSignIn.getLastSignedInAccount(this)
             if (GoogleSignIn.hasPermissions(account, Scope("https://www.googleapis.com/auth/youtube"))) {
