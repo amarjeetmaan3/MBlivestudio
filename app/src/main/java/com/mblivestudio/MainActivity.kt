@@ -3,6 +3,7 @@ package com.mblivestudio
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -39,6 +40,8 @@ import com.google.api.client.json.gson.GsonFactory
 import com.google.api.client.util.DateTime
 import com.google.api.services.youtube.YouTube
 import com.google.api.services.youtube.model.*
+import java.net.Inet4Address
+import java.net.InetAddress
 
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     
@@ -86,14 +89,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private val MAX_RETRIES = 3
     private var generatedRtmpUrl: String? = null
 
+    // 🌟 FIX 1: सेटिंग्स को बिल्कुल ऐप शुरू होने से पहले (attachBaseContext) फोर्स करें 🌟
+    override fun attachBaseContext(newBase: Context?) {
+        super.attachBaseContext(newBase)
+        System.setProperty("java.net.preferIPv4Stack", "true")
+        System.setProperty("java.net.preferIPv6Addresses", "false")
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        // 🌟 TABLET NETWORK FIX: Force IPv4 for fast API calls and RTMP connection 🌟
-        System.setProperty("java.net.preferIPv4Stack", "true")
-        System.setProperty("java.net.preferIPv6Addresses", "false")
-
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_main)
 
@@ -284,7 +289,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
                 val transport = NetHttpTransport()
                 val jsonFactory = GsonFactory.getDefaultInstance()
-                val youtube = YouTube.Builder(transport, jsonFactory, credential).setApplicationName("MBLiveStudio").build()
+                
+                // 🌟 FIX 2: YouTube API के 5-Minute वाले Timeout/Retry लूप को बंद करना 🌟
+                val youtube = YouTube.Builder(transport, jsonFactory, com.google.api.client.http.HttpRequestInitializer { request ->
+                    credential.initialize(request)
+                    request.connectTimeout = 10000 // 10 सेकंड में फेल होगा, 5 मिनट नहीं
+                    request.readTimeout = 10000
+                    request.numberOfRetries = 0 // Google का Auto-Retry ऑफ
+                }).setApplicationName("MBLiveStudio").build()
 
                 runOnUiThread { btnGoLive.text = "2/4: CREATING ROOM..." }
 
@@ -305,6 +317,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 broadcast.snippet = broadcastSnippet
                 broadcast.status = broadcastStatus
                 broadcast.contentDetails = broadcastContentDetails
+                
+                // अगर इंटरनेट ख़राब है, तो अब ये 5 मिनट नहीं, 10 सेकंड में Timeout बता देगा
                 broadcast = youtube.liveBroadcasts().insert("snippet,status,contentDetails", broadcast).execute()
 
                 runOnUiThread { btnGoLive.text = "3/4: GETTING KEY..." }
@@ -326,17 +340,25 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 bindRequest.streamId = stream.id
                 bindRequest.execute()
 
-                // 🌟 IPV6 BYPASS FOR RTMP 🌟
-                var ingestionUrl = stream.cdn.ingestionInfo.ingestionAddress
-                val backupUrl = stream.cdn.ingestionInfo.backupIngestionAddress
+                // 🌟 FIX 3: Tablet DNS/IPv6 Bypass Engine 🌟 
+                var ingestionUrl = stream.cdn.ingestionInfo.ingestionAddress // e.g. rtmp://a.rtmp.youtube.com/live2
+                var resolvedIp: String? = null
                 
-                if (backupUrl != null && backupUrl.isNotEmpty()) {
-                    ingestionUrl = backupUrl
-                } else if (ingestionUrl.contains("a.rtmp")) {
-                    ingestionUrl = ingestionUrl.replace("a.rtmp", "b.rtmp")
-                }
+                try {
+                    // YouTube के सर्वर का सीधा (Direct) IPv4 एड्रेस निकालो
+                    val host = if (ingestionUrl.contains("b.rtmp")) "b.rtmp.youtube.com" else "a.rtmp.youtube.com"
+                    val addresses = InetAddress.getAllByName(host)
+                    resolvedIp = addresses.firstOrNull { it is Inet4Address }?.hostAddress
+                } catch (e: Exception) { e.printStackTrace() }
 
-                val finalUrl = "$ingestionUrl/${stream.cdn.ingestionInfo.streamName}"
+                val finalUrl = if (resolvedIp != null && ingestionUrl.contains("a.rtmp.youtube.com")) {
+                    // अगर IP मिल गया, तो नाम (a.rtmp) की जगह सीधा IP डाल दो (DNS बाईपास)
+                    ingestionUrl.replace("a.rtmp.youtube.com", resolvedIp) + "/" + stream.cdn.ingestionInfo.streamName
+                } else {
+                    // नहीं तो बैकअप सर्वर यूज़ करो
+                    ingestionUrl.replace("a.rtmp", "b.rtmp") + "/" + stream.cdn.ingestionInfo.streamName
+                }
+                
                 generatedRtmpUrl = finalUrl 
 
                 runOnUiThread { 
@@ -354,7 +376,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 runOnUiThread {
                     btnGoLive.text = "GO LIVE"
                     btnGoLive.isEnabled = true
-                    Toast.makeText(this@MainActivity, "API Error: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, "Timeout/API Error: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }.start()
