@@ -9,12 +9,27 @@ android {
     namespace = "com.mblivestudio"
     compileSdk = 34
 
+    signingConfigs {
+        create("permanentDebug") {
+            storeFile = file("mblive.jks")
+            storePassword = "mblive123"
+            keyAlias = "mblive"
+            keyPassword = "mblive123"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.mblivestudio.v2"
         minSdk = 24
         targetSdk = 34
         versionCode = runNumber
         versionName = "2.0.$runNumber"
+    }
+
+    buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("permanentDebug")
+        }
     }
 
     compileOptions {
@@ -42,10 +57,9 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("androidx.activity:activity-ktx:1.8.2")
 
-    // Google Sign-In & YouTube Live API
     implementation("com.google.android.gms:play-services-auth:20.7.0")
     implementation("com.google.api-client:google-api-client-android:1.32.2")
-    implementation("com.google.api-client:google-api-client-gson:1.32.2") // NEW: For JSON parsing
+    implementation("com.google.api-client:google-api-client-gson:1.32.2")
     implementation("com.google.apis:google-api-services-youtube:v3-rev222-1.25.0") {
         exclude(group = "org.apache.httpcomponents")
     }
