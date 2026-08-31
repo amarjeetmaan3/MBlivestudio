@@ -165,7 +165,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             } 
             
             if (!rtmpCamera.isOnPreview) {
-                Toast.makeText(this@MainActivity, "Camera not ready! Starting preview...", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "Camera not ready! Preparing...", Toast.LENGTH_SHORT).show()
                 startCameraPreview()
                 return@setOnClickListener
             }
@@ -223,7 +223,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnAddLogo.setOnClickListener { val intent = Intent(Intent.ACTION_GET_CONTENT); intent.type = "image/*"; startActivityForResult(intent, PICK_IMAGE_REQUEST) }
         btnRemoveSelected.setOnClickListener { selectedOverlay?.let { if (it != dragScoreboard) { overlayContainer.removeView(it); selectedOverlay = null } } }
         btnToggleScore.setOnClickListener { val isVis = dragScoreboard.visibility == View.VISIBLE; dragScoreboard.visibility = if(isVis) View.GONE else View.VISIBLE; btnToggleScore.text = if(isVis) "SHOW SCORECARD ON SCREEN" else "HIDE SCORECARD" }
-
         makeDraggableAndScalable(dragScoreboard)
         
         btnApplyWeb.setOnClickListener {
@@ -244,7 +243,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     private fun createYouTubeBroadcast() {
-        btnGoLive.text = "1/5: CONNECTING API..."
+        btnGoLive.text = "1/4: CONNECTING API..."
         btnGoLive.isEnabled = false
 
         val titleInput = etStreamTitle.text.toString().trim()
@@ -252,7 +251,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val privacyInput = spinnerPrivacy.selectedItem.toString().lowercase()
 
         val finalTitle = if (titleInput.isNotEmpty()) titleInput else "Live from M.B. Live Studio"
-        val finalDesc = if (descInput.isNotEmpty()) descInput else "Streaming via M.B. Live Studio Android App"
+        val finalDesc = if (descInput.isNotEmpty()) descInput else "Streaming via Android App"
 
         Thread {
             try {
@@ -265,23 +264,29 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 val jsonFactory = GsonFactory.getDefaultInstance()
                 val youtube = YouTube.Builder(transport, jsonFactory, credential).setApplicationName("MBLiveStudio").build()
 
-                runOnUiThread { btnGoLive.text = "2/5: CREATING ROOM..." }
+                runOnUiThread { btnGoLive.text = "2/4: CREATING ROOM..." }
 
                 val broadcastSnippet = LiveBroadcastSnippet()
                 broadcastSnippet.title = finalTitle
                 broadcastSnippet.description = finalDesc
-                broadcastSnippet.scheduledStartTime = DateTime(System.currentTimeMillis() + 5000) 
+                broadcastSnippet.scheduledStartTime = DateTime(System.currentTimeMillis()) 
 
                 val broadcastStatus = LiveBroadcastStatus()
                 broadcastStatus.privacyStatus = privacyInput
                 broadcastStatus.selfDeclaredMadeForKids = false
 
+                // 🌟 RESTORED AUTO-START 🌟
+                val broadcastContentDetails = LiveBroadcastContentDetails()
+                broadcastContentDetails.enableAutoStart = true
+                broadcastContentDetails.latencyPreference = "ultraLow" 
+
                 var broadcast = LiveBroadcast()
                 broadcast.snippet = broadcastSnippet
                 broadcast.status = broadcastStatus
-                broadcast = youtube.liveBroadcasts().insert("snippet,status", broadcast).execute()
+                broadcast.contentDetails = broadcastContentDetails
+                broadcast = youtube.liveBroadcasts().insert("snippet,status,contentDetails", broadcast).execute()
 
-                runOnUiThread { btnGoLive.text = "3/5: GETTING KEY..." }
+                runOnUiThread { btnGoLive.text = "3/4: GETTING KEY..." }
 
                 val streamSnippet = LiveStreamSnippet()
                 streamSnippet.title = "$finalTitle - Key"
@@ -296,8 +301,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 stream.cdn = cdn
                 stream = youtube.liveStreams().insert("snippet,cdn", stream).execute()
 
-                runOnUiThread { btnGoLive.text = "4/5: LINKING VIDEO..." }
-
                 val bindRequest = youtube.liveBroadcasts().bind(broadcast.id, "id,contentDetails")
                 bindRequest.streamId = stream.id
                 bindRequest.execute()
@@ -305,50 +308,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 val finalUrl = "${stream.cdn.ingestionInfo.ingestionAddress}/${stream.cdn.ingestionInfo.streamName}"
 
                 runOnUiThread { 
-                    btnGoLive.text = "5/5: SENDING CAMERA..." 
+                    btnGoLive.text = "4/4: CONNECTING CAMERA..." 
                     try {
                         rtmpCamera.startStream(finalUrl)
+                        // अब यह बैकग्राउंड में कनेक्ट होगा और ConnectChecker (नीचे) रिजल्ट बताएगा
                     } catch (e: Exception) {
                         btnGoLive.text = "GO LIVE"
                         btnGoLive.isEnabled = true
-                        Toast.makeText(this@MainActivity, "Network Error: Failed to connect.", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this@MainActivity, "Encoder Error: Tablet failed to start streaming.", Toast.LENGTH_LONG).show()
                     }
                 }
-
-                runOnUiThread { btnGoLive.text = "SYNCING YOUTUBE..." }
-                
-                var isVideoActive = false
-                for (i in 1..15) {
-                    Thread.sleep(2000)
-                    try {
-                        val streamResponse = youtube.liveStreams().list("status").setId(stream.id).execute()
-                        val streamStatus = streamResponse.items.firstOrNull()?.status?.streamStatus
-                        if (streamStatus == "active") {
-                            isVideoActive = true
-                            break
-                        }
-                    } catch (e: Exception) { }
-                }
-
-                if (isVideoActive) {
-                    runOnUiThread { btnGoLive.text = "PUBLISHING LIVE..." }
-                    youtube.liveBroadcasts().transition("live", broadcast.id, "status").execute()
-                    
-                    runOnUiThread {
-                        btnGoLive.text = "STOP STREAM"
-                        btnGoLive.isEnabled = true
-                        btnGoLive.setBackgroundColor(Color.parseColor("#E53935"))
-                        Toast.makeText(this@MainActivity, "🔥 YOU ARE LIVE ON YOUTUBE! 🔥", Toast.LENGTH_LONG).show()
-                    }
-                } else {
-                    runOnUiThread {
-                        btnGoLive.text = "GO LIVE"
-                        btnGoLive.isEnabled = true
-                        rtmpCamera.stopStream()
-                        Toast.makeText(this@MainActivity, "Timeout: YouTube Server didn't receive video.", Toast.LENGTH_LONG).show()
-                    }
-                }
-
             } catch (e: Exception) {
                 e.printStackTrace()
                 runOnUiThread {
@@ -365,7 +334,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (requestCode == REQUEST_AUTHORIZATION) {
             val account = GoogleSignIn.getLastSignedInAccount(this)
             if (GoogleSignIn.hasPermissions(account, Scope("https://www.googleapis.com/auth/youtube"))) {
-                Toast.makeText(this, "Permission Granted! Click GO LIVE again to start.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Permission Granted! Click GO LIVE again.", Toast.LENGTH_LONG).show()
             }
         }
         if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK && data != null) {
@@ -421,30 +390,73 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // 🌟 CORRECTED PREVIEW & ENCODER ENGINE 🌟
+    // 🌟 TABLET AUTO-RESOLUTION ENGINE 🌟
     private fun startCameraPreview() { 
         if (!rtmpCamera.isOnPreview) { 
-            // बिना किसी हार्डकोडेड नंबर के, यह टैबलेट की बेस्ट सेटिंग खुद सेट कर लेगा।
-            val isVideoPrepared = rtmpCamera.prepareVideo()
-            val isAudioPrepared = rtmpCamera.prepareAudio()
+            var vReady = false
+            val widths = intArrayOf(1280, 854, 640)
+            val heights = intArrayOf(720, 480, 480)
+            
+            // यह आपके टैबलेट का बेस्ट सपोर्टेड रेजोल्यूशन खुद ढूंढेगा
+            for (i in widths.indices) {
+                try {
+                    if (rtmpCamera.prepareVideo(widths[i], heights[i], 30)) {
+                        vReady = true
+                        break
+                    }
+                } catch (e: Exception) {}
+            }
+            
+            if (!vReady) {
+                try { vReady = rtmpCamera.prepareVideo() } catch (e: Exception) {}
+            }
 
-            if (isVideoPrepared && isAudioPrepared) {
-                rtmpCamera.startPreview() 
+            val aReady = try { rtmpCamera.prepareAudio() } catch (e: Exception) { false }
+
+            if (vReady && aReady) {
+                rtmpCamera.startPreview()
             } else {
-                Toast.makeText(this, "Camera Error: Tablet blocked encoder preparation.", Toast.LENGTH_LONG).show()
+                runOnUiThread { 
+                    Toast.makeText(this, "CAMERA ERROR: Tablet does not support encoder.", Toast.LENGTH_LONG).show() 
+                }
             }
         } 
     }
     
+    // 🌟 RTMP LIVE STATUS TRACKER 🌟
+    override fun onConnectionSuccess() {
+        runOnUiThread {
+            btnGoLive.text = "STOP STREAM"
+            btnGoLive.isEnabled = true
+            btnGoLive.setBackgroundColor(Color.parseColor("#E53935"))
+            Toast.makeText(this@MainActivity, "🔥 YOU ARE LIVE! (YouTube will Auto-Start in ~10s)", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    override fun onConnectionFailed(reason: String) {
+        runOnUiThread {
+            btnGoLive.text = "GO LIVE"
+            btnGoLive.isEnabled = true
+            rtmpCamera.stopStream()
+            Toast.makeText(this@MainActivity, "RTMP ERROR: $reason", Toast.LENGTH_LONG).show()
+            etControlText.setText("RTMP FAILED: $reason")
+        }
+    }
+
+    override fun onDisconnect() {
+        runOnUiThread {
+            btnGoLive.text = "GO LIVE"
+            btnGoLive.isEnabled = true
+            btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
+        }
+    }
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) { super.onRequestPermissionsResult(requestCode, permissions, grantResults); startCameraPreview() }
     override fun surfaceCreated(holder: SurfaceHolder) {}
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) { startCameraPreview() }
     override fun surfaceDestroyed(holder: SurfaceHolder) { if (rtmpCamera.isStreaming) rtmpCamera.stopStream(); if (rtmpCamera.isOnPreview) rtmpCamera.stopPreview() }
     override fun onAuthError() {}
     override fun onAuthSuccess() {}
-    override fun onConnectionFailed(reason: String) {}
     override fun onConnectionStarted(url: String) {}
-    override fun onConnectionSuccess() {}
-    override fun onDisconnect() {}
     override fun onNewBitrate(bitrate: Long) {}
 }
