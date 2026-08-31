@@ -82,7 +82,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private lateinit var googleSignInClient: GoogleSignInClient
     private var connectedAccountEmail: String? = null
     
-    // 🌟 NEW: Retry Engine Variables 🌟
     private var retryCount = 0
     private val MAX_RETRIES = 3
     private var generatedRtmpUrl: String? = null
@@ -188,7 +187,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 return@setOnClickListener
             }
             
-            retryCount = 0 // Reset retries before starting
+            retryCount = 0 
             createYouTubeBroadcast()
         }
 
@@ -219,11 +218,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
 
         etControlText.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) { 
-                if (selectedOverlay is TextView && selectedOverlay != scoreMainText && selectedOverlay != scoreSubText) { 
-                    (selectedOverlay as TextView).text = s.toString() 
-                } 
-            }
+            override fun afterTextChanged(s: Editable?) { if (selectedOverlay is TextView && selectedOverlay != scoreMainText && selectedOverlay != scoreSubText) { (selectedOverlay as TextView).text = s.toString() } }
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         })
@@ -240,34 +235,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         })
 
-        btnAddText.setOnClickListener { 
-            val text = etControlText.text.toString().trim()
-            if (text.isNotEmpty()) { 
-                addTextOverlayToScreen(text)
-                etControlText.text.clear() 
-            } 
-        }
-        
-        btnAddLogo.setOnClickListener { 
-            val intent = Intent(Intent.ACTION_GET_CONTENT)
-            intent.type = "image/*"
-            startActivityForResult(intent, PICK_IMAGE_REQUEST) 
-        }
-        
-        btnRemoveSelected.setOnClickListener { 
-            selectedOverlay?.let { 
-                if (it != dragScoreboard) { 
-                    overlayContainer.removeView(it)
-                    selectedOverlay = null 
-                } 
-            } 
-        }
-        
-        btnToggleScore.setOnClickListener { 
-            val isVis = dragScoreboard.visibility == View.VISIBLE
-            dragScoreboard.visibility = if(isVis) View.GONE else View.VISIBLE
-            btnToggleScore.text = if(isVis) "SHOW SCORECARD ON SCREEN" else "HIDE SCORECARD" 
-        }
+        btnAddText.setOnClickListener { val text = etControlText.text.toString().trim(); if (text.isNotEmpty()) { addTextOverlayToScreen(text); etControlText.text.clear() } }
+        btnAddLogo.setOnClickListener { val intent = Intent(Intent.ACTION_GET_CONTENT); intent.type = "image/*"; startActivityForResult(intent, PICK_IMAGE_REQUEST) }
+        btnRemoveSelected.setOnClickListener { selectedOverlay?.let { if (it != dragScoreboard) { overlayContainer.removeView(it); selectedOverlay = null } } }
+        btnToggleScore.setOnClickListener { val isVis = dragScoreboard.visibility == View.VISIBLE; dragScoreboard.visibility = if(isVis) View.GONE else View.VISIBLE; btnToggleScore.text = if(isVis) "SHOW SCORECARD ON SCREEN" else "HIDE SCORECARD" }
 
         makeDraggableAndScalable(dragScoreboard)
         
@@ -350,8 +321,19 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 bindRequest.streamId = stream.id
                 bindRequest.execute()
 
-                val finalUrl = "${stream.cdn.ingestionInfo.ingestionAddress}/${stream.cdn.ingestionInfo.streamName}"
-                generatedRtmpUrl = finalUrl // Save for retry
+                // 🌟 IPV6 BYPASS ENGINE 🌟 
+                // YouTube के "a.rtmp" (Primary) सर्वर को हटाकर "b.rtmp" (Backup) यूज़ करेंगे
+                var ingestionUrl = stream.cdn.ingestionInfo.ingestionAddress
+                val backupUrl = stream.cdn.ingestionInfo.backupIngestionAddress
+                
+                if (backupUrl != null && backupUrl.isNotEmpty()) {
+                    ingestionUrl = backupUrl
+                } else if (ingestionUrl.contains("a.rtmp")) {
+                    ingestionUrl = ingestionUrl.replace("a.rtmp", "b.rtmp")
+                }
+
+                val finalUrl = "$ingestionUrl/${stream.cdn.ingestionInfo.streamName}"
+                generatedRtmpUrl = finalUrl
 
                 runOnUiThread { 
                     btnGoLive.text = "4/4: CONNECTING CAMERA..." 
@@ -360,7 +342,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     } catch (e: Exception) {
                         btnGoLive.text = "GO LIVE"
                         btnGoLive.isEnabled = true
-                        Toast.makeText(this@MainActivity, "Encoder Error: Failed to start streaming.", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this@MainActivity, "Stream Error: Failed to start.", Toast.LENGTH_LONG).show()
                     }
                 }
             } catch (e: Exception) {
@@ -402,60 +384,33 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     private fun addTextOverlayToScreen(text: String) {
         val textView = TextView(this).apply {
-            this.text = text
-            setTextColor(Color.YELLOW)
-            textSize = 30f
-            setTypeface(null, Typeface.BOLD)
-            layoutParams = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT).apply { 
-                addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) 
-            }
+            this.text = text; setTextColor(Color.YELLOW); textSize = 30f; setTypeface(null, Typeface.BOLD)
+            layoutParams = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) }
         }
         overlayContainer.addView(textView)
-        makeDraggableAndScalable(textView)
-        selectedOverlay = textView
+        makeDraggableAndScalable(textView); selectedOverlay = textView
     }
 
     private fun addImageOverlayToScreen(bitmap: Bitmap) {
         val imageView = ImageView(this).apply {
-            setImageBitmap(bitmap)
-            layoutParams = RelativeLayout.LayoutParams(300, 300).apply { 
-                addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) 
-            }
+            setImageBitmap(bitmap); layoutParams = RelativeLayout.LayoutParams(300, 300).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) }
         }
         overlayContainer.addView(imageView)
-        makeDraggableAndScalable(imageView)
-        selectedOverlay = imageView
+        makeDraggableAndScalable(imageView); selectedOverlay = imageView
     }
 
     @SuppressLint("ClickableViewAccessibility")
     private fun makeDraggableAndScalable(view: View) {
         val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            override fun onScale(detector: ScaleGestureDetector): Boolean { 
-                view.scaleX *= detector.scaleFactor 
-                view.scaleY *= detector.scaleFactor 
-                return true 
-            }
+            override fun onScale(detector: ScaleGestureDetector): Boolean { view.scaleX *= detector.scaleFactor; view.scaleY *= detector.scaleFactor; return true }
         })
-        
-        var dX = 0f
-        var dY = 0f
-        
+        var dX = 0f; var dY = 0f
         view.setOnTouchListener { v, event ->
             scaleGestureDetector.onTouchEvent(event)
             if (!scaleGestureDetector.isInProgress) {
                 when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { 
-                        dX = v.x - event.rawX
-                        dY = v.y - event.rawY
-                        selectedOverlay = v
-                        if (v is TextView && v != dragScoreboard) { 
-                            etControlText.setText(v.text) 
-                        } 
-                    }
-                    MotionEvent.ACTION_MOVE -> { 
-                        v.x = event.rawX + dX
-                        v.y = event.rawY + dY 
-                    }
+                    MotionEvent.ACTION_DOWN -> { dX = v.x - event.rawX; dY = v.y - event.rawY; selectedOverlay = v; if (v is TextView && v != dragScoreboard) { etControlText.setText(v.text) } }
+                    MotionEvent.ACTION_MOVE -> { v.x = event.rawX + dX; v.y = event.rawY + dY }
                 }
             }
             true
@@ -465,8 +420,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private fun startCameraPreview() { 
         if (!rtmpCamera.isOnPreview) { 
             var vReady = false
-            val widths = intArrayOf(1280, 854, 640, 640, 480)
-            val heights = intArrayOf(720, 480, 480, 360, 360)
+            val widths = intArrayOf(1280, 854, 640, 480)
+            val heights = intArrayOf(720, 480, 480, 360)
             
             for (i in widths.indices) {
                 try {
@@ -478,29 +433,23 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
             
             if (!vReady) {
-                try { 
-                    vReady = rtmpCamera.prepareVideo() 
-                } catch (e: Exception) {}
+                try { vReady = rtmpCamera.prepareVideo() } catch (e: Exception) {}
             }
 
             var aReady = false
-            try { 
-                aReady = rtmpCamera.prepareAudio() 
-            } catch (e: Exception) { }
+            try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { }
 
             if (vReady && aReady) {
                 rtmpCamera.startPreview()
             } else {
-                runOnUiThread { 
-                    Toast.makeText(this, "CAMERA ERROR: This device/camera is not supported.", Toast.LENGTH_LONG).show() 
-                }
+                runOnUiThread { Toast.makeText(this, "CAMERA ERROR: Device encoder not supported.", Toast.LENGTH_LONG).show() }
             }
         } 
     }
     
     override fun onConnectionSuccess() {
         runOnUiThread {
-            retryCount = 0 // Reset retries on success
+            retryCount = 0 
             btnGoLive.text = "STOP STREAM"
             btnGoLive.isEnabled = true
             btnGoLive.setBackgroundColor(Color.parseColor("#E53935"))
@@ -508,30 +457,23 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // 🌟 AUTO-RETRY LOGIC 🌟
     override fun onConnectionFailed(reason: String) {
         if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) {
             retryCount++
             runOnUiThread {
                 btnGoLive.text = "RETRYING ($retryCount/3)..."
-                Toast.makeText(this@MainActivity, "Network slow, retrying connection...", Toast.LENGTH_SHORT).show()
             }
-            
-            // 2 सेकंड इंतज़ार करें ताकि नेटवर्क रिफ्रेश हो सके, फिर दोबारा कनेक्ट करें
             Thread {
                 Thread.sleep(2000)
-                try {
-                    rtmpCamera.startStream(generatedRtmpUrl!!)
-                } catch (e: Exception) {}
+                try { rtmpCamera.startStream(generatedRtmpUrl!!) } catch (e: Exception) {}
             }.start()
-            
         } else {
             runOnUiThread {
                 btnGoLive.text = "GO LIVE"
                 btnGoLive.isEnabled = true
                 try { rtmpCamera.stopStream() } catch (e: Exception) {}
-                Toast.makeText(this@MainActivity, "RTMP ERROR: $reason", Toast.LENGTH_LONG).show()
-                etControlText.setText("RTMP FAILED: $reason")
+                Toast.makeText(this@MainActivity, "RTMP TIMEOUT: Connection blocked by ISP.", Toast.LENGTH_LONG).show()
+                etControlText.setText("ERROR: $reason")
             }
         }
     }
