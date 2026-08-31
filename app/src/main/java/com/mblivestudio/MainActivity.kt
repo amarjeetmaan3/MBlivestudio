@@ -89,6 +89,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // 🌟 TABLET NETWORK FIX: Force IPv4 for fast API calls and RTMP connection 🌟
+        System.setProperty("java.net.preferIPv4Stack", "true")
+        System.setProperty("java.net.preferIPv6Addresses", "false")
+
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_main)
 
@@ -321,8 +326,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 bindRequest.streamId = stream.id
                 bindRequest.execute()
 
-                // 🌟 IPV6 BYPASS ENGINE 🌟 
-                // YouTube के "a.rtmp" (Primary) सर्वर को हटाकर "b.rtmp" (Backup) यूज़ करेंगे
+                // 🌟 IPV6 BYPASS FOR RTMP 🌟
                 var ingestionUrl = stream.cdn.ingestionInfo.ingestionAddress
                 val backupUrl = stream.cdn.ingestionInfo.backupIngestionAddress
                 
@@ -333,7 +337,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 }
 
                 val finalUrl = "$ingestionUrl/${stream.cdn.ingestionInfo.streamName}"
-                generatedRtmpUrl = finalUrl
+                generatedRtmpUrl = finalUrl 
 
                 runOnUiThread { 
                     btnGoLive.text = "4/4: CONNECTING CAMERA..." 
