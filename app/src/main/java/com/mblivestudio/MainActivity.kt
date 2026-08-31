@@ -3,7 +3,6 @@ package com.mblivestudio
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -49,12 +48,15 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private lateinit var etControlText: EditText
     private lateinit var btnAddLogo: Button
     private lateinit var btnRemoveSelected: Button
-    private lateinit var btnSwitchCamera: Button
+    
+    // नए टॉप बटन्स
     private lateinit var btnGoLive: Button
+    private lateinit var btnSwitchCamera: Button
+    private lateinit var btnMicToggle: Button
 
     private var selectedOverlay: View? = null
+    private var isAudioMuted = false
 
-    // गैलरी रिक्वेस्ट कोड
     private val PICK_IMAGE_REQUEST = 101
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -81,8 +83,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         etControlText = findViewById(R.id.etControlText)
         btnAddLogo = findViewById(R.id.btnAddLogo)
         btnRemoveSelected = findViewById(R.id.btnRemoveSelected)
-        btnSwitchCamera = findViewById(R.id.btnSwitchCamera)
+        
         btnGoLive = findViewById(R.id.btnGoLive)
+        btnSwitchCamera = findViewById(R.id.btnSwitchCamera)
+        btnMicToggle = findViewById(R.id.btnMicToggle)
         
         rtmpCamera = RtmpCamera2(openGlView, this)
         openGlView.holder.addCallback(this)
@@ -105,7 +109,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         webOverlay.webViewClient = WebViewClient()
         webOverlay.webChromeClient = WebChromeClient()
 
-        // --- SIDE PANEL LIVE EDITING LOGIC ---
+        // SIDE PANEL EDITORS
         etControlText.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) {
                 if (selectedOverlay is TextView && selectedOverlay != scoreMainText && selectedOverlay != scoreSubText) {
@@ -128,6 +132,36 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         })
 
+        // TOP CONTROLS ACTIONS
+        btnGoLive.setOnClickListener {
+            if (!rtmpCamera.isStreaming) {
+                rtmpCamera.startStream("rtmp://a.rtmp.youtube.com/live2/YOUR_STREAM_KEY")
+                btnGoLive.text = "STOP STREAM"
+            } else {
+                rtmpCamera.stopStream()
+                btnGoLive.text = "GO LIVE"
+            }
+        }
+
+        btnSwitchCamera.setOnClickListener {
+            rtmpCamera.switchCamera()
+        }
+
+        btnMicToggle.setOnClickListener {
+            if (isAudioMuted) {
+                rtmpCamera.enableAudio()
+                isAudioMuted = false
+                btnMicToggle.text = "MIC: ON"
+                btnMicToggle.setBackgroundColor(Color.parseColor("#4CAF50")) // Green
+            } else {
+                rtmpCamera.disableAudio()
+                isAudioMuted = true
+                btnMicToggle.text = "MIC: OFF"
+                btnMicToggle.setBackgroundColor(Color.parseColor("#E53935")) // Red
+            }
+        }
+
+        // OTHER ACTIONS
         btnAddText.setOnClickListener {
             val text = etControlText.text.toString().trim()
             if (text.isNotEmpty()) {
@@ -138,7 +172,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
         }
 
-        // गैलरी ओपन करने का क्लासिक तरीका (No Crash)
         btnAddLogo.setOnClickListener {
             val intent = Intent(Intent.ACTION_GET_CONTENT)
             intent.type = "image/*"
@@ -161,10 +194,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             btnToggleScore.text = if(isVis) "SHOW SCORECARD ON SCREEN" else "HIDE SCORECARD"
         }
 
-        btnSwitchCamera.setOnClickListener {
-            rtmpCamera.switchCamera()
-        }
-
         makeDraggableAndScalable(dragScoreboard)
 
         btnApplyWeb.setOnClickListener {
@@ -182,19 +211,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 btnApplyWeb.text = "SHOW WEB OVERLAY"
             }
         }
-
-        btnGoLive.setOnClickListener {
-            if (!rtmpCamera.isStreaming) {
-                rtmpCamera.startStream("rtmp://a.rtmp.youtube.com/live2/YOUR_STREAM_KEY")
-                btnGoLive.text = "STOP STREAM"
-            } else {
-                rtmpCamera.stopStream()
-                btnGoLive.text = "GO LIVE"
-            }
-        }
     }
 
-    // जब यूजर गैलरी से फोटो चुन लेगा
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK && data != null) {
