@@ -338,6 +338,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 bindRequest.streamId = stream.id
                 bindRequest.execute()
 
+               // ... (ऊपर का कोड सेम रहेगा)
                 val streamUrl = stream.cdn.ingestionInfo.ingestionAddress
                 val streamKey = stream.cdn.ingestionInfo.streamName
                 val finalUrl = "$streamUrl/$streamKey"
@@ -345,11 +346,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
                 runOnUiThread { 
                     btnGoLive.text = "5/5: SENDING CAMERA..." 
-                    // 🌟 FIX: Removed the '!' error condition 🌟
                     try {
                         rtmpCamera.startStream(finalUrl)
                     } catch (e: Exception) {
-                        Toast.makeText(this@MainActivity, "Camera failed to connect", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@MainActivity, "Camera failed: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
                 }
 
@@ -366,7 +366,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                             isVideoActive = true
                             break
                         }
-                    } catch (e: Exception) {}
+                    } catch (e: Exception) {
+                        // इग्नोर करें
+                    }
                 }
 
                 if (isVideoActive) {
@@ -400,7 +402,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
         }.start()
     }
-
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         
