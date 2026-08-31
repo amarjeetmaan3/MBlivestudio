@@ -2,10 +2,12 @@ package com.mblivestudio
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
+import android.app.AlertDialog
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
@@ -20,17 +22,12 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.*
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import com.pedro.common.ConnectChecker
 import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
 import com.pedro.encoder.input.gl.render.filters.AndroidViewFilterRender
 
-class MainActivity : AppCompatActivity(), ConnectChecker, SurfaceHolder.Callback {
+class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     
     private lateinit var rtmpCamera: RtmpCamera2
     private lateinit var openGlView: OpenGlView
@@ -57,13 +54,8 @@ class MainActivity : AppCompatActivity(), ConnectChecker, SurfaceHolder.Callback
 
     private var selectedOverlay: View? = null
 
-    // गैलरी लॉन्चर
-    private val pickImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        uri?.let {
-            val bitmap = MediaStore.Images.Media.getBitmap(contentResolver, it)
-            addImageOverlayToScreen(bitmap)
-        }
-    }
+    // गैलरी रिक्वेस्ट कोड
+    private val PICK_IMAGE_REQUEST = 101
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -96,8 +88,8 @@ class MainActivity : AppCompatActivity(), ConnectChecker, SurfaceHolder.Callback
         openGlView.holder.addCallback(this)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
+            if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
             }
         }
 
@@ -146,8 +138,11 @@ class MainActivity : AppCompatActivity(), ConnectChecker, SurfaceHolder.Callback
             }
         }
 
+        // गैलरी ओपन करने का क्लासिक तरीका (No Crash)
         btnAddLogo.setOnClickListener {
-            pickImageLauncher.launch("image/*")
+            val intent = Intent(Intent.ACTION_GET_CONTENT)
+            intent.type = "image/*"
+            startActivityForResult(intent, PICK_IMAGE_REQUEST)
         }
 
         btnRemoveSelected.setOnClickListener {
@@ -195,6 +190,17 @@ class MainActivity : AppCompatActivity(), ConnectChecker, SurfaceHolder.Callback
             } else {
                 rtmpCamera.stopStream()
                 btnGoLive.text = "GO LIVE"
+            }
+        }
+    }
+
+    // जब यूजर गैलरी से फोटो चुन लेगा
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK && data != null) {
+            data.data?.let { uri ->
+                val bitmap = MediaStore.Images.Media.getBitmap(contentResolver, uri)
+                addImageOverlayToScreen(bitmap)
             }
         }
     }
