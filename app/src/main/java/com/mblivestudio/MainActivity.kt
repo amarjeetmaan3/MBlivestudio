@@ -14,7 +14,6 @@ import android.os.Bundle
 import android.provider.MediaStore
 import android.text.Editable
 import android.text.TextWatcher
-import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.SurfaceHolder
@@ -453,71 +452,26 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             val widths = intArrayOf(1280, 854, 640, 480)
             val heights = intArrayOf(720, 480, 480, 360)
             
-            var activeWidth = 1280
-            var activeHeight = 720
-            
             for (i in widths.indices) {
                 try {
                     if (rtmpCamera.prepareVideo(widths[i], heights[i], 30)) {
                         vReady = true
-                        activeWidth = widths[i]
-                        activeHeight = heights[i]
                         break
                     }
                 } catch (e: Exception) {}
             }
             
             if (!vReady) {
-                try { 
-                    vReady = rtmpCamera.prepareVideo() 
-                    activeWidth = 640
-                    activeHeight = 480
-                } catch (e: Exception) {}
+                try { vReady = rtmpCamera.prepareVideo() } catch (e: Exception) {}
             }
 
             var aReady = false
             try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { }
 
             if (vReady && aReady) {
+                // 🌟 FIX: फ़िल्टर को कैमरा स्टार्ट होने से ठीक पहले सुरक्षित रूप से जोड़ें 🌟
+                rtmpCamera.glInterface.setFilter(viewFilterRender)
                 rtmpCamera.startPreview()
-                
-                // 🌟 FIX: ASPECT RATIO SYNC ENGINE 🌟
-                // यह स्क्रीन को बिल्कुल वीडियो स्ट्रीम के साइज़ में क्रॉप कर देगा
-                openGlView.post {
-                    val parentView = openGlView.parent as View
-                    val parentWidth = parentView.width
-                    val parentHeight = parentView.height
-                    
-                    if (parentWidth > 0 && parentHeight > 0) {
-                        val targetRatio = activeWidth.toFloat() / activeHeight.toFloat()
-                        val parentRatio = parentWidth.toFloat() / parentHeight.toFloat()
-
-                        var finalWidth = parentWidth
-                        var finalHeight = parentHeight
-
-                        if (parentRatio > targetRatio) {
-                            finalWidth = (parentHeight * targetRatio).toInt()
-                        } else {
-                            finalHeight = (parentWidth / targetRatio).toInt()
-                        }
-
-                        val overlayParams = overlayContainer.layoutParams as FrameLayout.LayoutParams
-                        overlayParams.width = finalWidth
-                        overlayParams.height = finalHeight
-                        overlayParams.gravity = Gravity.CENTER
-                        overlayContainer.layoutParams = overlayParams
-
-                        val glParams = openGlView.layoutParams as FrameLayout.LayoutParams
-                        glParams.width = finalWidth
-                        glParams.height = finalHeight
-                        glParams.gravity = Gravity.CENTER
-                        openGlView.layoutParams = glParams
-                        
-                        rtmpCamera.glInterface.setFilter(viewFilterRender)
-                    } else {
-                        rtmpCamera.glInterface.setFilter(viewFilterRender)
-                    }
-                }
             } else {
                 runOnUiThread { Toast.makeText(this, "CAMERA ERROR: Device encoder not supported.", Toast.LENGTH_LONG).show() }
             }
