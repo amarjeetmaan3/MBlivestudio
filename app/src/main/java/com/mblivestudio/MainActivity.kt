@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Build
@@ -28,7 +29,7 @@ import android.widget.*
 import com.pedro.common.ConnectChecker
 import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
-import com.pedro.encoder.input.gl.render.filters.AndroidViewFilterRender
+import com.pedro.encoder.input.gl.render.filters.object.ImageObjectFilterRender
 
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
@@ -50,7 +51,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private lateinit var rtmpCamera: RtmpCamera2
     private lateinit var openGlView: OpenGlView
     private lateinit var overlayContainer: RelativeLayout
-    private lateinit var viewFilterRender: AndroidViewFilterRender
+    
+    // 🌟 SMART TRICK: AndroidViewFilterRender हटाकर Image Filter यूज़ कर रहे हैं 🌟
+    private lateinit var imageFilterRender: ImageObjectFilterRender
 
     private lateinit var webOverlay: WebView
     private lateinit var etWebUrl: EditText
@@ -91,7 +94,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private val MAX_RETRIES = 3
     private var generatedRtmpUrl: String? = null
 
-    // 🌟 Debounce Handler for UI updates 🌟
     private val overlayHandler = Handler(Looper.getMainLooper())
     private var pendingRefresh = false
 
@@ -146,11 +148,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
         }
 
-        // 🌟 Force Software Layer to prevent blank hardware Canvas captures 🌟
-        overlayContainer.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+        // 🌟 INIT IMAGE FILTER 🌟
+        imageFilterRender = ImageObjectFilterRender()
         
-        viewFilterRender = AndroidViewFilterRender()
-        viewFilterRender.view = overlayContainer
+        // Software layer for safe canvas snapshot
+        overlayContainer.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
 
         webOverlay.setBackgroundColor(Color.TRANSPARENT)
         webOverlay.setLayerType(View.LAYER_TYPE_SOFTWARE, null) 
@@ -242,11 +244,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
         }
 
+        // 🌟 Every time text changes, we update the Snapshot 🌟
         etControlText.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) { 
                 if (selectedOverlay is TextView && selectedOverlay != scoreMainText && selectedOverlay != scoreSubText) { 
                     (selectedOverlay as TextView).text = s.toString() 
-                    forceOverlayUpdate() 
+                    updateSnapshot() 
                 } 
             }
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -254,21 +257,21 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         })
 
         etScoreMain.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) { scoreMainText.text = s.toString(); forceOverlayUpdate() }
+            override fun afterTextChanged(s: Editable?) { scoreMainText.text = s.toString(); updateSnapshot() }
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         })
 
         etScoreSub.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) { scoreSubText.text = s.toString(); forceOverlayUpdate() }
+            override fun afterTextChanged(s: Editable?) { scoreSubText.text = s.toString(); updateSnapshot() }
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         })
 
         btnAddText.setOnClickListener { val text = etControlText.text.toString().trim(); if (text.isNotEmpty()) { addTextOverlayToScreen(text); etControlText.text.clear() } }
         btnAddLogo.setOnClickListener { val intent = Intent(Intent.ACTION_GET_CONTENT); intent.type = "image/*"; startActivityForResult(intent, PICK_IMAGE_REQUEST) }
-        btnRemoveSelected.setOnClickListener { selectedOverlay?.let { if (it != dragScoreboard) { overlayContainer.removeView(it); selectedOverlay = null; forceOverlayUpdate() } } }
-        btnToggleScore.setOnClickListener { val isVis = dragScoreboard.visibility == View.VISIBLE; dragScoreboard.visibility = if(isVis) View.GONE else View.VISIBLE; btnToggleScore.text = if(isVis) "SHOW SCORECARD ON SCREEN" else "HIDE SCORECARD"; forceOverlayUpdate() }
+        btnRemoveSelected.setOnClickListener { selectedOverlay?.let { if (it != dragScoreboard) { overlayContainer.removeView(it); selectedOverlay = null; updateSnapshot() } } }
+        btnToggleScore.setOnClickListener { val isVis = dragScoreboard.visibility == View.VISIBLE; dragScoreboard.visibility = if(isVis) View.GONE else View.VISIBLE; btnToggleScore.text = if(isVis) "SHOW SCORECARD ON SCREEN" else "HIDE SCORECARD"; updateSnapshot() }
 
         makeDraggableAndScalable(dragScoreboard)
         
@@ -286,18 +289,37 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 webOverlay.loadUrl("about:blank")
                 btnApplyWeb.text = "SHOW WEB OVERLAY"
             }
-            forceOverlayUpdate()
+            // वेबव्यू लोड होने के 2 सेकंड बाद स्नैपशॉट लें
+            overlayHandler.postDelayed({ updateSnapshot() }, 2000)
         }
     }
 
-    // 🌟 Manual Event-Driven Rendering to prevent GPU Choke 🌟
-    private fun forceOverlayUpdate() {
-        if (!rtmpCamera.isOnPreview || pendingRefresh) return
+    // 🌟 SMART TRICK: Convert entire screen to a silent Image (Bitmap) 🌟
+    private fun updateSnapshot() {
+        if (!rtmpCamera.isOnPreview || overlayContainer.width == 0 || overlayContainer.height == 0) return
+        
+        if (pendingRefresh) return
         pendingRefresh = true
+        
         overlayHandler.postDelayed({
-            overlayContainer.invalidate()
+            try {
+                // एक खाली पारदर्शी (Transparent) कैनवास बनाएँ
+                val bitmap = Bitmap.createBitmap(overlayContainer.width, overlayContainer.height, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(bitmap)
+                
+                // आपके स्कोरकार्ड और टेक्स्ट की फोटो खींच कर कैनवास पर छापें
+                overlayContainer.draw(canvas)
+                
+                // इस फोटो को बिना क्रैश किए लाइव स्ट्रीम में भेजें
+                imageFilterRender.setImage(bitmap)
+                imageFilterRender.setScale(100f, 100f)
+                imageFilterRender.setPosition(0f, 0f)
+                
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
             pendingRefresh = false
-        }, 150)
+        }, 200) // 200ms delay to ensure layout updates before capturing
     }
 
     private fun createYouTubeBroadcast() {
@@ -440,7 +462,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
         overlayContainer.addView(textView)
         makeDraggableAndScalable(textView); selectedOverlay = textView
-        forceOverlayUpdate()
+        updateSnapshot()
     }
 
     private fun addImageOverlayToScreen(bitmap: Bitmap) {
@@ -449,7 +471,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
         overlayContainer.addView(imageView)
         makeDraggableAndScalable(imageView); selectedOverlay = imageView
-        forceOverlayUpdate()
+        updateSnapshot()
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -464,41 +486,56 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> { dX = v.x - event.rawX; dY = v.y - event.rawY; selectedOverlay = v; if (v is TextView && v != dragScoreboard) { etControlText.setText(v.text) } }
                     MotionEvent.ACTION_MOVE -> { v.x = event.rawX + dX; v.y = event.rawY + dY }
-                    MotionEvent.ACTION_UP -> { forceOverlayUpdate() }
+                    // 🌟 ड्रैग खत्म होने पर स्नैपशॉट अपडेट करें 🌟
+                    MotionEvent.ACTION_UP -> { updateSnapshot() } 
                 }
             }
             true
         }
     }
 
+    // 🌟 SMART AUTO-FALLBACK ENGINE (डिवाइस को पहचानने वाला सिस्टम) 🌟
     private fun startCameraPreview() { 
         if (!rtmpCamera.isOnPreview) { 
-            var vReady = false
-            val widths = intArrayOf(1280, 854, 640, 480)
-            val heights = intArrayOf(720, 480, 480, 360)
+            var isSuccess = false
             
-            for (i in widths.indices) {
+            // यह कोड पहले सबसे बेहतरीन क्वालिटी की कोशिश करेगा (1280x720)
+            // अगर हार्डवेयर फेल होता है, तो यह बिना क्रैश किए ऑटोमैटिकली 640x480 पर शिफ्ट हो जाएगा
+            val resolutions = listOf(
+                Pair(1280, 720),
+                Pair(854, 480),
+                Pair(640, 480)
+            )
+            
+            for (res in resolutions) {
                 try {
-                    if (rtmpCamera.prepareVideo(widths[i], heights[i], 30)) {
-                        vReady = true
+                    if (rtmpCamera.prepareVideo(res.first, res.second, 30)) {
+                        isSuccess = true
                         break
                     }
-                } catch (e: Exception) {}
+                } catch (e: Exception) {
+                    // Fail silently and try next resolution
+                }
             }
             
-            if (!vReady) {
+            // अगर सारी कोशिशें फेल हो गईं, तो सबसे बेसिक मोड ऑन करेगा
+            if (!isSuccess) {
                 try { 
-                    vReady = rtmpCamera.prepareVideo() 
+                    isSuccess = rtmpCamera.prepareVideo() 
                 } catch (e: Exception) {}
             }
 
             var aReady = false
             try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { }
 
-            if (vReady && aReady) {
-                // 🌟 Call setFilter() ONLY ONCE here 🌟
-                rtmpCamera.glInterface.setFilter(viewFilterRender)
+            if (isSuccess && aReady) {
+                // 🌟 Filter को बस एक बार सेट करेंगे 🌟
+                rtmpCamera.glInterface.setFilter(imageFilterRender)
                 rtmpCamera.startPreview()
+                
+                // थोड़ा सा रुक कर पहला स्नैपशॉट सेट कर देंगे
+                overlayHandler.postDelayed({ updateSnapshot() }, 1000)
+                
             } else {
                 runOnUiThread { Toast.makeText(this, "CAMERA ERROR: Device encoder not supported.", Toast.LENGTH_LONG).show() }
             }
