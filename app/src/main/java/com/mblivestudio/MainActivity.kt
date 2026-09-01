@@ -14,6 +14,7 @@ import android.os.Bundle
 import android.provider.MediaStore
 import android.text.Editable
 import android.text.TextWatcher
+import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.SurfaceHolder
@@ -140,10 +141,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
         }
 
-        // 🌟 100% SAFE FILTER INIT 🌟
         viewFilterRender = AndroidViewFilterRender()
         viewFilterRender.view = overlayContainer
-        rtmpCamera.glInterface.setFilter(viewFilterRender)
 
         webOverlay.setBackgroundColor(Color.TRANSPARENT)
         webOverlay.setLayerType(View.LAYER_TYPE_SOFTWARE, null) 
@@ -448,30 +447,70 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // 🌟 SAFE CAMERA PREVIEW (NO RESIZING HACKS) 🌟
     private fun startCameraPreview() { 
         if (!rtmpCamera.isOnPreview) { 
             var vReady = false
             val widths = intArrayOf(1280, 854, 640, 480)
             val heights = intArrayOf(720, 480, 480, 360)
             
+            var activeWidth = 1280
+            var activeHeight = 720
+
             for (i in widths.indices) {
                 try {
                     if (rtmpCamera.prepareVideo(widths[i], heights[i], 30)) {
                         vReady = true
+                        activeWidth = widths[i]
+                        activeHeight = heights[i]
                         break
                     }
                 } catch (e: Exception) {}
             }
             
             if (!vReady) {
-                try { vReady = rtmpCamera.prepareVideo() } catch (e: Exception) {}
+                try { 
+                    vReady = rtmpCamera.prepareVideo() 
+                    activeWidth = 640
+                    activeHeight = 480
+                } catch (e: Exception) {}
             }
 
             var aReady = false
             try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { }
 
             if (vReady && aReady) {
+                
+                // 🌟 FIX 1: कैमरे को बिना छेड़े, सिर्फ ओवरले को वीडियो के साइज़ में सेट करना 🌟
+                openGlView.post {
+                    val parentWidth = (openGlView.parent as View).width
+                    val parentHeight = (openGlView.parent as View).height
+                    
+                    if (parentWidth > 0 && parentHeight > 0) {
+                        val targetRatio = activeWidth.toFloat() / activeHeight.toFloat()
+                        val parentRatio = parentWidth.toFloat() / parentHeight.toFloat()
+
+                        var finalWidth = parentWidth
+                        var finalHeight = parentHeight
+
+                        if (parentRatio > targetRatio) {
+                            finalWidth = (parentHeight * targetRatio).toInt()
+                        } else {
+                            finalHeight = (parentWidth / targetRatio).toInt()
+                        }
+
+                        // हम OpenGlView (कैमरा) को नहीं छेड़ रहे हैं, सिर्फ ग्राफ़िक्स वाले डिब्बे को सही कर रहे हैं
+                        val overlayParams = overlayContainer.layoutParams as FrameLayout.LayoutParams
+                        overlayParams.width = finalWidth
+                        overlayParams.height = finalHeight
+                        overlayParams.gravity = Gravity.CENTER
+                        overlayContainer.layoutParams = overlayParams
+                    }
+                }
+
+                // 🌟 FIX 2: Cloud AI की सबसे ज़रूरी ट्रिक (Force Render) 🌟
+                rtmpCamera.glInterface.setFilter(viewFilterRender)
+                rtmpCamera.glInterface.setForceRender(true) // यह लाइन स्कोरकार्ड को लाइव वीडियो में चिपका देगी!
+                
                 rtmpCamera.startPreview()
             } else {
                 runOnUiThread { Toast.makeText(this, "CAMERA ERROR: Device encoder not supported.", Toast.LENGTH_LONG).show() }
