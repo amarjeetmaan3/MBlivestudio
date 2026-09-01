@@ -7,20 +7,19 @@
 
     <!-- Camera Preview Area -->
     <FrameLayout
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="7">
+        android:layout_width="match_parent"
+    android:layout_height="match_parent">
 
-        <com.pedro.library.view.OpenGlView
-            android:id="@+id/surfaceView"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent" />
+      <com.pedro.library.view.OpenGlView
+        android:id="@+id/surfaceView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
 
         <RelativeLayout
-            android:id="@+id/overlayContainer"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:background="@android:color/transparent">
+        android:id="@+id/overlayContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@android:color/transparent">
 
             <WebView
                 android:id="@+id/webOverlay"
