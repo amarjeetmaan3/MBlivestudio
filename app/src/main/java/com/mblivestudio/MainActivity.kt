@@ -89,6 +89,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private val MAX_RETRIES = 3
     private var generatedRtmpUrl: String? = null
 
+    // स्ट्रीम का साइज़ ट्रैक करने के लिए
+    private var streamWidth = 1280
+    private var streamHeight = 720
+
     override fun attachBaseContext(newBase: Context?) {
         super.attachBaseContext(newBase)
         System.setProperty("java.net.preferIPv4Stack", "true")
@@ -140,14 +144,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
         }
 
-        // 🌟 FIX: टैबलेट पर ब्लैक स्क्रीन रोकने के लिए सॉफ़्टवेयर रेंडरिंग चालू करें 🌟
-        overlayContainer.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
-        
         viewFilterRender = AndroidViewFilterRender()
         viewFilterRender.view = overlayContainer
 
         webOverlay.setBackgroundColor(Color.TRANSPARENT)
-        webOverlay.setLayerType(View.LAYER_TYPE_SOFTWARE, null) 
         webOverlay.settings.javaScriptEnabled = true
         webOverlay.settings.domStorageEnabled = true
         webOverlay.webViewClient = WebViewClient()
@@ -184,7 +184,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                         btnGoLive.text = "GO LIVE"
                         btnGoLive.isEnabled = true
                         btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
-                        Toast.makeText(this@MainActivity, "Stream Stopped & YouTube Notified.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@MainActivity, "Stream Stopped.", Toast.LENGTH_SHORT).show()
                         generatedRtmpUrl = null
                     }
                 }.start()
@@ -192,7 +192,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             } 
             
             if (!rtmpCamera.isOnPreview) {
-                Toast.makeText(this@MainActivity, "Camera not ready! Preparing...", Toast.LENGTH_SHORT).show()
                 startCameraPreview()
                 return@setOnClickListener
             }
@@ -220,9 +219,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     rtmpCamera.stopPreview()
                     startCameraPreview()
                 }
-            } catch (e: Exception) {
-                Toast.makeText(this@MainActivity, "Cannot flip camera right now.", Toast.LENGTH_SHORT).show()
-            }
+            } catch (e: Exception) {}
         }
 
         btnMicToggle.setOnClickListener {
@@ -240,27 +237,32 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
 
         etControlText.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) { if (selectedOverlay is TextView && selectedOverlay != scoreMainText && selectedOverlay != scoreSubText) { (selectedOverlay as TextView).text = s.toString(); refreshFilter() } }
+            override fun afterTextChanged(s: Editable?) { 
+                if (selectedOverlay is TextView && selectedOverlay != scoreMainText && selectedOverlay != scoreSubText) { 
+                    (selectedOverlay as TextView).text = s.toString() 
+                    forceOverlayUpdate() 
+                } 
+            }
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         })
 
         etScoreMain.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) { scoreMainText.text = s.toString(); refreshFilter() }
+            override fun afterTextChanged(s: Editable?) { scoreMainText.text = s.toString(); forceOverlayUpdate() }
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         })
 
         etScoreSub.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) { scoreSubText.text = s.toString(); refreshFilter() }
+            override fun afterTextChanged(s: Editable?) { scoreSubText.text = s.toString(); forceOverlayUpdate() }
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         })
 
         btnAddText.setOnClickListener { val text = etControlText.text.toString().trim(); if (text.isNotEmpty()) { addTextOverlayToScreen(text); etControlText.text.clear() } }
         btnAddLogo.setOnClickListener { val intent = Intent(Intent.ACTION_GET_CONTENT); intent.type = "image/*"; startActivityForResult(intent, PICK_IMAGE_REQUEST) }
-        btnRemoveSelected.setOnClickListener { selectedOverlay?.let { if (it != dragScoreboard) { overlayContainer.removeView(it); selectedOverlay = null; refreshFilter() } } }
-        btnToggleScore.setOnClickListener { val isVis = dragScoreboard.visibility == View.VISIBLE; dragScoreboard.visibility = if(isVis) View.GONE else View.VISIBLE; btnToggleScore.text = if(isVis) "SHOW SCORECARD ON SCREEN" else "HIDE SCORECARD"; refreshFilter() }
+        btnRemoveSelected.setOnClickListener { selectedOverlay?.let { if (it != dragScoreboard) { overlayContainer.removeView(it); selectedOverlay = null; forceOverlayUpdate() } } }
+        btnToggleScore.setOnClickListener { val isVis = dragScoreboard.visibility == View.VISIBLE; dragScoreboard.visibility = if(isVis) View.GONE else View.VISIBLE; btnToggleScore.text = if(isVis) "SHOW SCORECARD ON SCREEN" else "HIDE SCORECARD"; forceOverlayUpdate() }
 
         makeDraggableAndScalable(dragScoreboard)
         
@@ -278,13 +280,24 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 webOverlay.loadUrl("about:blank")
                 btnApplyWeb.text = "SHOW WEB OVERLAY"
             }
-            refreshFilter()
+            forceOverlayUpdate()
         }
     }
 
-    private fun refreshFilter() {
+    // 🌟 मैनुअल कैनवास रेंडर - यह बैकग्राउंड में व्यू को स्ट्रीम के हिसाब से सेट करता है 🌟
+    private fun forceOverlayUpdate() {
         if (rtmpCamera.isOnPreview) {
-            rtmpCamera.glInterface.setFilter(viewFilterRender)
+            overlayContainer.post {
+                overlayContainer.measure(
+                    View.MeasureSpec.makeMeasureSpec(streamWidth, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(streamHeight, View.MeasureSpec.EXACTLY)
+                )
+                overlayContainer.layout(0, 0, streamWidth, streamHeight)
+                
+                viewFilterRender.view = overlayContainer
+                rtmpCamera.glInterface.setFilter(viewFilterRender)
+                rtmpCamera.glInterface.setForceRender(true)
+            }
         }
     }
 
@@ -428,7 +441,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
         overlayContainer.addView(textView)
         makeDraggableAndScalable(textView); selectedOverlay = textView
-        refreshFilter()
+        forceOverlayUpdate()
     }
 
     private fun addImageOverlayToScreen(bitmap: Bitmap) {
@@ -437,7 +450,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
         overlayContainer.addView(imageView)
         makeDraggableAndScalable(imageView); selectedOverlay = imageView
-        refreshFilter()
+        forceOverlayUpdate()
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -452,7 +465,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> { dX = v.x - event.rawX; dY = v.y - event.rawY; selectedOverlay = v; if (v is TextView && v != dragScoreboard) { etControlText.setText(v.text) } }
                     MotionEvent.ACTION_MOVE -> { v.x = event.rawX + dX; v.y = event.rawY + dY }
-                    MotionEvent.ACTION_UP -> { refreshFilter() } // ड्रैग खत्म होने पर अपडेट करें
+                    MotionEvent.ACTION_UP -> { forceOverlayUpdate() }
                 }
             }
             true
@@ -468,6 +481,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             for (i in widths.indices) {
                 try {
                     if (rtmpCamera.prepareVideo(widths[i], heights[i], 30)) {
+                        streamWidth = widths[i]
+                        streamHeight = heights[i]
                         vReady = true
                         break
                     }
@@ -475,7 +490,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
             
             if (!vReady) {
-                try { vReady = rtmpCamera.prepareVideo() } catch (e: Exception) {}
+                try { 
+                    vReady = rtmpCamera.prepareVideo() 
+                    streamWidth = 640
+                    streamHeight = 480
+                } catch (e: Exception) {}
             }
 
             var aReady = false
@@ -483,7 +502,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
             if (vReady && aReady) {
                 rtmpCamera.startPreview()
-                rtmpCamera.glInterface.setFilter(viewFilterRender)
+                forceOverlayUpdate()
             } else {
                 runOnUiThread { Toast.makeText(this, "CAMERA ERROR: Device encoder not supported.", Toast.LENGTH_LONG).show() }
             }
@@ -496,7 +515,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             btnGoLive.text = "STOP STREAM"
             btnGoLive.isEnabled = true
             btnGoLive.setBackgroundColor(Color.parseColor("#E53935"))
-            Toast.makeText(this@MainActivity, "🔥 YOU ARE LIVE! (YouTube will Auto-Start in ~10s)", Toast.LENGTH_LONG).show()
+            Toast.makeText(this@MainActivity, "🔥 YOU ARE LIVE!", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -518,8 +537,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 btnGoLive.text = "GO LIVE"
                 btnGoLive.isEnabled = true
                 try { rtmpCamera.stopStream() } catch (e: Exception) {}
-                Toast.makeText(this@MainActivity, "RTMP TIMEOUT: Connection blocked by ISP.", Toast.LENGTH_LONG).show()
-                etControlText.setText("ERROR: $reason")
+                Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show()
             }
         }
     }
