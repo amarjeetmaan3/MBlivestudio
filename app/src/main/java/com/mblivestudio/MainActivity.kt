@@ -51,8 +51,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private lateinit var rtmpCamera: RtmpCamera2
     private lateinit var openGlView: OpenGlView
     private lateinit var overlayContainer: RelativeLayout
-    
-    // 🌟 SMART TRICK: AndroidViewFilterRender हटाकर Image Filter यूज़ कर रहे हैं 🌟
     private lateinit var imageFilterRender: ImageObjectFilterRender
 
     private lateinit var webOverlay: WebView
@@ -96,6 +94,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     private val overlayHandler = Handler(Looper.getMainLooper())
     private var pendingRefresh = false
+
+    // 🌟 Camera Lifecycle Gating Flags 🌟
+    private var surfaceReady = false
 
     override fun attachBaseContext(newBase: Context?) {
         super.attachBaseContext(newBase)
@@ -144,14 +145,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         rtmpCamera = RtmpCamera2(openGlView, this)
         openGlView.holder.addCallback(this)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !hasCameraPermissions()) {
             requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
         }
 
-        // 🌟 INIT IMAGE FILTER 🌟
         imageFilterRender = ImageObjectFilterRender()
-        
-        // Software layer for safe canvas snapshot
         overlayContainer.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
 
         webOverlay.setBackgroundColor(Color.TRANSPARENT)
@@ -200,7 +198,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             } 
             
             if (!rtmpCamera.isOnPreview) {
-                startCameraPreview()
+                tryStartCameraPreview()
                 return@setOnClickListener
             }
 
@@ -225,7 +223,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 rtmpCamera.switchCamera()
                 if (!rtmpCamera.isStreaming) {
                     rtmpCamera.stopPreview()
-                    startCameraPreview()
+                    tryStartCameraPreview()
                 }
             } catch (e: Exception) {}
         }
@@ -244,7 +242,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
         }
 
-        // 🌟 Every time text changes, we update the Snapshot 🌟
         etControlText.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) { 
                 if (selectedOverlay is TextView && selectedOverlay != scoreMainText && selectedOverlay != scoreSubText) { 
@@ -289,12 +286,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 webOverlay.loadUrl("about:blank")
                 btnApplyWeb.text = "SHOW WEB OVERLAY"
             }
-            // वेबव्यू लोड होने के 2 सेकंड बाद स्नैपशॉट लें
             overlayHandler.postDelayed({ updateSnapshot() }, 2000)
         }
     }
 
-    // 🌟 SMART TRICK: Convert entire screen to a silent Image (Bitmap) 🌟
     private fun updateSnapshot() {
         if (!rtmpCamera.isOnPreview || overlayContainer.width == 0 || overlayContainer.height == 0) return
         
@@ -303,23 +298,18 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         
         overlayHandler.postDelayed({
             try {
-                // एक खाली पारदर्शी (Transparent) कैनवास बनाएँ
                 val bitmap = Bitmap.createBitmap(overlayContainer.width, overlayContainer.height, Bitmap.Config.ARGB_8888)
                 val canvas = Canvas(bitmap)
-                
-                // आपके स्कोरकार्ड और टेक्स्ट की फोटो खींच कर कैनवास पर छापें
                 overlayContainer.draw(canvas)
                 
-                // इस फोटो को बिना क्रैश किए लाइव स्ट्रीम में भेजें
                 imageFilterRender.setImage(bitmap)
                 imageFilterRender.setScale(100f, 100f)
                 imageFilterRender.setPosition(0f, 0f)
-                
             } catch (e: Exception) {
                 e.printStackTrace()
             }
             pendingRefresh = false
-        }, 200) // 200ms delay to ensure layout updates before capturing
+        }, 200)
     }
 
     private fun createYouTubeBroadcast() {
@@ -486,7 +476,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> { dX = v.x - event.rawX; dY = v.y - event.rawY; selectedOverlay = v; if (v is TextView && v != dragScoreboard) { etControlText.setText(v.text) } }
                     MotionEvent.ACTION_MOVE -> { v.x = event.rawX + dX; v.y = event.rawY + dY }
-                    // 🌟 ड्रैग खत्म होने पर स्नैपशॉट अपडेट करें 🌟
                     MotionEvent.ACTION_UP -> { updateSnapshot() } 
                 }
             }
@@ -494,13 +483,22 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // 🌟 SMART AUTO-FALLBACK ENGINE (डिवाइस को पहचानने वाला सिस्टम) 🌟
+    // 🌟 Gated Lifecycle Methods to Eliminate Launch Blink / Race Condition 🌟
+    private fun hasCameraPermissions(): Boolean =
+        checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED &&
+        checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
+    private fun tryStartCameraPreview() {
+        if (surfaceReady && hasCameraPermissions()) {
+            startCameraPreview()
+        }
+    }
+
     private fun startCameraPreview() { 
+        if (!hasCameraPermissions()) return
+        
         if (!rtmpCamera.isOnPreview) { 
             var isSuccess = false
-            
-            // यह कोड पहले सबसे बेहतरीन क्वालिटी की कोशिश करेगा (1280x720)
-            // अगर हार्डवेयर फेल होता है, तो यह बिना क्रैश किए ऑटोमैटिकली 640x480 पर शिफ्ट हो जाएगा
             val resolutions = listOf(
                 Pair(1280, 720),
                 Pair(854, 480),
@@ -513,12 +511,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                         isSuccess = true
                         break
                     }
-                } catch (e: Exception) {
-                    // Fail silently and try next resolution
-                }
+                } catch (e: Exception) {}
             }
             
-            // अगर सारी कोशिशें फेल हो गईं, तो सबसे बेसिक मोड ऑन करेगा
             if (!isSuccess) {
                 try { 
                     isSuccess = rtmpCamera.prepareVideo() 
@@ -529,13 +524,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { }
 
             if (isSuccess && aReady) {
-                // 🌟 Filter को बस एक बार सेट करेंगे 🌟
                 rtmpCamera.glInterface.setFilter(imageFilterRender)
                 rtmpCamera.startPreview()
-                
-                // थोड़ा सा रुक कर पहला स्नैपशॉट सेट कर देंगे
                 overlayHandler.postDelayed({ updateSnapshot() }, 1000)
-                
             } else {
                 runOnUiThread { Toast.makeText(this, "CAMERA ERROR: Device encoder not supported.", Toast.LENGTH_LONG).show() }
             }
@@ -565,7 +556,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         } else {
             runOnUiThread {
                 try { rtmpCamera.stopPreview() } catch (e: Exception) {}
-                startCameraPreview()
+                tryStartCameraPreview()
                 
                 btnGoLive.text = "GO LIVE"
                 btnGoLive.isEnabled = true
@@ -581,14 +572,28 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             btnGoLive.isEnabled = true
             btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
             try { rtmpCamera.stopPreview() } catch (e: Exception) {}
-            startCameraPreview()
+            tryStartCameraPreview()
         }
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) { super.onRequestPermissionsResult(requestCode, permissions, grantResults); startCameraPreview() }
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        tryStartCameraPreview()
+    }
+
     override fun surfaceCreated(holder: SurfaceHolder) {}
-    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) { startCameraPreview() }
-    override fun surfaceDestroyed(holder: SurfaceHolder) { if (rtmpCamera.isStreaming) rtmpCamera.stopStream(); if (rtmpCamera.isOnPreview) rtmpCamera.stopPreview() }
+    
+    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+        surfaceReady = true
+        tryStartCameraPreview()
+    }
+
+    override fun surfaceDestroyed(holder: SurfaceHolder) {
+        surfaceReady = false
+        if (rtmpCamera.isStreaming) rtmpCamera.stopStream()
+        if (rtmpCamera.isOnPreview) rtmpCamera.stopPreview()
+    }
+
     override fun onAuthError() {}
     override fun onAuthSuccess() {}
     override fun onConnectionStarted(url: String) {}
