@@ -14,7 +14,6 @@ import android.os.Bundle
 import android.provider.MediaStore
 import android.text.Editable
 import android.text.TextWatcher
-import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.SurfaceHolder
@@ -141,6 +140,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
         }
 
+        // 🌟 FIX: टैबलेट पर ब्लैक स्क्रीन रोकने के लिए सॉफ़्टवेयर रेंडरिंग चालू करें 🌟
+        overlayContainer.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+        
         viewFilterRender = AndroidViewFilterRender()
         viewFilterRender.view = overlayContainer
 
@@ -238,27 +240,27 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
 
         etControlText.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) { if (selectedOverlay is TextView && selectedOverlay != scoreMainText && selectedOverlay != scoreSubText) { (selectedOverlay as TextView).text = s.toString() } }
+            override fun afterTextChanged(s: Editable?) { if (selectedOverlay is TextView && selectedOverlay != scoreMainText && selectedOverlay != scoreSubText) { (selectedOverlay as TextView).text = s.toString(); refreshFilter() } }
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         })
 
         etScoreMain.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) { scoreMainText.text = s.toString() }
+            override fun afterTextChanged(s: Editable?) { scoreMainText.text = s.toString(); refreshFilter() }
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         })
 
         etScoreSub.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) { scoreSubText.text = s.toString() }
+            override fun afterTextChanged(s: Editable?) { scoreSubText.text = s.toString(); refreshFilter() }
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         })
 
         btnAddText.setOnClickListener { val text = etControlText.text.toString().trim(); if (text.isNotEmpty()) { addTextOverlayToScreen(text); etControlText.text.clear() } }
         btnAddLogo.setOnClickListener { val intent = Intent(Intent.ACTION_GET_CONTENT); intent.type = "image/*"; startActivityForResult(intent, PICK_IMAGE_REQUEST) }
-        btnRemoveSelected.setOnClickListener { selectedOverlay?.let { if (it != dragScoreboard) { overlayContainer.removeView(it); selectedOverlay = null } } }
-        btnToggleScore.setOnClickListener { val isVis = dragScoreboard.visibility == View.VISIBLE; dragScoreboard.visibility = if(isVis) View.GONE else View.VISIBLE; btnToggleScore.text = if(isVis) "SHOW SCORECARD ON SCREEN" else "HIDE SCORECARD" }
+        btnRemoveSelected.setOnClickListener { selectedOverlay?.let { if (it != dragScoreboard) { overlayContainer.removeView(it); selectedOverlay = null; refreshFilter() } } }
+        btnToggleScore.setOnClickListener { val isVis = dragScoreboard.visibility == View.VISIBLE; dragScoreboard.visibility = if(isVis) View.GONE else View.VISIBLE; btnToggleScore.text = if(isVis) "SHOW SCORECARD ON SCREEN" else "HIDE SCORECARD"; refreshFilter() }
 
         makeDraggableAndScalable(dragScoreboard)
         
@@ -276,6 +278,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 webOverlay.loadUrl("about:blank")
                 btnApplyWeb.text = "SHOW WEB OVERLAY"
             }
+            refreshFilter()
+        }
+    }
+
+    private fun refreshFilter() {
+        if (rtmpCamera.isOnPreview) {
+            rtmpCamera.glInterface.setFilter(viewFilterRender)
         }
     }
 
@@ -419,6 +428,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
         overlayContainer.addView(textView)
         makeDraggableAndScalable(textView); selectedOverlay = textView
+        refreshFilter()
     }
 
     private fun addImageOverlayToScreen(bitmap: Bitmap) {
@@ -427,6 +437,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
         overlayContainer.addView(imageView)
         makeDraggableAndScalable(imageView); selectedOverlay = imageView
+        refreshFilter()
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -441,6 +452,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> { dX = v.x - event.rawX; dY = v.y - event.rawY; selectedOverlay = v; if (v is TextView && v != dragScoreboard) { etControlText.setText(v.text) } }
                     MotionEvent.ACTION_MOVE -> { v.x = event.rawX + dX; v.y = event.rawY + dY }
+                    MotionEvent.ACTION_UP -> { refreshFilter() } // ड्रैग खत्म होने पर अपडेट करें
                 }
             }
             true
@@ -453,65 +465,25 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             val widths = intArrayOf(1280, 854, 640, 480)
             val heights = intArrayOf(720, 480, 480, 360)
             
-            var activeWidth = 1280
-            var activeHeight = 720
-
             for (i in widths.indices) {
                 try {
                     if (rtmpCamera.prepareVideo(widths[i], heights[i], 30)) {
                         vReady = true
-                        activeWidth = widths[i]
-                        activeHeight = heights[i]
                         break
                     }
                 } catch (e: Exception) {}
             }
             
             if (!vReady) {
-                try { 
-                    vReady = rtmpCamera.prepareVideo() 
-                    activeWidth = 640
-                    activeHeight = 480
-                } catch (e: Exception) {}
+                try { vReady = rtmpCamera.prepareVideo() } catch (e: Exception) {}
             }
 
             var aReady = false
             try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { }
 
             if (vReady && aReady) {
-                
-                // 🌟 FIX 1: कैमरे को बिना छेड़े, सिर्फ ओवरले को वीडियो के साइज़ में सेट करना 🌟
-                openGlView.post {
-                    val parentWidth = (openGlView.parent as View).width
-                    val parentHeight = (openGlView.parent as View).height
-                    
-                    if (parentWidth > 0 && parentHeight > 0) {
-                        val targetRatio = activeWidth.toFloat() / activeHeight.toFloat()
-                        val parentRatio = parentWidth.toFloat() / parentHeight.toFloat()
-
-                        var finalWidth = parentWidth
-                        var finalHeight = parentHeight
-
-                        if (parentRatio > targetRatio) {
-                            finalWidth = (parentHeight * targetRatio).toInt()
-                        } else {
-                            finalHeight = (parentWidth / targetRatio).toInt()
-                        }
-
-                        // हम OpenGlView (कैमरा) को नहीं छेड़ रहे हैं, सिर्फ ग्राफ़िक्स वाले डिब्बे को सही कर रहे हैं
-                        val overlayParams = overlayContainer.layoutParams as FrameLayout.LayoutParams
-                        overlayParams.width = finalWidth
-                        overlayParams.height = finalHeight
-                        overlayParams.gravity = Gravity.CENTER
-                        overlayContainer.layoutParams = overlayParams
-                    }
-                }
-
-                // 🌟 FIX 2: Cloud AI की सबसे ज़रूरी ट्रिक (Force Render) 🌟
-                rtmpCamera.glInterface.setFilter(viewFilterRender)
-                rtmpCamera.glInterface.setForceRender(true) // यह लाइन स्कोरकार्ड को लाइव वीडियो में चिपका देगी!
-                
                 rtmpCamera.startPreview()
+                rtmpCamera.glInterface.setFilter(viewFilterRender)
             } else {
                 runOnUiThread { Toast.makeText(this, "CAMERA ERROR: Device encoder not supported.", Toast.LENGTH_LONG).show() }
             }
