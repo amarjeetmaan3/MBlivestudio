@@ -140,8 +140,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
         }
 
+        // 🌟 100% SAFE FILTER INIT 🌟
         viewFilterRender = AndroidViewFilterRender()
         viewFilterRender.view = overlayContainer
+        rtmpCamera.glInterface.setFilter(viewFilterRender)
 
         webOverlay.setBackgroundColor(Color.TRANSPARENT)
         webOverlay.setLayerType(View.LAYER_TYPE_SOFTWARE, null) 
@@ -446,6 +448,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
+    // 🌟 SAFE CAMERA PREVIEW (NO RESIZING HACKS) 🌟
     private fun startCameraPreview() { 
         if (!rtmpCamera.isOnPreview) { 
             var vReady = false
@@ -469,8 +472,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { }
 
             if (vReady && aReady) {
-                // 🌟 FIX: फ़िल्टर को कैमरा स्टार्ट होने से ठीक पहले सुरक्षित रूप से जोड़ें 🌟
-                rtmpCamera.glInterface.setFilter(viewFilterRender)
                 rtmpCamera.startPreview()
             } else {
                 runOnUiThread { Toast.makeText(this, "CAMERA ERROR: Device encoder not supported.", Toast.LENGTH_LONG).show() }
