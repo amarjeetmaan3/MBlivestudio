@@ -2,200 +2,52 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="horizontal"
-    android:background="#121212">
+    android:orientation="horizontal">
 
-    <!-- Camera Preview Area -->
+    <!-- LEFT SIDE: Camera & Overlays (Exact Match) -->
     <FrameLayout
-        android:layout_width="match_parent"
-    android:layout_height="match_parent">
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1">
 
-      <com.pedro.library.view.OpenGlView
-        android:id="@+id/surfaceView"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        <com.pedro.library.view.OpenGlView
+            android:id="@+id/surfaceView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
 
         <RelativeLayout
-        android:id="@+id/overlayContainer"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:background="@android:color/transparent">
-
+            android:id="@+id/overlayContainer"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@android:color/transparent">
+            
+            <!-- आपका वेब ओवरले -->
             <WebView
                 android:id="@+id/webOverlay"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:background="@android:color/transparent"
                 android:visibility="gone" />
-
-            <LinearLayout
-                android:id="@+id/dragScoreboard"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:background="#A6000000"
-                android:padding="15dp"
-                android:layout_alignParentBottom="true"
-                android:layout_alignParentRight="true"
-                android:layout_margin="20dp"
-                android:visibility="gone">
-
-                <TextView
-                    android:id="@+id/scoreMainText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="IND 245/3 (40.2)"
-                    android:textColor="#FFFFFF"
-                    android:textSize="32sp"
-                    android:textStyle="bold" />
-                    
-                <TextView
-                    android:id="@+id/scoreSubText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Target: 312 | CRR: 6.08"
-                    android:textColor="#FFFF00"
-                    android:textSize="18sp" />
-            </LinearLayout>
+                
+            <!-- आपका ड्रैग होने वाला क्रिकेट स्कोरकार्ड (dragScoreboard) यहाँ पेस्ट करें -->
+            
         </RelativeLayout>
     </FrameLayout>
 
-    <!-- Side Panel Controls -->
+    <!-- RIGHT SIDE: Control Panel for Buttons -->
     <ScrollView
-        android:layout_width="0dp"
+        android:layout_width="350dp"
         android:layout_height="match_parent"
-        android:layout_weight="3"
-        android:background="#1E1E1E">
-
+        android:background="#222222">
+        
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:padding="16dp">
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="MB LIVE STUDIO"
-                android:textColor="#FFFFFF"
-                android:textStyle="bold"
-                android:textSize="18sp"
-                android:layout_marginBottom="15dp"
-                android:gravity="center"/>
-
-            <Button
-                android:id="@+id/btnSignInYouTube"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="SIGN IN WITH YOUTUBE"
-                android:backgroundTint="#FFFFFF"
-                android:textColor="#FF0000"
-                android:textStyle="bold"
-                android:padding="12dp"
-                android:layout_marginBottom="10dp"/>
-
-            <!-- 🌟 NEW: BROADCAST SETTINGS 🌟 -->
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="BROADCAST SETTINGS" android:textColor="#03A9F4" android:textStyle="bold" android:layout_marginBottom="5dp"/>
             
-            <EditText
-                android:id="@+id/etStreamTitle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="Broadcast Title"
-                android:textColor="#FFFFFF"
-                android:textColorHint="#888888"
-                android:background="#333333"
-                android:padding="12dp"
-                android:layout_marginBottom="5dp"/>
+            <!-- अपने सारे बटन (GO LIVE, Sign In, Text Inputs) यहाँ पेस्ट करें -->
 
-            <EditText
-                android:id="@+id/etStreamDesc"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="Description"
-                android:textColor="#FFFFFF"
-                android:textColorHint="#888888"
-                android:background="#333333"
-                android:padding="12dp"
-                android:layout_marginBottom="5dp"/>
-
-            <Spinner
-                android:id="@+id/spinnerPrivacy"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="#333333"
-                android:padding="12dp"
-                android:layout_marginBottom="15dp"/>
-
-            <Button
-                android:id="@+id/btnGoLive"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="GO LIVE"
-                android:backgroundTint="#D32F2F"
-                android:textColor="#FFFFFF"
-                android:textStyle="bold"
-                android:padding="15dp"
-                android:layout_marginBottom="10dp"/>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="15dp">
-
-                <Button
-                    android:id="@+id/btnSwitchCamera"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="FLIP CAM"
-                    android:backgroundTint="#2196F3"
-                    android:textColor="#FFFFFF"
-                    android:layout_marginEnd="5dp"/>
-
-                <Button
-                    android:id="@+id/btnMicToggle"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="MIC: ON"
-                    android:backgroundTint="#4CAF50"
-                    android:textColor="#FFFFFF"
-                    android:layout_marginStart="5dp"/>
-            </LinearLayout>
-
-            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#444444" android:layout_marginBottom="15dp"/>
-
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="CUSTOM TEXT (ADD MULTIPLE)" android:textColor="#4CAF50" android:textStyle="bold"/>
-            <EditText
-                android:id="@+id/etControlText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="Type text here..."
-                android:textColor="#FFFFFF"
-                android:textColorHint="#888888"
-                android:background="#333333"
-                android:padding="12dp"
-                android:layout_marginTop="5dp"
-                android:layout_marginBottom="5dp"/>
-            <Button android:id="@+id/btnAddText" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="ADD NEW TEXT TO SCREEN" />
-
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="PHOTO LOGO (ADD MULTIPLE)" android:textColor="#FF9800" android:textStyle="bold" android:layout_marginTop="15dp"/>
-            <Button android:id="@+id/btnAddLogo" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="CHOOSE PHOTO FROM GALLERY" android:layout_marginTop="5dp"/>
-            <Button android:id="@+id/btnRemoveSelected" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="REMOVE SELECTED ITEM" android:backgroundTint="#E53935" android:textColor="#FFFFFF" android:layout_marginTop="10dp"/>
-
-            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#444444" android:layout_marginTop="15dp" android:layout_marginBottom="15dp"/>
-
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="CRICKET SCORECARD" android:textColor="#9C27B0" android:textStyle="bold"/>
-            <EditText android:id="@+id/etScoreMain" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Main Score (ex: IND 245/3)" android:textColor="#FFFFFF" android:textColorHint="#888888" android:background="#333333" android:padding="12dp" android:layout_marginTop="5dp" android:layout_marginBottom="5dp"/>
-            <EditText android:id="@+id/etScoreSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Sub Text (Target: 312)" android:textColor="#FFFFFF" android:textColorHint="#888888" android:background="#333333" android:padding="12dp" android:layout_marginBottom="5dp"/>
-            <Button android:id="@+id/btnToggleScore" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="SHOW SCORECARD ON SCREEN" />
-
-            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#444444" android:layout_marginTop="15dp" android:layout_marginBottom="15dp"/>
-
-            <EditText android:id="@+id/etWebUrl" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="https://your-overlay-url.com" android:textColor="#FFFFFF" android:textColorHint="#888888" android:background="#333333" android:padding="12dp" android:inputType="textUri" android:layout_marginBottom="5dp"/>
-            <Button android:id="@+id/btnApplyWeb" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="SHOW WEB OVERLAY" android:layout_marginBottom="20dp"/>
         </LinearLayout>
     </ScrollView>
+
 </LinearLayout>
