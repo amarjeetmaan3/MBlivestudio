@@ -28,7 +28,6 @@ import android.widget.*
 import com.pedro.common.ConnectChecker
 import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
-import com.pedro.library.view.AspectRatioMode
 import com.pedro.encoder.input.gl.render.filters.AndroidViewFilterRender
 
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -92,7 +91,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private val MAX_RETRIES = 3
     private var generatedRtmpUrl: String? = null
 
-    // 🌟 CLOUD AI FIX: Debounce Handler for UI updates 🌟
+    // 🌟 Debounce Handler for UI updates 🌟
     private val overlayHandler = Handler(Looper.getMainLooper())
     private var pendingRefresh = false
 
@@ -147,7 +146,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
         }
 
-        // 🌟 CLOUD AI FIX: Force Software Layer to prevent blank hardware Canvas captures 🌟
+        // 🌟 Force Software Layer to prevent blank hardware Canvas captures 🌟
         overlayContainer.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
         
         viewFilterRender = AndroidViewFilterRender()
@@ -291,7 +290,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // 🌟 CLOUD AI FIX: Manual Event-Driven Rendering to prevent GPU Choke 🌟
+    // 🌟 Manual Event-Driven Rendering to prevent GPU Choke 🌟
     private fun forceOverlayUpdate() {
         if (!rtmpCamera.isOnPreview || pendingRefresh) return
         pendingRefresh = true
@@ -497,10 +496,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { }
 
             if (vReady && aReady) {
-                // 🌟 CLOUD AI FIX: Safe Aspect Ratio Mode 🌟
-                openGlView.setAspectRatioMode(AspectRatioMode.Adjust)
-                
-                // 🌟 CLOUD AI FIX: Call setFilter() ONLY ONCE here 🌟
+                // 🌟 Call setFilter() ONLY ONCE here 🌟
                 rtmpCamera.glInterface.setFilter(viewFilterRender)
                 rtmpCamera.startPreview()
             } else {
