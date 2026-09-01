@@ -140,9 +140,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
         }
 
+        // 🌟 INIT FILTER 🌟
         viewFilterRender = AndroidViewFilterRender()
         viewFilterRender.view = overlayContainer
-        rtmpCamera.glInterface.setFilter(viewFilterRender)
+        // नोट: हम इसे यहाँ सेट नहीं कर रहे हैं, बल्कि startCameraPreview में करेंगे।
 
         webOverlay.setBackgroundColor(Color.TRANSPARENT)
         webOverlay.setLayerType(View.LAYER_TYPE_SOFTWARE, null) 
@@ -170,20 +171,15 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
 
         btnGoLive.setOnClickListener {
-            // 🌟 FIX 1: Deep Clean Reset (जब आप STOP दबाते हैं) 🌟
             if (rtmpCamera.isStreaming) {
                 btnGoLive.isEnabled = false
                 btnGoLive.text = "STOPPING..."
                 
                 Thread {
                     try { rtmpCamera.stopStream() } catch (e: Exception) {}
-                    
                     runOnUiThread {
                         try { rtmpCamera.stopPreview() } catch (e: Exception) {}
-                        
-                        // कैमरे को पूरी तरह रिफ्रेश करें ताकि वह अगले लाइव के लिए रेडी हो जाए
                         startCameraPreview() 
-                        
                         btnGoLive.text = "GO LIVE"
                         btnGoLive.isEnabled = true
                         btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
@@ -323,7 +319,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 broadcastStatus.privacyStatus = privacyInput
                 broadcastStatus.selfDeclaredMadeForKids = false
 
-                // 🌟 FIX 2: YouTube Auto-Stop Engine (अब YouTube पुरानी स्ट्रीम को ऑटोमैटिक खत्म कर देगा) 🌟
                 val broadcastContentDetails = LiveBroadcastContentDetails()
                 broadcastContentDetails.enableAutoStart = true
                 broadcastContentDetails.latencyPreference = "ultraLow" 
@@ -477,6 +472,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
             if (vReady && aReady) {
                 rtmpCamera.startPreview()
+                
+                // 🌟 FIX: Apply OpenGL Filter AFTER the camera fully starts 🌟
+                rtmpCamera.glInterface.setFilter(viewFilterRender)
+                
             } else {
                 runOnUiThread { Toast.makeText(this, "CAMERA ERROR: Device encoder not supported.", Toast.LENGTH_LONG).show() }
             }
@@ -505,7 +504,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }.start()
         } else {
             runOnUiThread {
-                // कनेक्शन फेल होने पर भी कैमरे को रिफ्रेश करें
                 try { rtmpCamera.stopPreview() } catch (e: Exception) {}
                 startCameraPreview()
                 
@@ -523,8 +521,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             btnGoLive.text = "GO LIVE"
             btnGoLive.isEnabled = true
             btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
-            
-            // डिसकनेक्ट होने पर कैमरा रिफ्रेश करें
             try { rtmpCamera.stopPreview() } catch (e: Exception) {}
             startCameraPreview()
         }
