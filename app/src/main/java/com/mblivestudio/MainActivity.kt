@@ -11,6 +11,8 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
 import android.text.Editable
 import android.text.TextWatcher
@@ -26,6 +28,7 @@ import android.widget.*
 import com.pedro.common.ConnectChecker
 import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
+import com.pedro.library.view.AspectRatioMode
 import com.pedro.encoder.input.gl.render.filters.AndroidViewFilterRender
 
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -89,9 +92,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private val MAX_RETRIES = 3
     private var generatedRtmpUrl: String? = null
 
-    // स्ट्रीम का साइज़ ट्रैक करने के लिए
-    private var streamWidth = 1280
-    private var streamHeight = 720
+    // 🌟 CLOUD AI FIX: Debounce Handler for UI updates 🌟
+    private val overlayHandler = Handler(Looper.getMainLooper())
+    private var pendingRefresh = false
 
     override fun attachBaseContext(newBase: Context?) {
         super.attachBaseContext(newBase)
@@ -144,10 +147,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
         }
 
+        // 🌟 CLOUD AI FIX: Force Software Layer to prevent blank hardware Canvas captures 🌟
+        overlayContainer.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+        
         viewFilterRender = AndroidViewFilterRender()
         viewFilterRender.view = overlayContainer
 
         webOverlay.setBackgroundColor(Color.TRANSPARENT)
+        webOverlay.setLayerType(View.LAYER_TYPE_SOFTWARE, null) 
         webOverlay.settings.javaScriptEnabled = true
         webOverlay.settings.domStorageEnabled = true
         webOverlay.webViewClient = WebViewClient()
@@ -284,21 +291,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // 🌟 मैनुअल कैनवास रेंडर - यह बैकग्राउंड में व्यू को स्ट्रीम के हिसाब से सेट करता है 🌟
+    // 🌟 CLOUD AI FIX: Manual Event-Driven Rendering to prevent GPU Choke 🌟
     private fun forceOverlayUpdate() {
-        if (rtmpCamera.isOnPreview) {
-            overlayContainer.post {
-                overlayContainer.measure(
-                    View.MeasureSpec.makeMeasureSpec(streamWidth, View.MeasureSpec.EXACTLY),
-                    View.MeasureSpec.makeMeasureSpec(streamHeight, View.MeasureSpec.EXACTLY)
-                )
-                overlayContainer.layout(0, 0, streamWidth, streamHeight)
-                
-                viewFilterRender.view = overlayContainer
-                rtmpCamera.glInterface.setFilter(viewFilterRender)
-                rtmpCamera.glInterface.setForceRender(true)
-            }
-        }
+        if (!rtmpCamera.isOnPreview || pendingRefresh) return
+        pendingRefresh = true
+        overlayHandler.postDelayed({
+            overlayContainer.invalidate()
+            pendingRefresh = false
+        }, 150)
     }
 
     private fun createYouTubeBroadcast() {
@@ -481,8 +481,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             for (i in widths.indices) {
                 try {
                     if (rtmpCamera.prepareVideo(widths[i], heights[i], 30)) {
-                        streamWidth = widths[i]
-                        streamHeight = heights[i]
                         vReady = true
                         break
                     }
@@ -492,8 +490,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             if (!vReady) {
                 try { 
                     vReady = rtmpCamera.prepareVideo() 
-                    streamWidth = 640
-                    streamHeight = 480
                 } catch (e: Exception) {}
             }
 
@@ -501,8 +497,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { }
 
             if (vReady && aReady) {
+                // 🌟 CLOUD AI FIX: Safe Aspect Ratio Mode 🌟
+                openGlView.setAspectRatioMode(AspectRatioMode.Adjust)
+                
+                // 🌟 CLOUD AI FIX: Call setFilter() ONLY ONCE here 🌟
+                rtmpCamera.glInterface.setFilter(viewFilterRender)
                 rtmpCamera.startPreview()
-                forceOverlayUpdate()
             } else {
                 runOnUiThread { Toast.makeText(this, "CAMERA ERROR: Device encoder not supported.", Toast.LENGTH_LONG).show() }
             }
