@@ -526,15 +526,21 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         if (!rtmpCamera.isOnPreview) {
             var isSuccess = false
+            // FIX: the old prepareVideo(width, height, 30) call put "30"
+            // in the BITRATE slot (the library has no (w,h,fps) overload),
+            // meaning the stream was encoded at ~30 bits/sec instead of
+            // 30fps at a real bitrate. That was the root cause of the
+            // "very very low quality" output. Use the full overload and
+            // set an explicit, YouTube-appropriate bitrate per resolution.
             val resolutions = listOf(
-                Pair(1280, 720),
-                Pair(854, 480),
-                Pair(640, 480)
+                Triple(1280, 720, 3_500_000),  // 720p30 — YouTube recommends ~3000-4500 kbps for H.264
+                Triple(854, 480, 1_500_000),   // 480p fallback
+                Triple(640, 480, 1_000_000)    // last-resort fallback
             )
 
             for (res in resolutions) {
                 try {
-                    if (rtmpCamera.prepareVideo(res.first, res.second, 30)) {
+                    if (rtmpCamera.prepareVideo(res.first, res.second, 30, res.third, 2, 0)) {
                         isSuccess = true
                         break
                     }
