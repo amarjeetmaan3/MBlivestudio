@@ -29,7 +29,10 @@ import android.widget.*
 import com.pedro.common.ConnectChecker
 import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
-import com.pedro.encoder.input.gl.render.filters.object.ImageObjectFilterRender
+// FIX: "object" is a Kotlin reserved keyword. It must be escaped with
+// backticks when it appears as a package segment, or the compiler throws
+// "Qualified name must be a '.'-separated identifier list".
+import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
 
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
@@ -47,7 +50,7 @@ import java.net.Inet4Address
 import java.net.InetAddress
 
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
-    
+
     private lateinit var rtmpCamera: RtmpCamera2
     private lateinit var openGlView: OpenGlView
     private lateinit var overlayContainer: RelativeLayout
@@ -68,7 +71,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private lateinit var etControlText: EditText
     private lateinit var btnAddLogo: Button
     private lateinit var btnRemoveSelected: Button
-    
+
     private lateinit var btnSignInYouTube: Button
     private lateinit var btnGoLive: Button
     private lateinit var btnSwitchCamera: Button
@@ -87,7 +90,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     private lateinit var googleSignInClient: GoogleSignInClient
     private var connectedAccountEmail: String? = null
-    
+
     private var retryCount = 0
     private val MAX_RETRIES = 3
     private var generatedRtmpUrl: String? = null
@@ -95,7 +98,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private val overlayHandler = Handler(Looper.getMainLooper())
     private var pendingRefresh = false
 
-    // 🌟 Camera Lifecycle Gating Flags 🌟
+    // FIX: previous snapshot bitmap is tracked so it can be recycled after
+    // the new one is safely uploaded to the GL texture. Without this,
+    // every scoreboard update leaks a full-size ARGB_8888 bitmap.
+    private var lastOverlayBitmap: Bitmap? = null
+
+    // Camera lifecycle gating flags — camera only starts once BOTH the
+    // Surface is ready AND permissions are actually granted, eliminating
+    // the launch-time black/blink race.
     private var surfaceReady = false
 
     override fun attachBaseContext(newBase: Context?) {
@@ -113,10 +123,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         openGlView = findViewById(R.id.surfaceView)
         overlayContainer = findViewById(R.id.overlayContainer)
         webOverlay = findViewById(R.id.webOverlay)
-        
+
         etWebUrl = findViewById(R.id.etWebUrl)
         btnApplyWeb = findViewById(R.id.btnApplyWeb)
-        
+
         dragScoreboard = findViewById(R.id.dragScoreboard)
         scoreMainText = findViewById(R.id.scoreMainText)
         scoreSubText = findViewById(R.id.scoreSubText)
@@ -128,7 +138,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         etControlText = findViewById(R.id.etControlText)
         btnAddLogo = findViewById(R.id.btnAddLogo)
         btnRemoveSelected = findViewById(R.id.btnRemoveSelected)
-        
+
         btnSignInYouTube = findViewById(R.id.btnSignInYouTube)
         btnGoLive = findViewById(R.id.btnGoLive)
         btnSwitchCamera = findViewById(R.id.btnSwitchCamera)
@@ -141,7 +151,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val privacyOptions = arrayOf("Public", "Unlisted", "Private")
         spinnerPrivacy.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, privacyOptions)
         spinnerPrivacy.setSelection(1)
-        
+
         rtmpCamera = RtmpCamera2(openGlView, this)
         openGlView.holder.addCallback(this)
 
@@ -153,7 +163,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         overlayContainer.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
 
         webOverlay.setBackgroundColor(Color.TRANSPARENT)
-        webOverlay.setLayerType(View.LAYER_TYPE_SOFTWARE, null) 
+        webOverlay.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
         webOverlay.settings.javaScriptEnabled = true
         webOverlay.settings.domStorageEnabled = true
         webOverlay.webViewClient = WebViewClient()
@@ -181,12 +191,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             if (rtmpCamera.isStreaming) {
                 btnGoLive.isEnabled = false
                 btnGoLive.text = "STOPPING..."
-                
+
                 Thread {
                     try { rtmpCamera.stopStream() } catch (e: Exception) {}
                     runOnUiThread {
                         try { rtmpCamera.stopPreview() } catch (e: Exception) {}
-                        startCameraPreview() 
+                        tryStartCameraPreview()
                         btnGoLive.text = "GO LIVE"
                         btnGoLive.isEnabled = true
                         btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
@@ -195,8 +205,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     }
                 }.start()
                 return@setOnClickListener
-            } 
-            
+            }
+
             if (!rtmpCamera.isOnPreview) {
                 tryStartCameraPreview()
                 return@setOnClickListener
@@ -213,12 +223,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 GoogleSignIn.requestPermissions(this, REQUEST_AUTHORIZATION, currentAccount, youtubeScope)
                 return@setOnClickListener
             }
-            
-            retryCount = 0 
+
+            retryCount = 0
             createYouTubeBroadcast()
         }
 
-        btnSwitchCamera.setOnClickListener { 
+        btnSwitchCamera.setOnClickListener {
             try {
                 rtmpCamera.switchCamera()
                 if (!rtmpCamera.isStreaming) {
@@ -243,11 +253,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
 
         etControlText.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) { 
-                if (selectedOverlay is TextView && selectedOverlay != scoreMainText && selectedOverlay != scoreSubText) { 
-                    (selectedOverlay as TextView).text = s.toString() 
-                    updateSnapshot() 
-                } 
+            override fun afterTextChanged(s: Editable?) {
+                if (selectedOverlay is TextView && selectedOverlay != scoreMainText && selectedOverlay != scoreSubText) {
+                    (selectedOverlay as TextView).text = s.toString()
+                    updateSnapshot()
+                }
             }
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
@@ -256,22 +266,22 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         etScoreMain.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) { scoreMainText.text = s.toString(); updateSnapshot() }
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun onTextChanged(s: CharSequence?, before: Int, count: Int, after: Int) {}
         })
 
         etScoreSub.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) { scoreSubText.text = s.toString(); updateSnapshot() }
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun onTextChanged(s: CharSequence?, before: Int, count: Int, after: Int) {}
         })
 
         btnAddText.setOnClickListener { val text = etControlText.text.toString().trim(); if (text.isNotEmpty()) { addTextOverlayToScreen(text); etControlText.text.clear() } }
         btnAddLogo.setOnClickListener { val intent = Intent(Intent.ACTION_GET_CONTENT); intent.type = "image/*"; startActivityForResult(intent, PICK_IMAGE_REQUEST) }
         btnRemoveSelected.setOnClickListener { selectedOverlay?.let { if (it != dragScoreboard) { overlayContainer.removeView(it); selectedOverlay = null; updateSnapshot() } } }
-        btnToggleScore.setOnClickListener { val isVis = dragScoreboard.visibility == View.VISIBLE; dragScoreboard.visibility = if(isVis) View.GONE else View.VISIBLE; btnToggleScore.text = if(isVis) "SHOW SCORECARD ON SCREEN" else "HIDE SCORECARD"; updateSnapshot() }
+        btnToggleScore.setOnClickListener { val isVis = dragScoreboard.visibility == View.VISIBLE; dragScoreboard.visibility = if (isVis) View.GONE else View.VISIBLE; btnToggleScore.text = if (isVis) "SHOW SCORECARD ON SCREEN" else "HIDE SCORECARD"; updateSnapshot() }
 
         makeDraggableAndScalable(dragScoreboard)
-        
+
         btnApplyWeb.setOnClickListener {
             if (webOverlay.visibility == View.GONE) {
                 val url = etWebUrl.text.toString().trim()
@@ -290,21 +300,37 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
+    /**
+     * Rasterizes overlayContainer into a Bitmap and hands it to the
+     * ImageObjectFilterRender texture upload. Debounced (200ms) so rapid
+     * successive edits don't stack redundant captures, and the PREVIOUS
+     * bitmap is recycled only after the NEW one has been handed off — never
+     * before, since RootEncoder may still be uploading it to the GL thread.
+     */
     private fun updateSnapshot() {
         if (!rtmpCamera.isOnPreview || overlayContainer.width == 0 || overlayContainer.height == 0) return
-        
+
         if (pendingRefresh) return
         pendingRefresh = true
-        
+
         overlayHandler.postDelayed({
             try {
-                val bitmap = Bitmap.createBitmap(overlayContainer.width, overlayContainer.height, Bitmap.Config.ARGB_8888)
-                val canvas = Canvas(bitmap)
+                val newBitmap = Bitmap.createBitmap(overlayContainer.width, overlayContainer.height, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(newBitmap)
                 overlayContainer.draw(canvas)
-                
-                imageFilterRender.setImage(bitmap)
+
+                imageFilterRender.setImage(newBitmap)
                 imageFilterRender.setScale(100f, 100f)
                 imageFilterRender.setPosition(0f, 0f)
+
+                // FIX: recycle the bitmap this filter was using BEFORE this
+                // call, now that it has been replaced — not the one we just
+                // set. Prevents the steady memory leak from issue-tracked
+                // RootEncoder behavior around repeated setImage() calls.
+                lastOverlayBitmap?.let { old ->
+                    if (!old.isRecycled) old.recycle()
+                }
+                lastOverlayBitmap = newBitmap
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -332,12 +358,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
                 val transport = NetHttpTransport()
                 val jsonFactory = GsonFactory.getDefaultInstance()
-                
+
                 val youtube = YouTube.Builder(transport, jsonFactory, com.google.api.client.http.HttpRequestInitializer { request ->
                     credential.initialize(request)
-                    request.connectTimeout = 10000 
+                    request.connectTimeout = 10000
                     request.readTimeout = 10000
-                    request.numberOfRetries = 0 
+                    request.numberOfRetries = 0
                 }).setApplicationName("MBLiveStudio").build()
 
                 runOnUiThread { btnGoLive.text = "2/4: CREATING ROOM..." }
@@ -345,7 +371,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 val broadcastSnippet = LiveBroadcastSnippet()
                 broadcastSnippet.title = finalTitle
                 broadcastSnippet.description = finalDesc
-                broadcastSnippet.scheduledStartTime = DateTime(System.currentTimeMillis()) 
+                broadcastSnippet.scheduledStartTime = DateTime(System.currentTimeMillis())
 
                 val broadcastStatus = LiveBroadcastStatus()
                 broadcastStatus.privacyStatus = privacyInput
@@ -353,13 +379,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
                 val broadcastContentDetails = LiveBroadcastContentDetails()
                 broadcastContentDetails.enableAutoStart = true
-                broadcastContentDetails.latencyPreference = "ultraLow" 
+                broadcastContentDetails.latencyPreference = "ultraLow"
 
                 var broadcast = LiveBroadcast()
                 broadcast.snippet = broadcastSnippet
                 broadcast.status = broadcastStatus
                 broadcast.contentDetails = broadcastContentDetails
-                
+
                 broadcast = youtube.liveBroadcasts().insert("snippet,status,contentDetails", broadcast).execute()
 
                 runOnUiThread { btnGoLive.text = "3/4: GETTING KEY..." }
@@ -369,7 +395,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
                 val cdn = CdnSettings()
                 cdn.ingestionType = "rtmp"
-                cdn.resolution = "variable" 
+                cdn.resolution = "variable"
                 cdn.frameRate = "variable"
 
                 var stream = LiveStream()
@@ -381,9 +407,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 bindRequest.streamId = stream.id
                 bindRequest.execute()
 
-                var ingestionUrl = stream.cdn.ingestionInfo.ingestionAddress 
+                var ingestionUrl = stream.cdn.ingestionInfo.ingestionAddress
                 var resolvedIp: String? = null
-                
+
                 try {
                     val host = if (ingestionUrl.contains("b.rtmp")) "b.rtmp.youtube.com" else "a.rtmp.youtube.com"
                     val addresses = InetAddress.getAllByName(host)
@@ -395,11 +421,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 } else {
                     ingestionUrl.replace("a.rtmp", "b.rtmp") + "/" + stream.cdn.ingestionInfo.streamName
                 }
-                
-                generatedRtmpUrl = finalUrl 
 
-                runOnUiThread { 
-                    btnGoLive.text = "4/4: CONNECTING CAMERA..." 
+                generatedRtmpUrl = finalUrl
+
+                runOnUiThread {
+                    btnGoLive.text = "4/4: CONNECTING CAMERA..."
                     try {
                         rtmpCamera.startStream(finalUrl)
                     } catch (e: Exception) {
@@ -476,14 +502,15 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> { dX = v.x - event.rawX; dY = v.y - event.rawY; selectedOverlay = v; if (v is TextView && v != dragScoreboard) { etControlText.setText(v.text) } }
                     MotionEvent.ACTION_MOVE -> { v.x = event.rawX + dX; v.y = event.rawY + dY }
-                    MotionEvent.ACTION_UP -> { updateSnapshot() } 
+                    MotionEvent.ACTION_UP -> { updateSnapshot() }
                 }
             }
             true
         }
     }
 
-    // 🌟 Gated Lifecycle Methods to Eliminate Launch Blink / Race Condition 🌟
+    // Gated lifecycle helpers — camera only ever starts once both the
+    // Surface is ready AND permissions are actually granted.
     private fun hasCameraPermissions(): Boolean =
         checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED &&
         checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -494,17 +521,17 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    private fun startCameraPreview() { 
+    private fun startCameraPreview() {
         if (!hasCameraPermissions()) return
-        
-        if (!rtmpCamera.isOnPreview) { 
+
+        if (!rtmpCamera.isOnPreview) {
             var isSuccess = false
             val resolutions = listOf(
                 Pair(1280, 720),
                 Pair(854, 480),
                 Pair(640, 480)
             )
-            
+
             for (res in resolutions) {
                 try {
                     if (rtmpCamera.prepareVideo(res.first, res.second, 30)) {
@@ -513,10 +540,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     }
                 } catch (e: Exception) {}
             }
-            
+
             if (!isSuccess) {
-                try { 
-                    isSuccess = rtmpCamera.prepareVideo() 
+                try {
+                    isSuccess = rtmpCamera.prepareVideo()
                 } catch (e: Exception) {}
             }
 
@@ -530,12 +557,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             } else {
                 runOnUiThread { Toast.makeText(this, "CAMERA ERROR: Device encoder not supported.", Toast.LENGTH_LONG).show() }
             }
-        } 
+        }
     }
-    
+
     override fun onConnectionSuccess() {
         runOnUiThread {
-            retryCount = 0 
+            retryCount = 0
             btnGoLive.text = "STOP STREAM"
             btnGoLive.isEnabled = true
             btnGoLive.setBackgroundColor(Color.parseColor("#E53935"))
@@ -557,7 +584,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             runOnUiThread {
                 try { rtmpCamera.stopPreview() } catch (e: Exception) {}
                 tryStartCameraPreview()
-                
+
                 btnGoLive.text = "GO LIVE"
                 btnGoLive.isEnabled = true
                 try { rtmpCamera.stopStream() } catch (e: Exception) {}
@@ -582,7 +609,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {}
-    
+
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
         surfaceReady = true
         tryStartCameraPreview()
@@ -592,6 +619,18 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         surfaceReady = false
         if (rtmpCamera.isStreaming) rtmpCamera.stopStream()
         if (rtmpCamera.isOnPreview) rtmpCamera.stopPreview()
+    }
+
+    // FIX: release camera/stream resources and cancel pending handler
+    // callbacks when the Activity is destroyed, so a stuck camera handle
+    // or a leaked bitmap-recycle callback can't survive across restarts.
+    override fun onDestroy() {
+        super.onDestroy()
+        overlayHandler.removeCallbacksAndMessages(null)
+        try { if (rtmpCamera.isStreaming) rtmpCamera.stopStream() } catch (e: Exception) {}
+        try { if (rtmpCamera.isOnPreview) rtmpCamera.stopPreview() } catch (e: Exception) {}
+        lastOverlayBitmap?.let { if (!it.isRecycled) it.recycle() }
+        lastOverlayBitmap = null
     }
 
     override fun onAuthError() {}
