@@ -186,6 +186,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnRatio916 = findViewById(R.id.btnRatio916)
         val btnLayoutFull: Button = findViewById(R.id.btnLayoutFull)
         val btnLayoutSplit: Button = findViewById(R.id.btnLayoutSplit)
+        val btnLayoutSplitRight: Button = findViewById(R.id.btnLayoutSplitRight)
+        val btnLayoutSplitTop: Button = findViewById(R.id.btnLayoutSplitTop)
+        val btnLayoutSplitBottom: Button = findViewById(R.id.btnLayoutSplitBottom)
+        val btnLayoutCornerTL: Button = findViewById(R.id.btnLayoutCornerTL)
+        val btnLayoutCornerTR: Button = findViewById(R.id.btnLayoutCornerTR)
+        val btnLayoutCornerBL: Button = findViewById(R.id.btnLayoutCornerBL)
+        val btnLayoutCornerBR: Button = findViewById(R.id.btnLayoutCornerBR)
 
         ivProfilePhoto = findViewById(R.id.ivProfilePhoto)
         tvChannelName = findViewById(R.id.tvChannelName)
@@ -267,6 +274,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         
         btnLayoutFull.setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.FULL) }
         btnLayoutSplit.setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.SPLIT_LEFT) }
+        btnLayoutSplitRight.setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.SPLIT_RIGHT) }
+        btnLayoutSplitTop.setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.SPLIT_TOP) }
+        btnLayoutSplitBottom.setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.SPLIT_BOTTOM) }
+        btnLayoutCornerTL.setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.CORNER_TOP_LEFT) }
+        btnLayoutCornerTR.setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.CORNER_TOP_RIGHT) }
+        btnLayoutCornerBL.setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.CORNER_BOTTOM_LEFT) }
+        btnLayoutCornerBR.setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.CORNER_BOTTOM_RIGHT) }
 
         btnSwitchCamera.setOnClickListener {
             try {
