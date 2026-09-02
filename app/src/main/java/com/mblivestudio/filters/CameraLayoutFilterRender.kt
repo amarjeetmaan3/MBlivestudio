@@ -125,9 +125,7 @@ class CameraLayoutFilterRender : BaseFilterRender() {
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, previousTexId)
     }
 
-    override fun disableResources() {
-        GlUtil.disableResources(aTextureHandle, aPositionHandle)
-    }
+   
 
     override fun release() {
         GLES20.glDeleteProgram(program)
