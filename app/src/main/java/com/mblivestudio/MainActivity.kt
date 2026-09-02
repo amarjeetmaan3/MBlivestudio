@@ -109,7 +109,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     private var youtubeClient: YouTube? = null
     private var currentLiveChatId: String? = null
-    // Task 6: Track broadcast ID to end it properly on YouTube
     private var currentBroadcastId: String? = null
     
     private var chatNextPageToken: String? = null
@@ -164,12 +163,18 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val btnToggleOverlays: ImageButton = findViewById(R.id.btnToggleOverlays)
         val btnToggleComments: ImageButton = findViewById(R.id.btnToggleComments)
         
-        val drawerLayouts: LinearLayout = findViewById(R.id.drawerLayouts)
-        val drawerOverlays: LinearLayout = findViewById(R.id.drawerOverlays)
+        val drawerLayouts: HorizontalScrollView = findViewById(R.id.drawerLayouts)
+        val drawerOverlays: HorizontalScrollView = findViewById(R.id.drawerOverlays)
 
         val btnLayoutFull: ImageButton = findViewById(R.id.btnLayoutFull)
         val btnLayoutSplit: ImageButton = findViewById(R.id.btnLayoutSplit)
+        val btnLayoutSplitRight: ImageButton = findViewById(R.id.btnLayoutSplitRight)
+        val btnLayoutSplitTop: ImageButton = findViewById(R.id.btnLayoutSplitTop)
+        val btnLayoutSplitBottom: ImageButton = findViewById(R.id.btnLayoutSplitBottom)
         val btnLayoutCornerTL: ImageButton = findViewById(R.id.btnLayoutCornerTL)
+        val btnLayoutCornerTR: ImageButton = findViewById(R.id.btnLayoutCornerTR)
+        val btnLayoutCornerBL: ImageButton = findViewById(R.id.btnLayoutCornerBL)
+        val btnLayoutCornerBR: ImageButton = findViewById(R.id.btnLayoutCornerBR)
 
         val btnAddText: ImageButton = findViewById(R.id.btnAddText)
         val btnAddLogo: ImageButton = findViewById(R.id.btnAddLogo)
@@ -243,17 +248,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             showGoLiveDialog()
         }
 
-        // Drawers Logic
         btnToggleLayouts.setOnClickListener {
             drawerLayouts.visibility = if (drawerLayouts.visibility == View.VISIBLE) View.GONE else View.VISIBLE
             drawerOverlays.visibility = View.GONE
         }
+        
         btnToggleOverlays.setOnClickListener {
             drawerOverlays.visibility = if (drawerOverlays.visibility == View.VISIBLE) View.GONE else View.VISIBLE
             drawerLayouts.visibility = View.GONE
         }
 
-        // Floating Camera Controls
         btnSwitchCamera.setOnClickListener {
             try {
                 rtmpCamera.switchCamera()
@@ -264,20 +268,20 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             } catch (e: Exception) {}
         }
 
-        // Mic Toggle (Changes Logo exactly as requested)
         btnMicToggle.setOnClickListener {
             if (isAudioMuted) {
                 rtmpCamera.enableAudio()
                 isAudioMuted = false
                 btnMicToggle.setImageResource(R.drawable.ic_mic_on)
+                btnMicToggle.setColorFilter(Color.WHITE)
             } else {
                 rtmpCamera.disableAudio()
                 isAudioMuted = true
                 btnMicToggle.setImageResource(R.drawable.ic_mic_off)
+                btnMicToggle.setColorFilter(Color.parseColor("#FF5252")) // Visible Red when OFF
             }
         }
 
-        // Task 2: Zoom +/- Buttons
         btnZoomIn.setOnClickListener {
             val targetZoom = (lastAppliedZoomFactor + 0.2f).coerceIn(1f, 5f)
             if (targetZoom != lastAppliedZoomFactor) {
@@ -296,12 +300,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
         }
 
-        // Layouts
         btnLayoutFull.setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.FULL) }
         btnLayoutSplit.setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.SPLIT_LEFT) }
+        btnLayoutSplitRight.setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.SPLIT_RIGHT) }
+        btnLayoutSplitTop.setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.SPLIT_TOP) }
+        btnLayoutSplitBottom.setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.SPLIT_BOTTOM) }
         btnLayoutCornerTL.setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.CORNER_TOP_LEFT) }
+        btnLayoutCornerTR.setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.CORNER_TOP_RIGHT) }
+        btnLayoutCornerBL.setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.CORNER_BOTTOM_LEFT) }
+        btnLayoutCornerBR.setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.CORNER_BOTTOM_RIGHT) }
 
-        // Overlays Popups
         btnAddText.setOnClickListener {
             drawerOverlays.visibility = View.GONE
             showAddTextDialog()
@@ -353,7 +361,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         makeStudioPanelDraggable(commentsPanel)
     }
 
-    // Popup for Custom Text
     private fun showAddTextDialog() {
         val input = EditText(this).apply {
             hint = "Enter text..."
@@ -370,7 +377,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             .show()
     }
 
-    // Popup for Scoreboard Edit
     private fun showScoreboardDialog() {
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -394,7 +400,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             .show()
     }
 
-    // Popup for Web Overlay
     @SuppressLint("SetJavaScriptEnabled")
     private fun showAddWebDialog() {
         val input = EditText(this).apply { hint = "https://..." }
@@ -684,7 +689,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnGoLive.text = "STOPPING..."
 
         Thread {
-            // Task 6: Safely tell YouTube API to complete the broadcast so it doesn't spin endlessly.
             currentBroadcastId?.let { broadcastId ->
                 try {
                     youtubeClient?.liveBroadcasts()?.transition("complete", broadcastId, "status")?.execute()
@@ -757,7 +761,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
                 broadcast = youtube.liveBroadcasts().insert("snippet,status,contentDetails", broadcast).execute()
 
-                // Task 6: Save broadcast.id globally
                 currentBroadcastId = broadcast.id
                 val liveChatId = broadcast.snippet?.liveChatId
 
@@ -882,6 +885,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private fun makeDraggableAndScalable(view: View) {
         val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
+                if (view is WebView && view.tag == "unlocked") return false
                 view.scaleX *= detector.scaleFactor; view.scaleY *= detector.scaleFactor; return true
             }
         })
