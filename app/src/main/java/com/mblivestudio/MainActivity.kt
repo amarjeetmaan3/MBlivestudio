@@ -63,10 +63,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     
     private val cameraLayoutFilter = com.mblivestudio.filters.CameraLayoutFilterRender()
 
-    private lateinit var webOverlay: WebView
-    private lateinit var etWebUrl: EditText
-    private lateinit var btnApplyWeb: Button
-
     private lateinit var dragScoreboard: LinearLayout
     private lateinit var scoreMainText: TextView
     private lateinit var scoreSubText: TextView
@@ -116,7 +112,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private var lastOverlayBitmap: Bitmap? = null
     private var surfaceReady = false
 
-    // Task B: Updated defaults to 1080p
     private var streamWidth = 1920
     private var streamHeight = 1080
     private var streamBitrate = 5_000_000
@@ -167,10 +162,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         openGlView = findViewById(R.id.surfaceView)
         overlayContainer = findViewById(R.id.overlayContainer)
-        webOverlay = findViewById(R.id.webOverlay)
-
-        etWebUrl = findViewById(R.id.etWebUrl)
-        btnApplyWeb = findViewById(R.id.btnApplyWeb)
 
         dragScoreboard = findViewById(R.id.dragScoreboard)
         scoreMainText = findViewById(R.id.scoreMainText)
@@ -209,6 +200,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         commentsScrollView = findViewById(R.id.commentsScrollView)
         btnToggleComments = findViewById(R.id.btnToggleComments)
 
+        val btnAddWebOverlay: Button = findViewById(R.id.btnAddWebOverlay)
+        val btnToggleWebLock: Button = findViewById(R.id.btnToggleWebLock)
+
         rtmpCamera = RtmpCamera2(openGlView, this)
         openGlView.holder.addCallback(this)
 
@@ -218,13 +212,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         imageFilterRender = ImageObjectFilterRender()
         overlayContainer.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
-
-        webOverlay.setBackgroundColor(Color.TRANSPARENT)
-        webOverlay.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
-        webOverlay.settings.javaScriptEnabled = true
-        webOverlay.settings.domStorageEnabled = true
-        webOverlay.webViewClient = WebViewClient()
-        webOverlay.webChromeClient = WebChromeClient()
 
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
@@ -280,7 +267,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             showGoLiveDialog()
         }
 
-        // Task B: Apply 1080p resolution parameters
         btnRatio169.setOnClickListener { applyAspectRatio(1920, 1080, 5_000_000) }
         btnRatio916.setOnClickListener { applyAspectRatio(1080, 1920, 5_000_000) }
         
@@ -390,21 +376,40 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         makeStudioPanelDraggable(commentsPanel)
 
-        btnApplyWeb.setOnClickListener {
-            if (webOverlay.visibility == View.GONE) {
-                val url = etWebUrl.text.toString().trim()
-                if (url.isNotEmpty()) {
-                    val finalUrl = if (!url.startsWith("http")) "https://$url" else url
-                    webOverlay.loadUrl(finalUrl)
-                    webOverlay.visibility = View.VISIBLE
-                    btnApplyWeb.text = "HIDE WEB OVERLAY"
+        // Task C: New Web Overlay dynamically created + URL popup
+        btnAddWebOverlay.setOnClickListener {
+            val input = EditText(this).apply {
+                hint = "https://..."
+                setPadding(40, 40, 40, 40)
+            }
+            AlertDialog.Builder(this)
+                .setTitle("Add Web Overlay")
+                .setView(input)
+                .setPositiveButton("Add") { _, _ ->
+                    val url = input.text.toString().trim()
+                    if (url.isNotEmpty()) {
+                        val finalUrl = if (!url.startsWith("http")) "https://$url" else url
+                        addWebOverlayToScreen(finalUrl)
+                    }
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+
+        // Task C: Toggle lock state for interactions vs drag
+        btnToggleWebLock.setOnClickListener {
+            val target = selectedOverlay
+            if (target is WebView) {
+                if (target.tag == "unlocked") {
+                    target.tag = "locked"
+                    Toast.makeText(this, "Locked: Drag/Resize Mode", Toast.LENGTH_SHORT).show()
+                } else {
+                    target.tag = "unlocked"
+                    Toast.makeText(this, "Unlocked: Scroll/Interact Mode", Toast.LENGTH_SHORT).show()
                 }
             } else {
-                webOverlay.visibility = View.GONE
-                webOverlay.loadUrl("about:blank")
-                btnApplyWeb.text = "SHOW WEB OVERLAY"
+                Toast.makeText(this, "Select a Web Overlay first", Toast.LENGTH_SHORT).show()
             }
-            overlayHandler.postDelayed({ updateSnapshot() }, 2000)
         }
 
         btnToggleComments.setOnClickListener {
@@ -412,6 +417,28 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             commentsPanel.visibility = if (isVis) View.GONE else View.VISIBLE
             btnToggleComments.text = if (isVis) "SHOW LIVE CHAT (STUDIO ONLY)" else "HIDE LIVE CHAT"
         }
+    }
+
+    // Task C: Dynamic web overlay creation
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun addWebOverlayToScreen(url: String) {
+        val webView = WebView(this).apply {
+            layoutParams = RelativeLayout.LayoutParams(400, 300).apply {
+                addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE)
+            }
+            setBackgroundColor(Color.TRANSPARENT)
+            setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            webViewClient = WebViewClient()
+            webChromeClient = WebChromeClient()
+            tag = "locked" // Default drag mode
+            loadUrl(url)
+        }
+        overlayContainer.addView(webView)
+        makeDraggableAndScalable(webView)
+        selectedOverlay = webView
+        overlayHandler.postDelayed({ updateSnapshot() }, 2000)
     }
 
     private fun applyAccountToHeader(account: com.google.android.gms.auth.api.signin.GoogleSignInAccount) {
@@ -887,10 +914,23 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     @SuppressLint("ClickableViewAccessibility")
     private fun makeDraggableAndScalable(view: View) {
         val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            override fun onScale(detector: ScaleGestureDetector): Boolean { view.scaleX *= detector.scaleFactor; view.scaleY *= detector.scaleFactor; return true }
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                if (view is WebView && view.tag == "unlocked") return false
+                view.scaleX *= detector.scaleFactor; view.scaleY *= detector.scaleFactor; return true
+            }
         })
         var dX = 0f; var dY = 0f
         view.setOnTouchListener { v, event ->
+            if (v is WebView && v.tag == "unlocked") {
+                if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                    selectedOverlay = v
+                }
+                if (event.actionMasked == MotionEvent.ACTION_UP) {
+                    overlayHandler.postDelayed({ updateSnapshot() }, 500)
+                }
+                return@setOnTouchListener false
+            }
+
             scaleGestureDetector.onTouchEvent(event)
             if (!scaleGestureDetector.isInProgress) {
                 when (event.actionMasked) {
@@ -930,9 +970,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         if (!rtmpCamera.isOnPreview) {
             var isSuccess = false
-            
-            // Task B: 3-tier safe fallback implementation
-            val resolutions = if (streamWidth >= streamHeight) {
+            val fallback = if (streamWidth >= streamHeight) {
                 listOf(
                     Triple(streamWidth, streamHeight, streamBitrate),
                     Triple(1280, 720, 3_000_000),
@@ -948,7 +986,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 )
             }
 
-            for (res in resolutions) {
+            for (res in fallback) {
                 try {
                     if (rtmpCamera.prepareVideo(res.first, res.second, 30, res.third, 2, 0)) {
                         isSuccess = true
