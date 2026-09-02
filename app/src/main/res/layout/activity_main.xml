@@ -356,6 +356,18 @@
                     android:layout_marginStart="5dp"/>
             </LinearLayout>
 
+            <!-- Feature 9: zoom slider, replaces pinch — same confirmed
+                 setZoom(event, delta) API underneath, just driven by
+                 slider position instead of a real pinch touch. -->
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="CAMERA ZOOM" android:textColor="#03A9F4" android:textStyle="bold" android:textSize="11sp" android:layout_marginBottom="5dp"/>
+            <SeekBar
+                android:id="@+id/seekZoom"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:max="100"
+                android:progress="0"
+                android:layout_marginBottom="15dp"/>
+
             <!-- Feature 4: pinch-to-zoom hint (actual gesture handled on
                  the camera preview itself via ScaleGestureDetector) -->
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Tip: Pinch on camera preview to zoom (affects stream)" android:textColor="#888888" android:textSize="11sp" android:layout_marginBottom="15dp"/>
