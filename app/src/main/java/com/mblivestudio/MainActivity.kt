@@ -438,13 +438,26 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             setSelection(privacyOptions.indexOfFirst { it.equals(pendingPrivacy, ignoreCase = true) }.coerceAtLeast(1))
         }
 
+        // Small fixed-size preview box (roughly 2in x 1.3in), NOT
+        // match_parent — a full-width thumbnail was covering half the
+        // dialog. Centered so it doesn't stretch across the popup.
+        val thumbBoxWidth = (140 * resources.displayMetrics.density).toInt()
+        val thumbBoxHeight = (90 * resources.displayMetrics.density).toInt()
         val thumbPreview = ImageView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (120 * resources.displayMetrics.density).toInt())
+            layoutParams = LinearLayout.LayoutParams(thumbBoxWidth, thumbBoxHeight).apply {
+                gravity = android.view.Gravity.CENTER_HORIZONTAL
+            }
             scaleType = ImageView.ScaleType.CENTER_CROP
             setBackgroundColor(Color.parseColor("#333333"))
             pendingThumbnailUri?.let { setImageURI(it) }
         }
         thumbnailPreviewImageView = thumbPreview
+
+        val thumbWrapper = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER
+            addView(thumbPreview)
+        }
 
         val btnThumbnail = Button(this).apply { text = "CHOOSE THUMBNAIL" }
         val btnPreview = Button(this).apply { text = "PREVIEW" }
@@ -455,16 +468,29 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             setTextColor(Color.WHITE)
         }
 
-        listOf(etTitle, etDesc, spinner, thumbPreview, btnThumbnail, btnPreview, btnLayout, btnConfirmLive).forEach {
+        listOf(etTitle, etDesc, spinner, thumbWrapper, btnThumbnail, btnPreview, btnLayout, btnConfirmLive).forEach {
             val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             lp.bottomMargin = (8 * resources.displayMetrics.density).toInt()
             it.layoutParams = lp
             container.addView(it)
         }
 
+        // FIX: dialog content was overflowing off-screen with no way to
+        // reach Preview/Layout/GO LIVE buttons below the fold. Wrapping
+        // in a ScrollView with a capped max height fixes that on any
+        // screen size.
+        // WRAP_CONTENT (not a fixed height) so short content doesn't leave
+        // blank space — the dialog window itself already caps available
+        // height to the screen, and ScrollView takes over scrolling once
+        // content exceeds that.
+        val scrollView = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            addView(container)
+        }
+
         val dialog = AlertDialog.Builder(this)
             .setTitle("Go Live Setup")
-            .setView(container)
+            .setView(scrollView)
             .setNegativeButton("Cancel", null)
             .create()
 
