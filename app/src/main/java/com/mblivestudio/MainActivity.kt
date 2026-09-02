@@ -118,11 +118,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     private var streamWidth = 1280
     private var streamHeight = 720
-    private var streamBitrate = 2_000_000 // was 3_500_000 — lowered for battery life
+    private var streamBitrate = 2_000_000
 
-    // Feature 9: tracks current zoom factor (1x = no zoom) so the slider
-    // can compute an incremental delta, same as a real pinch would.
     private var lastAppliedZoomFactor = 1f
+    // Task A: New variables for proper synthetic zoom gesture
+    private var zoomGestureStartFactor = 1f
+    private var lastSyntheticZoomDistance = 300f
+    private val zoomPointerBaseDistance = 300f
 
     private var pendingTitle: String = ""
     private var pendingDesc: String = ""
@@ -247,8 +249,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         btnGoLive.setOnClickListener {
             if (rtmpCamera.isStreaming) {
-                // Feature 11: confirm before ending the live stream — no
-                // accidental taps should end a match broadcast mid-way.
                 AlertDialog.Builder(this)
                     .setTitle("Stop Live Stream?")
                     .setMessage("This will end your YouTube broadcast. Are you sure?")
@@ -331,31 +331,29 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             true
         }
 
-        // Feature 9: zoom slider — reuses the exact same confirmed
-        // rtmpCamera.setZoom(event, delta) call as pinch, just fed by
-        // slider position instead of a real touch. A synthetic 2-pointer
-        // MotionEvent is built because that's the only zoom entry point
-        // this library version exposes.
+        // Task A: Properly updated SeekBar listener for synthetic zoom events
         val seekZoom: SeekBar = findViewById(R.id.seekZoom)
         seekZoom.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                zoomGestureStartFactor = lastAppliedZoomFactor
+                lastSyntheticZoomDistance = zoomPointerBaseDistance
+                sendSyntheticZoomEvent(MotionEvent.ACTION_DOWN, zoomPointerBaseDistance, 1f)
+            }
+
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
-                val targetZoomFactor = 1f + (progress / 100f) * 4f // 1x .. 5x
-                val delta = targetZoomFactor / lastAppliedZoomFactor
+                val targetZoomFactor = (1f + (progress / 100f) * 4f).coerceIn(1f, 5f)
+                val scaleFromGestureStart = targetZoomFactor / zoomGestureStartFactor
+                val newDistance = zoomPointerBaseDistance * scaleFromGestureStart
+                val frameDelta = newDistance / lastSyntheticZoomDistance
+                lastSyntheticZoomDistance = newDistance
                 lastAppliedZoomFactor = targetZoomFactor
-
-                val now = android.os.SystemClock.uptimeMillis()
-                val props = arrayOf(MotionEvent.PointerProperties(), MotionEvent.PointerProperties())
-                props[0].id = 0; props[1].id = 1
-                val coords = arrayOf(MotionEvent.PointerCoords(), MotionEvent.PointerCoords())
-                coords[0].x = 0f; coords[0].y = 0f
-                coords[1].x = 100f; coords[1].y = 100f
-                val fakeEvent = MotionEvent.obtain(now, now, MotionEvent.ACTION_MOVE, 2, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
-                try { rtmpCamera.setZoom(fakeEvent, delta) } catch (e: Exception) {}
-                fakeEvent.recycle()
+                sendSyntheticZoomEvent(MotionEvent.ACTION_MOVE, newDistance, frameDelta)
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                sendSyntheticZoomEvent(MotionEvent.ACTION_UP, lastSyntheticZoomDistance, 1f)
+            }
         })
 
         etControlText.addTextChangedListener(object : TextWatcher {
@@ -390,10 +388,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         makeDraggableAndScalable(dragScoreboard)
 
-        // Feature 13: comments panel is studio-only (not burned into the
-        // stream, see XML), so it's safe to reuse the same drag logic —
-        // no snapshot/updateSnapshot() call needed since it never
-        // touches overlayContainer.
         makeStudioPanelDraggable(commentsPanel)
 
         btnApplyWeb.setOnClickListener {
@@ -909,9 +903,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // Feature 13: plain drag, no scale, no selectedOverlay/updateSnapshot
-    // — used only for studio-only panels (comments) that sit outside
-    // overlayContainer and never touch the broadcast pipeline.
     @SuppressLint("ClickableViewAccessibility")
     private fun makeStudioPanelDraggable(view: View) {
         var dX = 0f; var dY = 0f
@@ -1060,5 +1051,18 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private fun applyCameraLayout(rect: FloatArray) {
         cameraLayoutFilter.setRect(rect[0], rect[1], rect[2], rect[3])
         cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f)
+    }
+
+    // Task A: Helper function for synthetic zoom gesture
+    private fun sendSyntheticZoomEvent(action: Int, pointerDistance: Float, delta: Float) {
+        val now = android.os.SystemClock.uptimeMillis()
+        val props = arrayOf(MotionEvent.PointerProperties(), MotionEvent.PointerProperties())
+        props[0].id = 0; props[1].id = 1
+        val coords = arrayOf(MotionEvent.PointerCoords(), MotionEvent.PointerCoords())
+        coords[0].x = 0f; coords[0].y = 0f
+        coords[1].x = pointerDistance; coords[1].y = 0f
+        val event = MotionEvent.obtain(now, now, action, 2, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
+        try { rtmpCamera.setZoom(event, delta) } catch (e: Exception) {}
+        event.recycle()
     }
 }
