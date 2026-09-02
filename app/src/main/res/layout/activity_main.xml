@@ -17,7 +17,6 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
 
-        <!-- overlayContainer = only what gets burned into the RTMP stream -->
         <RelativeLayout
             android:id="@+id/overlayContainer"
             android:layout_width="match_parent"
@@ -55,7 +54,6 @@
             </LinearLayout>
         </RelativeLayout>
 
-        <!-- STUDIO-ONLY overlay: NOT inside overlayContainer -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -76,7 +74,6 @@
                 android:visibility="gone" />
         </LinearLayout>
 
-        <!-- STUDIO-ONLY live comments panel -->
         <LinearLayout
             android:id="@+id/commentsPanel"
             android:layout_width="260dp"
@@ -118,276 +115,209 @@
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_weight="3"
-        android:background="#1E1E1E">
+        android:background="#0F172A"> <!-- Navy Brand Background -->
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="16dp">
+            android:padding="12dp">
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:background="#252525"
-                android:padding="10dp"
-                android:layout_marginBottom="15dp">
-
-                <ImageView
-                    android:id="@+id/ivProfilePhoto"
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:src="@android:drawable/sym_def_app_icon"
-                    android:contentDescription="Account" />
-
-                <TextView
-                    android:id="@+id/tvChannelName"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="10dp"
-                    android:text="Not signed in"
-                    android:textColor="#FFFFFF"
-                    android:textSize="14sp"
-                    android:maxLines="1"
-                    android:ellipsize="end" />
-            </LinearLayout>
-
-            <Button
-                android:id="@+id/btnGoLive"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="LIVE"
-                android:backgroundTint="#D32F2F"
-                android:textColor="#FFFFFF"
-                android:textStyle="bold"
-                android:padding="15dp"
-                android:layout_marginBottom="15dp"/>
-
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="STREAM ASPECT RATIO" android:textColor="#03A9F4" android:textStyle="bold" android:layout_marginBottom="5dp"/>
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="15dp">
-
-                <Button
-                    android:id="@+id/btnRatio169"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="16:9"
-                    android:backgroundTint="#4CAF50"
-                    android:textColor="#FFFFFF"
-                    android:layout_marginEnd="5dp"/>
-
-                <Button
-                    android:id="@+id/btnRatio916"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="9:16"
-                    android:backgroundTint="#333333"
-                    android:textColor="#FFFFFF"
-                    android:layout_marginStart="5dp"/>
-            </LinearLayout>
-            
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginTop="8dp"
-                android:layout_marginBottom="8dp">
+            <!-- BROADCAST CARD -->
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="BROADCAST" android:textColor="#FFC107" android:textStyle="bold" android:textSize="13sp" android:layout_marginBottom="6dp" android:paddingStart="4dp"/>
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="#1E293B" android:padding="12dp" android:layout_marginBottom="16dp">
                 
-                <Button
-                    android:id="@+id/btnLayoutFull"
-                    android:layout_width="0dp"
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="LAYOUT: FULL"
-                    android:backgroundTint="#607D8B"
-                    android:textColor="#FFFFFF"
-                    android:layout_marginEnd="5dp"/>
-                    
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="#0B132B"
+                    android:padding="8dp"
+                    android:layout_marginBottom="12dp">
+
+                    <ImageView
+                        android:id="@+id/ivProfilePhoto"
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:src="@android:drawable/sym_def_app_icon"
+                        android:contentDescription="Account" />
+
+                    <TextView
+                        android:id="@+id/tvChannelName"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="10dp"
+                        android:text="Not signed in"
+                        android:textColor="#FFFFFF"
+                        android:textSize="13sp"
+                        android:maxLines="1"
+                        android:ellipsize="end" />
+                </LinearLayout>
+
                 <Button
-                    android:id="@+id/btnLayoutSplit"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="LAYOUT: SPLIT"
-                    android:backgroundTint="#607D8B"
+                    android:id="@+id/btnGoLive"
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:text="LIVE"
+                    android:background="#D32F2F"
                     android:textColor="#FFFFFF"
-                    android:layout_marginStart="5dp"/>
+                    android:textStyle="bold"
+                    android:textSize="18sp"/>
             </LinearLayout>
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="8dp">
+            <!-- CAMERA CARD -->
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="CAMERA" android:textColor="#FFC107" android:textStyle="bold" android:textSize="13sp" android:layout_marginBottom="6dp" android:paddingStart="4dp"/>
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="#1E293B" android:padding="12dp" android:layout_marginBottom="16dp">
+                
+                <!-- Row 1: Ratio 16:9, Ratio 9:16, Flip, Mic -->
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:weightSum="4" android:layout_marginBottom="8dp">
+                    <Button
+                        android:id="@+id/btnRatio169"
+                        android:layout_width="0dp"
+                        android:layout_height="48dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:background="#4CAF50"
+                        android:text="16:9"
+                        android:textColor="#FFFFFF"
+                        android:textSize="13sp"
+                        android:textStyle="bold"/>
+                    <Button
+                        android:id="@+id/btnRatio916"
+                        android:layout_width="0dp"
+                        android:layout_height="48dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:layout_marginStart="4dp"
+                        android:background="#334155"
+                        android:text="9:16"
+                        android:textColor="#FFFFFF"
+                        android:textSize="13sp"
+                        android:textStyle="bold"/>
+                    <ImageButton
+                        android:id="@+id/btnSwitchCamera"
+                        android:layout_width="0dp"
+                        android:layout_height="48dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:layout_marginStart="4dp"
+                        android:background="#334155"
+                        android:src="@drawable/ic_camera_flip"
+                        android:tint="#FFFFFF"
+                        android:padding="12dp"
+                        android:scaleType="fitCenter"/>
+                    <ImageButton
+                        android:id="@+id/btnMicToggle"
+                        android:layout_width="0dp"
+                        android:layout_height="48dp"
+                        android:layout_weight="1"
+                        android:layout_marginStart="4dp"
+                        android:background="#334155"
+                        android:src="@drawable/ic_mic_on"
+                        android:tint="#FFFFFF"
+                        android:padding="12dp"
+                        android:scaleType="fitCenter"/>
+                </LinearLayout>
 
-                <Button
-                    android:id="@+id/btnLayoutSplitRight"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="SPLIT: RIGHT"
-                    android:backgroundTint="#607D8B"
-                    android:textColor="#FFFFFF"
-                    android:layout_marginEnd="5dp"/>
+                <!-- Row 2: Layouts Full + Splits -->
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:weightSum="5" android:layout_marginBottom="8dp">
+                    <ImageButton android:id="@+id/btnLayoutFull" android:layout_width="0dp" android:layout_height="42dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:background="#455A64" android:src="@drawable/ic_layout_full" android:tint="#FFFFFF" android:padding="10dp" android:scaleType="fitCenter"/>
+                    <ImageButton android:id="@+id/btnLayoutSplit" android:layout_width="0dp" android:layout_height="42dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:layout_marginStart="4dp" android:background="#455A64" android:src="@drawable/ic_layout_split_l" android:tint="#FFFFFF" android:padding="10dp" android:scaleType="fitCenter"/>
+                    <ImageButton android:id="@+id/btnLayoutSplitRight" android:layout_width="0dp" android:layout_height="42dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:layout_marginStart="4dp" android:background="#455A64" android:src="@drawable/ic_layout_split_r" android:tint="#FFFFFF" android:padding="10dp" android:scaleType="fitCenter"/>
+                    <ImageButton android:id="@+id/btnLayoutSplitTop" android:layout_width="0dp" android:layout_height="42dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:layout_marginStart="4dp" android:background="#455A64" android:src="@drawable/ic_layout_split_t" android:tint="#FFFFFF" android:padding="10dp" android:scaleType="fitCenter"/>
+                    <ImageButton android:id="@+id/btnLayoutSplitBottom" android:layout_width="0dp" android:layout_height="42dp" android:layout_weight="1" android:layout_marginStart="4dp" android:background="#455A64" android:src="@drawable/ic_layout_split_b" android:tint="#FFFFFF" android:padding="10dp" android:scaleType="fitCenter"/>
+                </LinearLayout>
 
-                <Button
-                    android:id="@+id/btnLayoutSplitTop"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="SPLIT: TOP"
-                    android:backgroundTint="#607D8B"
-                    android:textColor="#FFFFFF"
-                    android:layout_marginStart="5dp"
-                    android:layout_marginEnd="5dp"/>
+                <!-- Row 3: Layouts Corners -->
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:weightSum="5" android:layout_marginBottom="12dp">
+                    <ImageButton android:id="@+id/btnLayoutCornerTL" android:layout_width="0dp" android:layout_height="42dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:background="#455A64" android:src="@drawable/ic_layout_tl" android:tint="#FFFFFF" android:padding="10dp" android:scaleType="fitCenter"/>
+                    <ImageButton android:id="@+id/btnLayoutCornerTR" android:layout_width="0dp" android:layout_height="42dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:layout_marginStart="4dp" android:background="#455A64" android:src="@drawable/ic_layout_tr" android:tint="#FFFFFF" android:padding="10dp" android:scaleType="fitCenter"/>
+                    <ImageButton android:id="@+id/btnLayoutCornerBL" android:layout_width="0dp" android:layout_height="42dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:layout_marginStart="4dp" android:background="#455A64" android:src="@drawable/ic_layout_bl" android:tint="#FFFFFF" android:padding="10dp" android:scaleType="fitCenter"/>
+                    <ImageButton android:id="@+id/btnLayoutCornerBR" android:layout_width="0dp" android:layout_height="42dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:layout_marginStart="4dp" android:background="#455A64" android:src="@drawable/ic_layout_br" android:tint="#FFFFFF" android:padding="10dp" android:scaleType="fitCenter"/>
+                    <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" android:layout_marginStart="4dp"/> <!-- Spacer -->
+                </LinearLayout>
 
-                <Button
-                    android:id="@+id/btnLayoutSplitBottom"
-                    android:layout_width="0dp"
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="ZOOM LEVEL" android:textColor="#888888" android:textSize="10sp" android:layout_marginBottom="4dp"/>
+                <SeekBar
+                    android:id="@+id/seekZoom"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="SPLIT: BOTTOM"
-                    android:backgroundTint="#607D8B"
-                    android:textColor="#FFFFFF"
-                    android:layout_marginStart="5dp"/>
+                    android:max="100"
+                    android:progress="0"/>
             </LinearLayout>
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="CAMERA CORNER (PiP)" android:textColor="#03A9F4" android:textStyle="bold" android:textSize="11sp" android:layout_marginBottom="5dp"/>
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="5dp">
-
-                <Button
-                    android:id="@+id/btnLayoutCornerTL"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="TOP-LEFT"
-                    android:backgroundTint="#455A64"
+            <!-- OVERLAYS CARD -->
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="OVERLAYS" android:textColor="#FFC107" android:textStyle="bold" android:textSize="13sp" android:layout_marginBottom="6dp" android:paddingStart="4dp"/>
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="#1E293B" android:padding="12dp" android:layout_marginBottom="16dp">
+                
+                <EditText
+                    android:id="@+id/etControlText"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:hint="Custom Text Input..."
                     android:textColor="#FFFFFF"
-                    android:layout_marginEnd="5dp"/>
+                    android:textColorHint="#888888"
+                    android:background="#0B132B"
+                    android:padding="12dp"
+                    android:textSize="14sp"
+                    android:layout_marginBottom="8dp"/>
 
-                <Button
-                    android:id="@+id/btnLayoutCornerTR"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="TOP-RIGHT"
-                    android:backgroundTint="#455A64"
-                    android:textColor="#FFFFFF"
-                    android:layout_marginStart="5dp"/>
-            </LinearLayout>
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="15dp">
+                <!-- Row 1: Add Text, Add Logo, Colors, Remove -->
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:weightSum="4" android:layout_marginBottom="12dp">
+                    <ImageButton android:id="@+id/btnAddText" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:background="#334155" android:src="@drawable/ic_add_text" android:tint="#4CAF50" android:padding="12dp" android:scaleType="fitCenter"/>
+                    <ImageButton android:id="@+id/btnAddLogo" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:layout_marginStart="4dp" android:background="#334155" android:src="@drawable/ic_add_logo" android:tint="#FF9800" android:padding="12dp" android:scaleType="fitCenter"/>
+                    <ImageButton android:id="@+id/btnTextColors" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:layout_marginStart="4dp" android:background="#334155" android:src="@drawable/ic_colors" android:tint="#2196F3" android:padding="12dp" android:scaleType="fitCenter"/>
+                    <ImageButton android:id="@+id/btnRemoveSelected" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:layout_marginStart="4dp" android:background="#D32F2F" android:src="@drawable/ic_remove" android:tint="#FFFFFF" android:padding="12dp" android:scaleType="fitCenter"/>
+                </LinearLayout>
 
-                <Button
-                    android:id="@+id/btnLayoutCornerBL"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="BOTTOM-LEFT"
-                    android:backgroundTint="#455A64"
-                    android:textColor="#FFFFFF"
-                    android:layout_marginEnd="5dp"/>
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:weightSum="2" android:layout_marginBottom="8dp">
+                    <EditText
+                        android:id="@+id/etScoreMain"
+                        android:layout_width="0dp"
+                        android:layout_height="48dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:hint="Score Main"
+                        android:textColor="#FFFFFF"
+                        android:textColorHint="#888888"
+                        android:background="#0B132B"
+                        android:padding="12dp"
+                        android:textSize="14sp"/>
+                    <EditText
+                        android:id="@+id/etScoreSub"
+                        android:layout_width="0dp"
+                        android:layout_height="48dp"
+                        android:layout_weight="1"
+                        android:layout_marginStart="4dp"
+                        android:hint="Score Sub"
+                        android:textColor="#FFFFFF"
+                        android:textColorHint="#888888"
+                        android:background="#0B132B"
+                        android:padding="12dp"
+                        android:textSize="14sp"/>
+                </LinearLayout>
 
-                <Button
-                    android:id="@+id/btnLayoutCornerBR"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="BOTTOM-RIGHT"
-                    android:backgroundTint="#455A64"
-                    android:textColor="#FFFFFF"
-                    android:layout_marginStart="5dp"/>
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="15dp">
-
-                <Button
-                    android:id="@+id/btnSwitchCamera"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="FLIP CAM"
-                    android:backgroundTint="#2196F3"
-                    android:textColor="#FFFFFF"
-                    android:layout_marginEnd="5dp"/>
-
-                <Button
-                    android:id="@+id/btnMicToggle"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="MIC: ON"
-                    android:backgroundTint="#4CAF50"
-                    android:textColor="#FFFFFF"
-                    android:layout_marginStart="5dp"/>
+                <!-- Row 2: Scoreboard, Add Web, Lock Web, Blank -->
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:weightSum="4">
+                    <ImageButton android:id="@+id/btnToggleScore" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:background="#334155" android:src="@drawable/ic_scoreboard" android:tint="#FFFFFF" android:padding="12dp" android:scaleType="fitCenter"/>
+                    <ImageButton android:id="@+id/btnAddWebOverlay" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:layout_marginStart="4dp" android:background="#334155" android:src="@drawable/ic_web" android:tint="#FFFFFF" android:padding="12dp" android:scaleType="fitCenter"/>
+                    <ImageButton android:id="@+id/btnToggleWebLock" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:layout_marginStart="4dp" android:background="#334155" android:src="@drawable/ic_lock" android:tint="#FFFFFF" android:padding="12dp" android:scaleType="fitCenter"/>
+                    <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" android:layout_marginStart="4dp"/> <!-- Spacer -->
+                </LinearLayout>
             </LinearLayout>
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="CAMERA ZOOM" android:textColor="#03A9F4" android:textStyle="bold" android:textSize="11sp" android:layout_marginBottom="5dp"/>
-            <SeekBar
-                android:id="@+id/seekZoom"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:max="100"
-                android:progress="0"
-                android:layout_marginBottom="15dp"/>
+            <!-- CHAT CARD -->
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="CHAT" android:textColor="#FFC107" android:textStyle="bold" android:textSize="13sp" android:layout_marginBottom="6dp" android:paddingStart="4dp"/>
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="#1E293B" android:padding="12dp" android:layout_marginBottom="16dp">
+                
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:weightSum="4">
+                    <ImageButton android:id="@+id/btnToggleComments" android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:background="#334155" android:src="@drawable/ic_chat" android:tint="#FFFFFF" android:padding="12dp" android:scaleType="fitCenter"/>
+                </LinearLayout>
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Tip: Pinch on camera preview to zoom (affects stream)" android:textColor="#888888" android:textSize="11sp" android:layout_marginBottom="15dp"/>
+            </LinearLayout>
 
-            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#444444" android:layout_marginBottom="15dp"/>
-
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="CUSTOM TEXT (ADD MULTIPLE)" android:textColor="#4CAF50" android:textStyle="bold"/>
-            <EditText
-                android:id="@+id/etControlText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="Type text here..."
-                android:textColor="#FFFFFF"
-                android:textColorHint="#888888"
-                android:background="#333333"
-                android:padding="12dp"
-                android:layout_marginTop="5dp"
-                android:layout_marginBottom="5dp"/>
-            <Button android:id="@+id/btnAddText" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="ADD NEW TEXT TO SCREEN" />
-
-            <Button android:id="@+id/btnTextColors" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="TEXT COLORS (SELECTED ITEM)" android:backgroundTint="#607D8B" android:textColor="#FFFFFF" android:layout_marginTop="8dp"/>
-
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="PHOTO LOGO (ADD MULTIPLE)" android:textColor="#FF9800" android:textStyle="bold" android:layout_marginTop="15dp"/>
-            <Button android:id="@+id/btnAddLogo" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="CHOOSE PHOTO FROM GALLERY" android:layout_marginTop="5dp"/>
-            <Button android:id="@+id/btnRemoveSelected" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="REMOVE SELECTED ITEM" android:backgroundTint="#E53935" android:textColor="#FFFFFF" android:layout_marginTop="10dp"/>
-
-            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#444444" android:layout_marginTop="15dp" android:layout_marginBottom="15dp"/>
-
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="CRICKET SCORECARD" android:textColor="#9C27B0" android:textStyle="bold"/>
-            <EditText android:id="@+id/etScoreMain" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Main Score (ex: IND 245/3)" android:textColor="#FFFFFF" android:textColorHint="#888888" android:background="#333333" android:padding="12dp" android:layout_marginTop="5dp" android:layout_marginBottom="5dp"/>
-            <EditText android:id="@+id/etScoreSub" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Sub Text (Target: 312)" android:textColor="#FFFFFF" android:textColorHint="#888888" android:background="#333333" android:padding="12dp" android:layout_marginBottom="5dp"/>
-            <Button android:id="@+id/btnToggleScore" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="SHOW SCORECARD ON SCREEN" />
-
-            <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#444444" android:layout_marginTop="15dp" android:layout_marginBottom="15dp"/>
-
-            <!-- Task C: Updated Web Overlay controls -->
-            <Button android:id="@+id/btnAddWebOverlay" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="ADD WEB OVERLAY" android:layout_marginBottom="5dp"/>
-            <Button android:id="@+id/btnToggleWebLock" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="🔒/🔓 TOGGLE WEB INTERACT MODE" android:backgroundTint="#FF9800" android:textColor="#FFFFFF" android:layout_marginBottom="15dp"/>
-
-            <Button android:id="@+id/btnToggleComments" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="SHOW LIVE CHAT (STUDIO ONLY)" android:layout_marginBottom="20dp"/>
         </LinearLayout>
     </ScrollView>
 </LinearLayout>
