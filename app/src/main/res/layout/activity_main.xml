@@ -17,6 +17,7 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
 
+        <!-- overlayContainer = only what gets burned into the RTMP stream -->
         <RelativeLayout
             android:id="@+id/overlayContainer"
             android:layout_width="match_parent"
@@ -50,7 +51,7 @@
                     android:textColor="#FFFFFF"
                     android:textSize="32sp"
                     android:textStyle="bold" />
-                    
+
                 <TextView
                     android:id="@+id/scoreSubText"
                     android:layout_width="wrap_content"
@@ -60,6 +61,64 @@
                     android:textSize="18sp" />
             </LinearLayout>
         </RelativeLayout>
+
+        <!-- STUDIO-ONLY overlay: NOT inside overlayContainer, so it never
+             burns into the stream. Purely for the operator. -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|start"
+            android:orientation="vertical"
+            android:layout_margin="12dp">
+
+            <TextView
+                android:id="@+id/tvLiveTimer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="00:00:00"
+                android:textColor="#FF5252"
+                android:textStyle="bold"
+                android:textSize="20sp"
+                android:background="#A6000000"
+                android:padding="8dp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- STUDIO-ONLY live comments panel, bottom-left of preview -->
+        <LinearLayout
+            android:id="@+id/commentsPanel"
+            android:layout_width="260dp"
+            android:layout_height="180dp"
+            android:layout_gravity="bottom|start"
+            android:orientation="vertical"
+            android:background="#A6000000"
+            android:padding="6dp"
+            android:layout_margin="12dp"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="LIVE CHAT"
+                android:textColor="#03A9F4"
+                android:textStyle="bold"
+                android:textSize="12sp"
+                android:layout_marginBottom="4dp" />
+
+            <ScrollView
+                android:id="@+id/commentsScrollView"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1">
+
+                <TextView
+                    android:id="@+id/tvCommentsFeed"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="#FFFFFF"
+                    android:textSize="12sp" />
+            </ScrollView>
+        </LinearLayout>
     </FrameLayout>
 
     <!-- Side Panel Controls -->
@@ -75,69 +134,78 @@
             android:orientation="vertical"
             android:padding="16dp">
 
-            <TextView
+            <!-- Feature 1: Account bar — circular photo + channel name,
+                 fixes the old "SIGNED IN AS: long-email" button that broke
+                 the row. Not signed in -> tap opens sign-in. -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="M.B. LIVE STUDIO"
-                android:textColor="#FFFFFF"
-                android:textStyle="bold"
-                android:textSize="18sp"
-                android:layout_marginBottom="15dp"
-                android:gravity="center"/>
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="#252525"
+                android:padding="10dp"
+                android:layout_marginBottom="15dp">
 
-            <Button
-                android:id="@+id/btnSignInYouTube"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="SIGN IN WITH YOUTUBE"
-                android:backgroundTint="#FFFFFF"
-                android:textColor="#FF0000"
-                android:textStyle="bold"
-                android:padding="12dp"
-                android:layout_marginBottom="10dp"/>
+                <ImageView
+                    android:id="@+id/ivProfilePhoto"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:src="@android:drawable/sym_def_app_icon"
+                    android:contentDescription="Account" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="BROADCAST SETTINGS" android:textColor="#03A9F4" android:textStyle="bold" android:layout_marginBottom="5dp"/>
-            
-            <EditText
-                android:id="@+id/etStreamTitle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="Broadcast Title"
-                android:textColor="#FFFFFF"
-                android:textColorHint="#888888"
-                android:background="#333333"
-                android:padding="12dp"
-                android:layout_marginBottom="5dp"/>
+                <TextView
+                    android:id="@+id/tvChannelName"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="10dp"
+                    android:text="Not signed in"
+                    android:textColor="#FFFFFF"
+                    android:textSize="14sp"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
+            </LinearLayout>
 
-            <EditText
-                android:id="@+id/etStreamDesc"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="Description"
-                android:textColor="#FFFFFF"
-                android:textColorHint="#888888"
-                android:background="#333333"
-                android:padding="12dp"
-                android:layout_marginBottom="5dp"/>
-
-            <Spinner
-                android:id="@+id/spinnerPrivacy"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="#333333"
-                android:padding="12dp"
-                android:layout_marginBottom="15dp"/>
-
+            <!-- Feature 2: single LIVE button -> opens Go Live dialog -->
             <Button
                 android:id="@+id/btnGoLive"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="GO LIVE"
+                android:text="LIVE"
                 android:backgroundTint="#D32F2F"
                 android:textColor="#FFFFFF"
                 android:textStyle="bold"
                 android:padding="15dp"
-                android:layout_marginBottom="10dp"/>
+                android:layout_marginBottom="15dp"/>
+
+            <!-- Feature 3: Aspect ratio toggle. Locked once streaming. -->
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="STREAM ASPECT RATIO" android:textColor="#03A9F4" android:textStyle="bold" android:layout_marginBottom="5dp"/>
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="15dp">
+
+                <Button
+                    android:id="@+id/btnRatio169"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="16:9"
+                    android:backgroundTint="#4CAF50"
+                    android:textColor="#FFFFFF"
+                    android:layout_marginEnd="5dp"/>
+
+                <Button
+                    android:id="@+id/btnRatio916"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="9:16"
+                    android:backgroundTint="#333333"
+                    android:textColor="#FFFFFF"
+                    android:layout_marginStart="5dp"/>
+            </LinearLayout>
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -166,6 +234,10 @@
                     android:layout_marginStart="5dp"/>
             </LinearLayout>
 
+            <!-- Feature 4: pinch-to-zoom hint (actual gesture handled on
+                 the camera preview itself via ScaleGestureDetector) -->
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Tip: Pinch on camera preview to zoom (affects stream)" android:textColor="#888888" android:textSize="11sp" android:layout_marginBottom="15dp"/>
+
             <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#444444" android:layout_marginBottom="15dp"/>
 
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="CUSTOM TEXT (ADD MULTIPLE)" android:textColor="#4CAF50" android:textStyle="bold"/>
@@ -182,6 +254,9 @@
                 android:layout_marginBottom="5dp"/>
             <Button android:id="@+id/btnAddText" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="ADD NEW TEXT TO SCREEN" />
 
+            <!-- Feature 5: per-text color editor -->
+            <Button android:id="@+id/btnTextColors" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="TEXT COLORS (SELECTED ITEM)" android:backgroundTint="#607D8B" android:textColor="#FFFFFF" android:layout_marginTop="8dp"/>
+
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="PHOTO LOGO (ADD MULTIPLE)" android:textColor="#FF9800" android:textStyle="bold" android:layout_marginTop="15dp"/>
             <Button android:id="@+id/btnAddLogo" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="CHOOSE PHOTO FROM GALLERY" android:layout_marginTop="5dp"/>
             <Button android:id="@+id/btnRemoveSelected" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="REMOVE SELECTED ITEM" android:backgroundTint="#E53935" android:textColor="#FFFFFF" android:layout_marginTop="10dp"/>
@@ -196,7 +271,10 @@
             <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#444444" android:layout_marginTop="15dp" android:layout_marginBottom="15dp"/>
 
             <EditText android:id="@+id/etWebUrl" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="https://your-overlay-url.com" android:textColor="#FFFFFF" android:textColorHint="#888888" android:background="#333333" android:padding="12dp" android:inputType="textUri" android:layout_marginBottom="5dp"/>
-            <Button android:id="@+id/btnApplyWeb" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="SHOW WEB OVERLAY" android:layout_marginBottom="20dp"/>
+            <Button android:id="@+id/btnApplyWeb" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="SHOW WEB OVERLAY" android:layout_marginBottom="5dp"/>
+
+            <!-- Feature 6: toggle studio-only comments panel -->
+            <Button android:id="@+id/btnToggleComments" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="SHOW LIVE CHAT (STUDIO ONLY)" android:layout_marginBottom="20dp"/>
         </LinearLayout>
     </ScrollView>
 </LinearLayout>
