@@ -603,7 +603,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         Thread {
             try {
-                val request = youtube.liveChatMessages().list(chatId, listOf("snippet", "authorDetails"))
+                val request = youtube.liveChatMessages().list(chatId, "snippet,authorDetails")
                 chatNextPageToken?.let { request.pageToken = it }
                 val response = request.execute()
                 chatNextPageToken = response.nextPageToken
