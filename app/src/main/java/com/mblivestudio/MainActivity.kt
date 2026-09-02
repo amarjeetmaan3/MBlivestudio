@@ -116,12 +116,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private var lastOverlayBitmap: Bitmap? = null
     private var surfaceReady = false
 
-    private var streamWidth = 1280
-    private var streamHeight = 720
-    private var streamBitrate = 2_000_000
+    // Task B: Updated defaults to 1080p
+    private var streamWidth = 1920
+    private var streamHeight = 1080
+    private var streamBitrate = 5_000_000
 
     private var lastAppliedZoomFactor = 1f
-    // Task A: New variables for proper synthetic zoom gesture
     private var zoomGestureStartFactor = 1f
     private var lastSyntheticZoomDistance = 300f
     private val zoomPointerBaseDistance = 300f
@@ -280,8 +280,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             showGoLiveDialog()
         }
 
-        btnRatio169.setOnClickListener { applyAspectRatio(1280, 720, 2_000_000) }
-        btnRatio916.setOnClickListener { applyAspectRatio(720, 1280, 2_000_000) }
+        // Task B: Apply 1080p resolution parameters
+        btnRatio169.setOnClickListener { applyAspectRatio(1920, 1080, 5_000_000) }
+        btnRatio916.setOnClickListener { applyAspectRatio(1080, 1920, 5_000_000) }
         
         btnLayoutFull.setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.FULL) }
         btnLayoutSplit.setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.SPLIT_LEFT) }
@@ -331,7 +332,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             true
         }
 
-        // Task A: Properly updated SeekBar listener for synthetic zoom events
         val seekZoom: SeekBar = findViewById(R.id.seekZoom)
         seekZoom.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onStartTrackingTouch(seekBar: SeekBar?) {
@@ -930,12 +930,23 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         if (!rtmpCamera.isOnPreview) {
             var isSuccess = false
-            val fallback = if (streamWidth >= streamHeight) Triple(854, 480, 1_500_000) else Triple(480, 854, 1_500_000)
-            val resolutions = listOf(
-                Triple(streamWidth, streamHeight, streamBitrate),
-                fallback,
-                Triple(640, 480, 1_000_000)
-            )
+            
+            // Task B: 3-tier safe fallback implementation
+            val resolutions = if (streamWidth >= streamHeight) {
+                listOf(
+                    Triple(streamWidth, streamHeight, streamBitrate),
+                    Triple(1280, 720, 3_000_000),
+                    Triple(854, 480, 1_500_000),
+                    Triple(640, 480, 1_000_000)
+                )
+            } else {
+                listOf(
+                    Triple(streamWidth, streamHeight, streamBitrate),
+                    Triple(720, 1280, 3_000_000),
+                    Triple(480, 854, 1_500_000),
+                    Triple(480, 640, 1_000_000)
+                )
+            }
 
             for (res in resolutions) {
                 try {
@@ -1053,7 +1064,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f)
     }
 
-    // Task A: Helper function for synthetic zoom gesture
     private fun sendSyntheticZoomEvent(action: Int, pointerDistance: Float, delta: Float) {
         val now = android.os.SystemClock.uptimeMillis()
         val props = arrayOf(MotionEvent.PointerProperties(), MotionEvent.PointerProperties())
