@@ -212,7 +212,7 @@
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:layout_marginTop="8dp"
-                android:layout_marginBottom="15dp">
+                android:layout_marginBottom="8dp">
                 
                 <Button
                     android:id="@+id/btnLayoutFull"
@@ -231,6 +231,100 @@
                     android:layout_weight="1"
                     android:text="LAYOUT: SPLIT"
                     android:backgroundTint="#607D8B"
+                    android:textColor="#FFFFFF"
+                    android:layout_marginStart="5dp"/>
+            </LinearLayout>
+
+            <!-- Camera layout presets — Split variants -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="8dp">
+
+                <Button
+                    android:id="@+id/btnLayoutSplitRight"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="SPLIT: RIGHT"
+                    android:backgroundTint="#607D8B"
+                    android:textColor="#FFFFFF"
+                    android:layout_marginEnd="5dp"/>
+
+                <Button
+                    android:id="@+id/btnLayoutSplitTop"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="SPLIT: TOP"
+                    android:backgroundTint="#607D8B"
+                    android:textColor="#FFFFFF"
+                    android:layout_marginStart="5dp"
+                    android:layout_marginEnd="5dp"/>
+
+                <Button
+                    android:id="@+id/btnLayoutSplitBottom"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="SPLIT: BOTTOM"
+                    android:backgroundTint="#607D8B"
+                    android:textColor="#FFFFFF"
+                    android:layout_marginStart="5dp"/>
+            </LinearLayout>
+
+            <!-- Camera layout presets — 4 Corners (PiP) -->
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="CAMERA CORNER (PiP)" android:textColor="#03A9F4" android:textStyle="bold" android:textSize="11sp" android:layout_marginBottom="5dp"/>
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="5dp">
+
+                <Button
+                    android:id="@+id/btnLayoutCornerTL"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="TOP-LEFT"
+                    android:backgroundTint="#455A64"
+                    android:textColor="#FFFFFF"
+                    android:layout_marginEnd="5dp"/>
+
+                <Button
+                    android:id="@+id/btnLayoutCornerTR"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="TOP-RIGHT"
+                    android:backgroundTint="#455A64"
+                    android:textColor="#FFFFFF"
+                    android:layout_marginStart="5dp"/>
+            </LinearLayout>
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="15dp">
+
+                <Button
+                    android:id="@+id/btnLayoutCornerBL"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="BOTTOM-LEFT"
+                    android:backgroundTint="#455A64"
+                    android:textColor="#FFFFFF"
+                    android:layout_marginEnd="5dp"/>
+
+                <Button
+                    android:id="@+id/btnLayoutCornerBR"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="BOTTOM-RIGHT"
+                    android:backgroundTint="#455A64"
                     android:textColor="#FFFFFF"
                     android:layout_marginStart="5dp"/>
             </LinearLayout>
