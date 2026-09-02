@@ -118,7 +118,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     private var streamWidth = 1280
     private var streamHeight = 720
-    private var streamBitrate = 3_500_000
+    private var streamBitrate = 2_000_000 // was 3_500_000 — lowered for battery life
+
+    // Feature 9: tracks current zoom factor (1x = no zoom) so the slider
+    // can compute an incremental delta, same as a real pinch would.
+    private var lastAppliedZoomFactor = 1f
 
     private var pendingTitle: String = ""
     private var pendingDesc: String = ""
@@ -243,7 +247,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         btnGoLive.setOnClickListener {
             if (rtmpCamera.isStreaming) {
-                stopLiveStream()
+                // Feature 11: confirm before ending the live stream — no
+                // accidental taps should end a match broadcast mid-way.
+                AlertDialog.Builder(this)
+                    .setTitle("Stop Live Stream?")
+                    .setMessage("This will end your YouTube broadcast. Are you sure?")
+                    .setPositiveButton("Stop Stream") { _, _ -> stopLiveStream() }
+                    .setNegativeButton("Cancel", null)
+                    .show()
                 return@setOnClickListener
             }
 
@@ -269,8 +280,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             showGoLiveDialog()
         }
 
-        btnRatio169.setOnClickListener { applyAspectRatio(1280, 720, 3_500_000) }
-        btnRatio916.setOnClickListener { applyAspectRatio(720, 1280, 3_500_000) }
+        btnRatio169.setOnClickListener { applyAspectRatio(1280, 720, 2_000_000) }
+        btnRatio916.setOnClickListener { applyAspectRatio(720, 1280, 2_000_000) }
         
         btnLayoutFull.setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.FULL) }
         btnLayoutSplit.setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.SPLIT_LEFT) }
@@ -312,10 +323,40 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         openGlView.setOnTouchListener { _, event ->
             scaleGestureDetector.onTouchEvent(event)
             if (event.pointerCount >= 2) {
-                try { rtmpCamera.setZoom(event, scaleGestureDetector.scaleFactor) } catch (e: Exception) {}
+                try {
+                    rtmpCamera.setZoom(event, scaleGestureDetector.scaleFactor)
+                    lastAppliedZoomFactor = (lastAppliedZoomFactor * scaleGestureDetector.scaleFactor).coerceIn(1f, 5f)
+                } catch (e: Exception) {}
             }
             true
         }
+
+        // Feature 9: zoom slider — reuses the exact same confirmed
+        // rtmpCamera.setZoom(event, delta) call as pinch, just fed by
+        // slider position instead of a real touch. A synthetic 2-pointer
+        // MotionEvent is built because that's the only zoom entry point
+        // this library version exposes.
+        val seekZoom: SeekBar = findViewById(R.id.seekZoom)
+        seekZoom.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                val targetZoomFactor = 1f + (progress / 100f) * 4f // 1x .. 5x
+                val delta = targetZoomFactor / lastAppliedZoomFactor
+                lastAppliedZoomFactor = targetZoomFactor
+
+                val now = android.os.SystemClock.uptimeMillis()
+                val props = arrayOf(MotionEvent.PointerProperties(), MotionEvent.PointerProperties())
+                props[0].id = 0; props[1].id = 1
+                val coords = arrayOf(MotionEvent.PointerCoords(), MotionEvent.PointerCoords())
+                coords[0].x = 0f; coords[0].y = 0f
+                coords[1].x = 100f; coords[1].y = 100f
+                val fakeEvent = MotionEvent.obtain(now, now, MotionEvent.ACTION_MOVE, 2, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
+                try { rtmpCamera.setZoom(fakeEvent, delta) } catch (e: Exception) {}
+                fakeEvent.recycle()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
 
         etControlText.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) {
@@ -348,6 +389,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnTextColors.setOnClickListener { showTextColorDialog() }
 
         makeDraggableAndScalable(dragScoreboard)
+
+        // Feature 13: comments panel is studio-only (not burned into the
+        // stream, see XML), so it's safe to reuse the same drag logic —
+        // no snapshot/updateSnapshot() call needed since it never
+        // touches overlayContainer.
+        makeStudioPanelDraggable(commentsPanel)
 
         btnApplyWeb.setOnClickListener {
             if (webOverlay.visibility == View.GONE) {
@@ -857,6 +904,21 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     MotionEvent.ACTION_MOVE -> { v.x = event.rawX + dX; v.y = event.rawY + dY }
                     MotionEvent.ACTION_UP -> { updateSnapshot() }
                 }
+            }
+            true
+        }
+    }
+
+    // Feature 13: plain drag, no scale, no selectedOverlay/updateSnapshot
+    // — used only for studio-only panels (comments) that sit outside
+    // overlayContainer and never touch the broadcast pipeline.
+    @SuppressLint("ClickableViewAccessibility")
+    private fun makeStudioPanelDraggable(view: View) {
+        var dX = 0f; var dY = 0f
+        view.setOnTouchListener { v, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { dX = v.x - event.rawX; dY = v.y - event.rawY }
+                MotionEvent.ACTION_MOVE -> { v.x = event.rawX + dX; v.y = event.rawY + dY }
             }
             true
         }
