@@ -2,15 +2,14 @@
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:animateLayoutChanges="true"
     android:background="#000000">
 
-    <!-- 100% Full Screen Camera -->
     <com.pedro.library.view.OpenGlView
         android:id="@+id/surfaceView"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- Stream Overlays -->
     <RelativeLayout
         android:id="@+id/overlayContainer"
         android:layout_width="match_parent"
@@ -48,7 +47,6 @@
         </LinearLayout>
     </RelativeLayout>
 
-    <!-- Top Bar: Timer & End Live -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -92,7 +90,6 @@
             android:textStyle="bold" />
     </LinearLayout>
 
-    <!-- Right Side Floating Tools -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -100,10 +97,9 @@
         android:layout_centerVertical="true"
         android:orientation="vertical"
         android:gravity="center_horizontal"
-        android:background="#60000000"
+        android:background="#80000000"
         android:padding="8dp"
-        android:layout_marginEnd="16dp"
-        android:layout_marginTop="60dp">
+        android:layout_marginEnd="16dp">
 
         <ImageButton
             android:id="@+id/btnSwitchCamera"
@@ -127,7 +123,6 @@
             android:padding="8dp"
             android:layout_marginBottom="16dp" />
 
-        <!-- Layouts Drawer Toggle -->
         <ImageButton
             android:id="@+id/btnToggleLayouts"
             android:layout_width="48dp"
@@ -139,7 +134,6 @@
             android:padding="8dp"
             android:layout_marginBottom="16dp" />
 
-        <!-- Overlays Drawer Toggle -->
         <ImageButton
             android:id="@+id/btnToggleOverlays"
             android:layout_width="48dp"
@@ -151,44 +145,57 @@
             android:padding="8dp" />
     </LinearLayout>
 
-    <!-- Hidden Layouts Drawer (Slides out left from tools) -->
-    <LinearLayout
+    <!-- Horizontal Bottom Drawer for Layouts -->
+    <HorizontalScrollView
         android:id="@+id/drawerLayouts"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:layout_alignParentRight="true"
-        android:layout_centerVertical="true"
-        android:layout_marginEnd="80dp"
-        android:background="#A6000000"
-        android:padding="8dp"
-        android:visibility="gone">
-        <ImageButton android:id="@+id/btnLayoutFull" android:layout_width="48dp" android:layout_height="48dp" android:background="@android:color/transparent" android:src="@drawable/ic_layout_full" android:tint="#FFF" android:padding="10dp"/>
-        <ImageButton android:id="@+id/btnLayoutSplit" android:layout_width="48dp" android:layout_height="48dp" android:background="@android:color/transparent" android:src="@drawable/ic_layout_split_l" android:tint="#FFF" android:padding="10dp"/>
-        <ImageButton android:id="@+id/btnLayoutCornerTL" android:layout_width="48dp" android:layout_height="48dp" android:background="@android:color/transparent" android:src="@drawable/ic_layout_tl" android:tint="#FFF" android:padding="10dp"/>
-    </LinearLayout>
+        android:layout_alignParentBottom="true"
+        android:layout_marginBottom="90dp"
+        android:background="#D9000000"
+        android:visibility="gone"
+        android:scrollbars="none">
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:padding="12dp">
+            <ImageButton android:id="@+id/btnLayoutFull" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_layout_full" android:tint="#FFF" android:padding="12dp"/>
+            <ImageButton android:id="@+id/btnLayoutSplit" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_layout_split_l" android:tint="#FFF" android:padding="12dp"/>
+            <ImageButton android:id="@+id/btnLayoutSplitRight" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_layout_split_r" android:tint="#FFF" android:padding="12dp"/>
+            <ImageButton android:id="@+id/btnLayoutSplitTop" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_layout_split_t" android:tint="#FFF" android:padding="12dp"/>
+            <ImageButton android:id="@+id/btnLayoutSplitBottom" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_layout_split_b" android:tint="#FFF" android:padding="12dp"/>
+            <ImageButton android:id="@+id/btnLayoutCornerTL" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_layout_tl" android:tint="#FFF" android:padding="12dp"/>
+            <ImageButton android:id="@+id/btnLayoutCornerTR" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_layout_tr" android:tint="#FFF" android:padding="12dp"/>
+            <ImageButton android:id="@+id/btnLayoutCornerBL" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_layout_bl" android:tint="#FFF" android:padding="12dp"/>
+            <ImageButton android:id="@+id/btnLayoutCornerBR" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_layout_br" android:tint="#FFF" android:padding="12dp"/>
+        </LinearLayout>
+    </HorizontalScrollView>
 
-    <!-- Hidden Overlays Drawer (Slides out left from tools) -->
-    <LinearLayout
+    <!-- Horizontal Bottom Drawer for Overlays -->
+    <HorizontalScrollView
         android:id="@+id/drawerOverlays"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:layout_alignParentRight="true"
-        android:layout_centerVertical="true"
-        android:layout_marginEnd="80dp"
-        android:background="#A6000000"
-        android:padding="8dp"
-        android:visibility="gone">
-        <ImageButton android:id="@+id/btnAddText" android:layout_width="48dp" android:layout_height="48dp" android:background="@android:color/transparent" android:src="@drawable/ic_add_text" android:tint="#4CAF50" android:padding="10dp"/>
-        <ImageButton android:id="@+id/btnAddLogo" android:layout_width="48dp" android:layout_height="48dp" android:background="@android:color/transparent" android:src="@drawable/ic_add_logo" android:tint="#FF9800" android:padding="10dp"/>
-        <ImageButton android:id="@+id/btnAddWebOverlay" android:layout_width="48dp" android:layout_height="48dp" android:background="@android:color/transparent" android:src="@drawable/ic_web" android:tint="#2196F3" android:padding="10dp"/>
-        <ImageButton android:id="@+id/btnToggleScore" android:layout_width="48dp" android:layout_height="48dp" android:background="@android:color/transparent" android:src="@drawable/ic_scoreboard" android:tint="#FFF" android:padding="10dp"/>
-        <ImageButton android:id="@+id/btnTextColors" android:layout_width="48dp" android:layout_height="48dp" android:background="@android:color/transparent" android:src="@drawable/ic_colors" android:tint="#FFF" android:padding="10dp"/>
-        <ImageButton android:id="@+id/btnRemoveSelected" android:layout_width="48dp" android:layout_height="48dp" android:background="@android:color/transparent" android:src="@drawable/ic_remove" android:tint="#F44336" android:padding="10dp"/>
-    </LinearLayout>
+        android:layout_alignParentBottom="true"
+        android:layout_marginBottom="90dp"
+        android:background="#D9000000"
+        android:visibility="gone"
+        android:scrollbars="none">
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:padding="12dp">
+            <ImageButton android:id="@+id/btnAddText" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_add_text" android:tint="#4CAF50" android:padding="12dp"/>
+            <ImageButton android:id="@+id/btnAddLogo" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_add_logo" android:tint="#FF9800" android:padding="12dp"/>
+            <ImageButton android:id="@+id/btnAddWebOverlay" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_web" android:tint="#2196F3" android:padding="12dp"/>
+            <ImageButton android:id="@+id/btnToggleScore" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_scoreboard" android:tint="#FFF" android:padding="12dp"/>
+            <ImageButton android:id="@+id/btnTextColors" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_colors" android:tint="#FFF" android:padding="12dp"/>
+            <ImageButton android:id="@+id/btnRemoveSelected" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_remove" android:tint="#F44336" android:padding="12dp"/>
+        </LinearLayout>
+    </HorizontalScrollView>
 
-    <!-- Task 2: Floating Zoom Pill (Bottom Right) -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -216,7 +223,6 @@
             android:textColor="#FFF" />
     </LinearLayout>
 
-    <!-- Studio Chat Panel (Bottom Left) -->
     <LinearLayout
         android:id="@+id/commentsPanel"
         android:layout_width="260dp"
@@ -250,7 +256,6 @@
         </ScrollView>
     </LinearLayout>
 
-    <!-- Floating Chat Toggle -->
     <ImageButton
         android:id="@+id/btnToggleComments"
         android:layout_width="48dp"
