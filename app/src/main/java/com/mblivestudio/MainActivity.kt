@@ -66,23 +66,21 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private lateinit var dragScoreboard: LinearLayout
     private lateinit var scoreMainText: TextView
     private lateinit var scoreSubText: TextView
+    private lateinit var btnToggleScore: Button
     private lateinit var etScoreMain: EditText
     private lateinit var etScoreSub: EditText
-    private lateinit var etControlText: EditText
 
-    // Buttons mapped to UI Update
+    private lateinit var btnAddText: Button
+    private lateinit var etControlText: EditText
+    private lateinit var btnAddLogo: Button
+    private lateinit var btnRemoveSelected: Button
+    private lateinit var btnTextColors: Button
+
     private lateinit var btnGoLive: Button
+    private lateinit var btnSwitchCamera: Button
+    private lateinit var btnMicToggle: Button
     private lateinit var btnRatio169: Button
     private lateinit var btnRatio916: Button
-    
-    private lateinit var btnSwitchCamera: ImageButton
-    private lateinit var btnMicToggle: ImageButton
-    private lateinit var btnToggleScore: ImageButton
-    private lateinit var btnAddText: ImageButton
-    private lateinit var btnAddLogo: ImageButton
-    private lateinit var btnRemoveSelected: ImageButton
-    private lateinit var btnTextColors: ImageButton
-    private lateinit var btnToggleComments: ImageButton
 
     private lateinit var ivProfilePhoto: ImageView
     private lateinit var tvChannelName: TextView
@@ -91,6 +89,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private lateinit var commentsPanel: LinearLayout
     private lateinit var tvCommentsFeed: TextView
     private lateinit var commentsScrollView: ScrollView
+    private lateinit var btnToggleComments: Button
 
     private var selectedOverlay: View? = null
     private var isAudioMuted = false
@@ -118,9 +117,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private var streamBitrate = 5_000_000
 
     private var lastAppliedZoomFactor = 1f
-    private var zoomGestureStartFactor = 1f
-    private var lastSyntheticZoomDistance = 300f
-    private val zoomPointerBaseDistance = 300f
 
     private var pendingTitle: String = ""
     private var pendingDesc: String = ""
@@ -130,6 +126,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     private var youtubeClient: YouTube? = null
     private var currentLiveChatId: String? = null
+    // Task 6: Added this variable to hold the active broadcast ID
+    private var currentBroadcastId: String? = null
+    
     private var chatNextPageToken: String? = null
     private var chatPollingActive = false
     private val chatHandler = Handler(Looper.getMainLooper())
@@ -182,16 +181,15 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnMicToggle = findViewById(R.id.btnMicToggle)
         btnRatio169 = findViewById(R.id.btnRatio169)
         btnRatio916 = findViewById(R.id.btnRatio916)
-        
-        val btnLayoutFull: ImageButton = findViewById(R.id.btnLayoutFull)
-        val btnLayoutSplit: ImageButton = findViewById(R.id.btnLayoutSplit)
-        val btnLayoutSplitRight: ImageButton = findViewById(R.id.btnLayoutSplitRight)
-        val btnLayoutSplitTop: ImageButton = findViewById(R.id.btnLayoutSplitTop)
-        val btnLayoutSplitBottom: ImageButton = findViewById(R.id.btnLayoutSplitBottom)
-        val btnLayoutCornerTL: ImageButton = findViewById(R.id.btnLayoutCornerTL)
-        val btnLayoutCornerTR: ImageButton = findViewById(R.id.btnLayoutCornerTR)
-        val btnLayoutCornerBL: ImageButton = findViewById(R.id.btnLayoutCornerBL)
-        val btnLayoutCornerBR: ImageButton = findViewById(R.id.btnLayoutCornerBR)
+        val btnLayoutFull: Button = findViewById(R.id.btnLayoutFull)
+        val btnLayoutSplit: Button = findViewById(R.id.btnLayoutSplit)
+        val btnLayoutSplitRight: Button = findViewById(R.id.btnLayoutSplitRight)
+        val btnLayoutSplitTop: Button = findViewById(R.id.btnLayoutSplitTop)
+        val btnLayoutSplitBottom: Button = findViewById(R.id.btnLayoutSplitBottom)
+        val btnLayoutCornerTL: Button = findViewById(R.id.btnLayoutCornerTL)
+        val btnLayoutCornerTR: Button = findViewById(R.id.btnLayoutCornerTR)
+        val btnLayoutCornerBL: Button = findViewById(R.id.btnLayoutCornerBL)
+        val btnLayoutCornerBR: Button = findViewById(R.id.btnLayoutCornerBR)
 
         ivProfilePhoto = findViewById(R.id.ivProfilePhoto)
         tvChannelName = findViewById(R.id.tvChannelName)
@@ -202,8 +200,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         commentsScrollView = findViewById(R.id.commentsScrollView)
         btnToggleComments = findViewById(R.id.btnToggleComments)
 
-        val btnAddWebOverlay: ImageButton = findViewById(R.id.btnAddWebOverlay)
-        val btnToggleWebLock: ImageButton = findViewById(R.id.btnToggleWebLock)
+        val btnAddWebOverlay: Button = findViewById(R.id.btnAddWebOverlay)
+        val btnToggleWebLock: Button = findViewById(R.id.btnToggleWebLock)
 
         rtmpCamera = RtmpCamera2(openGlView, this)
         openGlView.holder.addCallback(this)
@@ -296,13 +294,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             if (isAudioMuted) {
                 rtmpCamera.enableAudio()
                 isAudioMuted = false
-                btnMicToggle.setImageResource(R.drawable.ic_mic_on)
-                btnMicToggle.setBackgroundColor(Color.parseColor("#334155"))
+                btnMicToggle.text = "MIC: ON"
+                btnMicToggle.setBackgroundColor(Color.parseColor("#4CAF50"))
             } else {
                 rtmpCamera.disableAudio()
                 isAudioMuted = true
-                btnMicToggle.setImageResource(R.drawable.ic_mic_off)
-                btnMicToggle.setBackgroundColor(Color.parseColor("#D32F2F"))
+                btnMicToggle.text = "MIC: OFF"
+                btnMicToggle.setBackgroundColor(Color.parseColor("#E53935"))
             }
         }
 
@@ -320,29 +318,27 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             true
         }
 
-        val seekZoom: SeekBar = findViewById(R.id.seekZoom)
-        seekZoom.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {
-                zoomGestureStartFactor = lastAppliedZoomFactor
-                lastSyntheticZoomDistance = zoomPointerBaseDistance
-                sendSyntheticZoomEvent(MotionEvent.ACTION_DOWN, zoomPointerBaseDistance, 1f)
-            }
+        // Task 2: Zoom in and out discreet buttons
+        val btnZoomIn: Button = findViewById(R.id.btnZoomIn)
+        val btnZoomOut: Button = findViewById(R.id.btnZoomOut)
 
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (!fromUser) return
-                val targetZoomFactor = (1f + (progress / 100f) * 4f).coerceIn(1f, 5f)
-                val scaleFromGestureStart = targetZoomFactor / zoomGestureStartFactor
-                val newDistance = zoomPointerBaseDistance * scaleFromGestureStart
-                val frameDelta = newDistance / lastSyntheticZoomDistance
-                lastSyntheticZoomDistance = newDistance
-                lastAppliedZoomFactor = targetZoomFactor
-                sendSyntheticZoomEvent(MotionEvent.ACTION_MOVE, newDistance, frameDelta)
+        btnZoomIn.setOnClickListener {
+            val targetZoom = (lastAppliedZoomFactor + 0.2f).coerceIn(1f, 5f)
+            if (targetZoom != lastAppliedZoomFactor) {
+                val delta = targetZoom / lastAppliedZoomFactor
+                lastAppliedZoomFactor = targetZoom
+                sendSyntheticZoomEvent(MotionEvent.ACTION_MOVE, 300f, delta)
             }
+        }
 
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                sendSyntheticZoomEvent(MotionEvent.ACTION_UP, lastSyntheticZoomDistance, 1f)
+        btnZoomOut.setOnClickListener {
+            val targetZoom = (lastAppliedZoomFactor - 0.2f).coerceIn(1f, 5f)
+            if (targetZoom != lastAppliedZoomFactor) {
+                val delta = targetZoom / lastAppliedZoomFactor
+                lastAppliedZoomFactor = targetZoom
+                sendSyntheticZoomEvent(MotionEvent.ACTION_MOVE, 300f, delta)
             }
-        })
+        }
 
         etControlText.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) {
@@ -370,13 +366,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnAddText.setOnClickListener { val text = etControlText.text.toString().trim(); if (text.isNotEmpty()) { addTextOverlayToScreen(text); etControlText.text.clear() } }
         btnAddLogo.setOnClickListener { val intent = Intent(Intent.ACTION_GET_CONTENT); intent.type = "image/*"; startActivityForResult(intent, PICK_IMAGE_REQUEST) }
         btnRemoveSelected.setOnClickListener { selectedOverlay?.let { if (it != dragScoreboard) { overlayContainer.removeView(it); selectedOverlay = null; updateSnapshot() } } }
-        
-        btnToggleScore.setOnClickListener { 
-            val isVis = dragScoreboard.visibility == View.VISIBLE
-            dragScoreboard.visibility = if (isVis) View.GONE else View.VISIBLE
-            btnToggleScore.setBackgroundColor(Color.parseColor(if (isVis) "#334155" else "#4CAF50"))
-            updateSnapshot() 
-        }
+        btnToggleScore.setOnClickListener { val isVis = dragScoreboard.visibility == View.VISIBLE; dragScoreboard.visibility = if (isVis) View.GONE else View.VISIBLE; btnToggleScore.text = if (isVis) "SHOW SCORECARD ON SCREEN" else "HIDE SCORECARD"; updateSnapshot() }
 
         btnTextColors.setOnClickListener { showTextColorDialog() }
 
@@ -408,13 +398,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             if (target is WebView) {
                 if (target.tag == "unlocked") {
                     target.tag = "locked"
-                    btnToggleWebLock.setImageResource(R.drawable.ic_lock)
-                    btnToggleWebLock.setBackgroundColor(Color.parseColor("#334155"))
                     Toast.makeText(this, "Locked: Drag/Resize Mode", Toast.LENGTH_SHORT).show()
                 } else {
                     target.tag = "unlocked"
-                    btnToggleWebLock.setImageResource(R.drawable.ic_unlock)
-                    btnToggleWebLock.setBackgroundColor(Color.parseColor("#FFC107"))
                     Toast.makeText(this, "Unlocked: Scroll/Interact Mode", Toast.LENGTH_SHORT).show()
                 }
             } else {
@@ -425,7 +411,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnToggleComments.setOnClickListener {
             val isVis = commentsPanel.visibility == View.VISIBLE
             commentsPanel.visibility = if (isVis) View.GONE else View.VISIBLE
-            btnToggleComments.setBackgroundColor(Color.parseColor(if (isVis) "#334155" else "#4CAF50"))
+            btnToggleComments.text = if (isVis) "SHOW LIVE CHAT (STUDIO ONLY)" else "HIDE LIVE CHAT"
         }
     }
 
@@ -582,8 +568,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         streamHeight = height
         streamBitrate = bitrate
 
-        btnRatio169.setBackgroundColor(Color.parseColor(if (width > height) "#4CAF50" else "#334155"))
-        btnRatio916.setBackgroundColor(Color.parseColor(if (height > width) "#4CAF50" else "#334155"))
+        btnRatio169.setBackgroundColor(Color.parseColor(if (width > height) "#4CAF50" else "#333333"))
+        btnRatio916.setBackgroundColor(Color.parseColor(if (height > width) "#4CAF50" else "#333333"))
 
         if (rtmpCamera.isOnPreview) {
             try { rtmpCamera.stopPreview() } catch (e: Exception) {}
@@ -738,6 +724,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnGoLive.text = "STOPPING..."
 
         Thread {
+            // Task 6: Safely tell YouTube API to complete the broadcast so it doesn't spin endlessly.
+            currentBroadcastId?.let { broadcastId ->
+                try {
+                    youtubeClient?.liveBroadcasts()?.transition("complete", broadcastId, "status")?.execute()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+                currentBroadcastId = null
+            }
+
             try { rtmpCamera.stopStream() } catch (e: Exception) {}
             runOnUiThread {
                 try { rtmpCamera.stopPreview() } catch (e: Exception) {}
@@ -801,6 +797,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
                 broadcast = youtube.liveBroadcasts().insert("snippet,status,contentDetails", broadcast).execute()
 
+                // Task 6: Save the broadcast.id globally
+                currentBroadcastId = broadcast.id
                 val liveChatId = broadcast.snippet?.liveChatId
 
                 pendingThumbnailUri?.let { uri ->
