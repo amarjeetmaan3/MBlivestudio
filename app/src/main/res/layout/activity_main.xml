@@ -24,13 +24,6 @@
             android:layout_height="match_parent"
             android:background="@android:color/transparent">
 
-            <WebView
-                android:id="@+id/webOverlay"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:background="@android:color/transparent"
-                android:visibility="gone" />
-
             <LinearLayout
                 android:id="@+id/dragScoreboard"
                 android:layout_width="wrap_content"
@@ -62,8 +55,7 @@
             </LinearLayout>
         </RelativeLayout>
 
-        <!-- STUDIO-ONLY overlay: NOT inside overlayContainer, so it never
-             burns into the stream. Purely for the operator. -->
+        <!-- STUDIO-ONLY overlay: NOT inside overlayContainer -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -84,7 +76,7 @@
                 android:visibility="gone" />
         </LinearLayout>
 
-        <!-- STUDIO-ONLY live comments panel, bottom-left of preview -->
+        <!-- STUDIO-ONLY live comments panel -->
         <LinearLayout
             android:id="@+id/commentsPanel"
             android:layout_width="260dp"
@@ -134,9 +126,6 @@
             android:orientation="vertical"
             android:padding="16dp">
 
-            <!-- Feature 1: Account bar — circular photo + channel name,
-                 fixes the old "SIGNED IN AS: long-email" button that broke
-                 the row. Not signed in -> tap opens sign-in. -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -166,7 +155,6 @@
                     android:ellipsize="end" />
             </LinearLayout>
 
-            <!-- Feature 2: single LIVE button -> opens Go Live dialog -->
             <Button
                 android:id="@+id/btnGoLive"
                 android:layout_width="match_parent"
@@ -178,7 +166,6 @@
                 android:padding="15dp"
                 android:layout_marginBottom="15dp"/>
 
-            <!-- Feature 3: Aspect ratio toggle. Locked once streaming. -->
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="STREAM ASPECT RATIO" android:textColor="#03A9F4" android:textStyle="bold" android:layout_marginBottom="5dp"/>
             <LinearLayout
                 android:layout_width="match_parent"
@@ -235,7 +222,6 @@
                     android:layout_marginStart="5dp"/>
             </LinearLayout>
 
-            <!-- Camera layout presets — Split variants -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -274,7 +260,6 @@
                     android:layout_marginStart="5dp"/>
             </LinearLayout>
 
-            <!-- Camera layout presets — 4 Corners (PiP) -->
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="CAMERA CORNER (PiP)" android:textColor="#03A9F4" android:textStyle="bold" android:textSize="11sp" android:layout_marginBottom="5dp"/>
             <LinearLayout
                 android:layout_width="match_parent"
@@ -356,9 +341,6 @@
                     android:layout_marginStart="5dp"/>
             </LinearLayout>
 
-            <!-- Feature 9: zoom slider, replaces pinch — same confirmed
-                 setZoom(event, delta) API underneath, just driven by
-                 slider position instead of a real pinch touch. -->
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="CAMERA ZOOM" android:textColor="#03A9F4" android:textStyle="bold" android:textSize="11sp" android:layout_marginBottom="5dp"/>
             <SeekBar
                 android:id="@+id/seekZoom"
@@ -368,8 +350,6 @@
                 android:progress="0"
                 android:layout_marginBottom="15dp"/>
 
-            <!-- Feature 4: pinch-to-zoom hint (actual gesture handled on
-                 the camera preview itself via ScaleGestureDetector) -->
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Tip: Pinch on camera preview to zoom (affects stream)" android:textColor="#888888" android:textSize="11sp" android:layout_marginBottom="15dp"/>
 
             <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#444444" android:layout_marginBottom="15dp"/>
@@ -388,7 +368,6 @@
                 android:layout_marginBottom="5dp"/>
             <Button android:id="@+id/btnAddText" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="ADD NEW TEXT TO SCREEN" />
 
-            <!-- Feature 5: per-text color editor -->
             <Button android:id="@+id/btnTextColors" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="TEXT COLORS (SELECTED ITEM)" android:backgroundTint="#607D8B" android:textColor="#FFFFFF" android:layout_marginTop="8dp"/>
 
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="PHOTO LOGO (ADD MULTIPLE)" android:textColor="#FF9800" android:textStyle="bold" android:layout_marginTop="15dp"/>
@@ -404,10 +383,10 @@
 
             <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#444444" android:layout_marginTop="15dp" android:layout_marginBottom="15dp"/>
 
-            <EditText android:id="@+id/etWebUrl" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="https://your-overlay-url.com" android:textColor="#FFFFFF" android:textColorHint="#888888" android:background="#333333" android:padding="12dp" android:inputType="textUri" android:layout_marginBottom="5dp"/>
-            <Button android:id="@+id/btnApplyWeb" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="SHOW WEB OVERLAY" android:layout_marginBottom="5dp"/>
+            <!-- Task C: Updated Web Overlay controls -->
+            <Button android:id="@+id/btnAddWebOverlay" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="ADD WEB OVERLAY" android:layout_marginBottom="5dp"/>
+            <Button android:id="@+id/btnToggleWebLock" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="🔒/🔓 TOGGLE WEB INTERACT MODE" android:backgroundTint="#FF9800" android:textColor="#FFFFFF" android:layout_marginBottom="15dp"/>
 
-            <!-- Feature 6: toggle studio-only comments panel -->
             <Button android:id="@+id/btnToggleComments" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="SHOW LIVE CHAT (STUDIO ONLY)" android:layout_marginBottom="20dp"/>
         </LinearLayout>
     </ScrollView>
