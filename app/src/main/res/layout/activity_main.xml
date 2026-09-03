@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/rootLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#000000">
@@ -45,6 +46,26 @@
                 android:textSize="18sp" />
         </LinearLayout>
     </RelativeLayout>
+
+    <!-- Studio Only Overlay Controls (Task B) -->
+    <ImageButton
+        android:id="@+id/btnOverlayMenu"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:background="#CC000000"
+        android:src="@android:drawable/ic_menu_more"
+        android:tint="#FFFFFF"
+        android:visibility="gone" />
+
+    <Button
+        android:id="@+id/btnOverlayDone"
+        android:layout_width="wrap_content"
+        android:layout_height="32dp"
+        android:backgroundTint="#4CAF50"
+        android:text="✓ DONE"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
+        android:visibility="gone" />
 
     <!-- Top Bar -->
     <LinearLayout
@@ -96,7 +117,6 @@
         android:orientation="horizontal"
         android:layout_marginEnd="16dp">
 
-        <!-- Labels Column (Hidden by default) -->
         <LinearLayout
             android:id="@+id/menuLabelsContainer"
             android:layout_width="wrap_content"
@@ -113,7 +133,6 @@
             <TextView android:id="@+id/tvMenuToggle" android:layout_width="wrap_content" android:layout_height="52dp" android:gravity="center_vertical|end" android:text="Close" android:textColor="#FFFFFF" android:textSize="16sp" android:textStyle="bold" android:shadowColor="#000000" android:shadowRadius="4" android:shadowDx="1" android:shadowDy="1" />
         </LinearLayout>
 
-        <!-- Pill Icons Column -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -168,7 +187,7 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- Horizontal Zoom Pill (Bottom Right) -->
+    <!-- Horizontal Zoom Pill -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
