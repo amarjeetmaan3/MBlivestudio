@@ -15,6 +15,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Shader
 import android.graphics.Typeface
+import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -79,10 +80,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private lateinit var btnOverlayDone: Button
     private var currentMode = "DRAG"
     private val resizeHandles = mutableListOf<View>()
+    private val cropFrameViews = mutableListOf<View>()
 
     private var selectedOverlay: View? = null
     private var isAudioMuted = false
     private var isMenuExpanded = false
+    private var isBluetoothMicActive = false
+    private lateinit var audioManager: AudioManager
 
     private val PICK_IMAGE_REQUEST = 101
     private val SIGN_IN_REQUEST = 102
@@ -186,7 +190,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             val root = findViewById<RelativeLayout>(R.id.rootLayout)
             resizeHandles.forEach { root.removeView(it) }
             resizeHandles.clear()
-            selectedOverlay?.let { makeDraggableAndScalable(it) }
+            cropFrameViews.forEach { root.removeView(it) }
+            cropFrameViews.clear()
+            selectedOverlay?.let { it.setOnTouchListener(null); makeDraggableAndScalable(it) }
             updateOverlayMenuButtonPosition()
             updateSnapshot()
         }
@@ -209,6 +215,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         val btnSwitchCamera: ImageButton = findViewById(R.id.btnSwitchCamera)
         val btnMicToggle: ImageButton = findViewById(R.id.btnMicToggle)
+        val btnBluetoothMic: ImageButton = findViewById(R.id.btnBluetoothMic)
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val btnToggleLayouts: ImageButton = findViewById(R.id.btnToggleLayouts)
         val btnToggleOverlays: ImageButton = findViewById(R.id.btnToggleOverlays)
 
@@ -234,6 +242,26 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         btnSwitchCamera.setOnClickListener {
             try { rtmpCamera.switchCamera(); if (!rtmpCamera.isStreaming) { rtmpCamera.stopPreview(); tryStartCameraPreview() } } catch (e: Exception) {}
+        }
+
+        // EXPERIMENTAL — Bluetooth mic routing is a known, still-unresolved
+        // pain point in RootEncoder itself (library issues #297, #1664),
+        // not something guaranteed to work on every device. This is the
+        // standard Android approach (AudioManager SCO), applied before a
+        // fresh prepareAudio() re-init so the system has the best chance
+        // of routing input through the Bluetooth device. Only allowed
+        // before going live — toggling mid-stream is not supported.
+        btnBluetoothMic.setOnClickListener {
+            if (rtmpCamera.isStreaming) {
+                Toast.makeText(this, "Stop the stream before switching mic source.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 2)
+                return@setOnClickListener
+            }
+            toggleBluetoothMic(btnBluetoothMic)
         }
 
         findViewById<ImageButton>(R.id.btnLayoutFull).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.FULL); popupLayouts.visibility = View.GONE }
@@ -305,7 +333,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     private fun addResizeHandle(target: View, xAlign: Float, yAlign: Float, wMult: Int, hMult: Int, isEdge: Boolean) {
-        val size = (if (isEdge) 12 else 24 * resources.displayMetrics.density).toInt()
+        // FIX: missing parentheses meant edge-handle size was 12 RAW
+        // pixels (not dp) regardless of screen density — nearly invisible
+        // on higher-density screens. Density now applies to both sizes.
+        val size = ((if (isEdge) 12 else 24) * resources.displayMetrics.density).toInt()
         val handle = View(this).apply {
             layoutParams = RelativeLayout.LayoutParams(size, size)
             setBackgroundColor(if (isEdge) Color.parseColor("#8800BCD4") else Color.parseColor("#00BCD4"))
@@ -351,6 +382,73 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         handle.tag = updateHandlePos
     }
 
+    /**
+     * Purely visual — a border rectangle + 4 corner squares showing the
+     * fixed crop-window bounds. Crop itself works by pinch/pan on the
+     * content INSIDE this box (image matrix / WebView native zoom), so
+     * these markers are informational only, not draggable. This is what
+     * was missing before: crop had no visible indicator at all.
+     */
+    private fun showCropFrame(target: View) {
+        val root = findViewById<RelativeLayout>(R.id.rootLayout)
+        val density = resources.displayMetrics.density
+
+        val border = View(this).apply {
+            layoutParams = RelativeLayout.LayoutParams(target.width, target.height)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setStroke((2 * density).toInt(), Color.parseColor("#00BCD4"))
+                setColor(Color.TRANSPARENT)
+            }
+            x = target.x; y = target.y
+            isClickable = false
+        }
+        root.addView(border)
+        cropFrameViews.add(border)
+
+        val dotSize = (16 * density).toInt()
+        val corners = listOf(0f to 0f, 1f to 0f, 0f to 1f, 1f to 1f)
+        corners.forEach { (xAlign, yAlign) ->
+            val dot = View(this).apply {
+                layoutParams = RelativeLayout.LayoutParams(dotSize, dotSize)
+                setBackgroundColor(Color.parseColor("#00BCD4"))
+                x = target.x + (target.width * xAlign) - dotSize / 2
+                y = target.y + (target.height * yAlign) - dotSize / 2
+                isClickable = false
+            }
+            root.addView(dot)
+            cropFrameViews.add(dot)
+        }
+    }
+
+    private fun toggleBluetoothMic(button: ImageButton) {
+        if (!isBluetoothMicActive) {
+            try {
+                audioManager.startBluetoothSco()
+                audioManager.isBluetoothScoOn = true
+                isBluetoothMicActive = true
+                button.setBackgroundColor(Color.parseColor("#4CAF50"))
+                Toast.makeText(this, "Bluetooth mic requested (experimental — restarting camera to apply)", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "Could not enable Bluetooth mic on this device.", Toast.LENGTH_SHORT).show()
+                return
+            }
+        } else {
+            try {
+                audioManager.stopBluetoothSco()
+                audioManager.isBluetoothScoOn = false
+            } catch (e: Exception) {}
+            isBluetoothMicActive = false
+            button.setBackgroundColor(Color.TRANSPARENT)
+        }
+        // Force a clean prepareAudio() re-init while the SCO route is
+        // (de)activated — audio routing generally isn't picked up by an
+        // already-running AudioRecord instance.
+        if (rtmpCamera.isOnPreview) {
+            try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+            tryStartCameraPreview()
+        }
+    }
+
     private fun enterResizeMode(target: View) {
         currentMode = "RESIZE"
         btnOverlayMenu.visibility = View.GONE; btnOverlayDone.visibility = View.VISIBLE
@@ -370,6 +468,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         currentMode = "CROP"
         btnOverlayMenu.visibility = View.GONE; btnOverlayDone.visibility = View.VISIBLE
         positionDoneButton(target)
+        showCropFrame(target)
         when (target) {
             is ImageView -> {
                 target.scaleType = ImageView.ScaleType.MATRIX
