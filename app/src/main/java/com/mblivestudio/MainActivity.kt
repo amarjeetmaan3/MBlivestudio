@@ -311,6 +311,61 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         makeStudioPanelDraggable(commentsPanel)
     }
 
+    // --- BLUETOOTH SCO LOGIC FIX FOR ANDROID 12+ ---
+    private fun toggleBluetoothMic(button: ImageButton) {
+        if (!isBluetoothMicActive) {
+            try {
+                audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+                var routed = false
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    val devices = audioManager.availableCommunicationDevices
+                    val btDevice = devices.firstOrNull {
+                        it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                        it.type == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                        it.type == android.media.AudioDeviceInfo.TYPE_BLE_SPEAKER
+                    }
+                    if (btDevice != null) {
+                        routed = audioManager.setCommunicationDevice(btDevice)
+                    }
+                }
+
+                if (!routed) {
+                    audioManager.startBluetoothSco()
+                    audioManager.isBluetoothScoOn = true
+                }
+
+                isBluetoothMicActive = true
+                button.setColorFilter(Color.parseColor("#4CAF50"))
+                Toast.makeText(this, "Connecting Buds... कृपया 3 सेकंड रुकें", Toast.LENGTH_LONG).show()
+
+            } catch (e: Exception) {
+                Toast.makeText(this, "Error: बड्स कनेक्ट नहीं हो पाए", Toast.LENGTH_SHORT).show()
+                return
+            }
+        } else {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    audioManager.clearCommunicationDevice()
+                }
+                audioManager.stopBluetoothSco()
+                audioManager.isBluetoothScoOn = false
+                audioManager.mode = AudioManager.MODE_NORMAL
+            } catch (e: Exception) {}
+            
+            isBluetoothMicActive = false
+            button.setColorFilter(Color.WHITE)
+            Toast.makeText(this, "वापस Phone Mic पर सेट हो गया", Toast.LENGTH_SHORT).show()
+        }
+
+        if (rtmpCamera.isOnPreview) {
+            try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+            Handler(Looper.getMainLooper()).postDelayed({
+                tryStartCameraPreview()
+            }, 3000)
+        }
+    }
+
     // --- TASK B: RESIZE & CROP LOGIC ---
     private fun updateOverlayMenuButtonPosition() {
         val target = selectedOverlay
@@ -401,39 +456,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
             root.addView(dot)
             cropFrameViews.add(dot)
-        }
-    }
-
-    // --- BLUETOOTH SCO LOGIC FIX ---
-    private fun toggleBluetoothMic(button: ImageButton) {
-        if (!isBluetoothMicActive) {
-            try {
-                audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-                audioManager.startBluetoothSco()
-                audioManager.isBluetoothScoOn = true
-                isBluetoothMicActive = true
-                button.setBackgroundColor(Color.parseColor("#4CAF50"))
-                Toast.makeText(this, "Connecting Bluetooth Mic... Please wait 2s", Toast.LENGTH_LONG).show()
-            } catch (e: Exception) {
-                Toast.makeText(this, "Could not enable Bluetooth mic.", Toast.LENGTH_SHORT).show()
-                return
-            }
-        } else {
-            try {
-                audioManager.stopBluetoothSco()
-                audioManager.isBluetoothScoOn = false
-                audioManager.mode = AudioManager.MODE_NORMAL
-            } catch (e: Exception) {}
-            isBluetoothMicActive = false
-            button.setBackgroundColor(Color.TRANSPARENT)
-            Toast.makeText(this, "Switched to Phone Mic", Toast.LENGTH_SHORT).show()
-        }
-        
-        if (rtmpCamera.isOnPreview) {
-            try { rtmpCamera.stopPreview() } catch (e: Exception) {}
-            Handler(Looper.getMainLooper()).postDelayed({
-                tryStartCameraPreview()
-            }, 2000)
         }
     }
 
@@ -830,8 +852,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         chatHandler.removeCallbacksAndMessages(null)
         timerHandler.removeCallbacksAndMessages(null)
         
+        // Bluetooth Safety Cleanup
         try {
             if (isBluetoothMicActive) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    audioManager.clearCommunicationDevice()
+                }
                 audioManager.stopBluetoothSco()
                 audioManager.isBluetoothScoOn = false
                 audioManager.mode = AudioManager.MODE_NORMAL
