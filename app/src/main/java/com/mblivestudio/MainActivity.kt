@@ -323,7 +323,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val target = selectedOverlay
         if (target == null || currentMode != "DRAG") { btnOverlayMenu.visibility = View.GONE; return }
         btnOverlayMenu.visibility = View.VISIBLE
-        btnOverlayMenu.x = target.x + target.width - (32 * resources.displayMetrics.density)
+        // FIX: was using target.width directly, which is the LAID-OUT
+        // width and doesn't reflect a pinch-applied scaleX/scaleY. After
+        // resizing via pinch, the button drifted to the wrong spot.
+        val effectiveWidth = target.width * target.scaleX
+        btnOverlayMenu.x = target.x + effectiveWidth - (32 * resources.displayMetrics.density)
         btnOverlayMenu.y = target.y - (16 * resources.displayMetrics.density)
     }
 
@@ -454,6 +458,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnOverlayMenu.visibility = View.GONE; btnOverlayDone.visibility = View.VISIBLE
         positionDoneButton(target)
         target.setOnTouchListener(null)
+
+        // FIX: default ImageView scaleType (FIT_CENTER) keeps the photo's
+        // own aspect ratio no matter how the box changes — so dragging
+        // only the right edge just added empty space instead of visibly
+        // stretching the photo. FIT_XY makes content always exactly fill
+        // the box — true "make bigger/smaller", nothing ever clipped.
+        if (target is ImageView) target.scaleType = ImageView.ScaleType.FIT_XY
+
         addResizeHandle(target, 0f, 0f, -1, -1, false)
         addResizeHandle(target, 1f, 0f, 1, -1, false)
         addResizeHandle(target, 0f, 1f, -1, 1, false)
@@ -471,10 +483,46 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         showCropFrame(target)
         when (target) {
             is ImageView -> {
+                val drawable = target.drawable
+                val bmpW = drawable?.intrinsicWidth?.toFloat() ?: target.width.toFloat()
+                val bmpH = drawable?.intrinsicHeight?.toFloat() ?: target.height.toFloat()
+                val boxW = target.width.toFloat()
+                val boxH = target.height.toFloat()
+
+                // FIX (professional crop, like Instagram/standard photo
+                // editors): start already FILLING the box (like
+                // CENTER_CROP), centered — not at scale=1 with the image
+                // sitting tiny/offset in a corner, which is what made
+                // crop look "broken" before. minScale is locked to this
+                // fill-scale so you can never zoom out far enough to
+                // reveal empty space around the photo.
+                val fillScale = maxOf(boxW / bmpW, boxH / bmpH)
+                val minScale = fillScale
+                val maxScale = fillScale * 4f
+
                 target.scaleType = ImageView.ScaleType.MATRIX
-                var scale = 1f; var transX = 0f; var transY = 0f
+                var scale = fillScale
+                var transX = (boxW - bmpW * scale) / 2f
+                var transY = (boxH - bmpH * scale) / 2f
+
+                fun clampAndApply() {
+                    // Pan is clamped so the image can never be dragged
+                    // far enough to expose empty space past its edges —
+                    // the box always stays fully covered by the photo.
+                    val minTx = boxW - bmpW * scale
+                    val minTy = boxH - bmpH * scale
+                    transX = transX.coerceIn(minTx, 0f)
+                    transY = transY.coerceIn(minTy, 0f)
+                    applyImageMatrix(target, scale, transX, transY)
+                }
+                clampAndApply()
+
                 val scaleDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-                    override fun onScale(d: ScaleGestureDetector): Boolean { scale = (scale * d.scaleFactor).coerceIn(1f, 10f); applyImageMatrix(target, scale, transX, transY); return true }
+                    override fun onScale(d: ScaleGestureDetector): Boolean {
+                        scale = (scale * d.scaleFactor).coerceIn(minScale, maxScale)
+                        clampAndApply()
+                        return true
+                    }
                 })
                 var dX = 0f; var dY = 0f
                 target.setOnTouchListener { _, event ->
@@ -483,7 +531,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     if (!scaleDetector.isInProgress) {
                         when (event.actionMasked) {
                             MotionEvent.ACTION_DOWN -> { dX = transX - event.rawX; dY = transY - event.rawY }
-                            MotionEvent.ACTION_MOVE -> { transX = event.rawX + dX; transY = event.rawY + dY; applyImageMatrix(target, scale, transX, transY) }
+                            MotionEvent.ACTION_MOVE -> { transX = event.rawX + dX; transY = event.rawY + dY; clampAndApply() }
                             MotionEvent.ACTION_UP -> updateSnapshot()
                         }
                     }
@@ -539,6 +587,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                         layoutParams = RelativeLayout.LayoutParams(boxWidth, boxHeight).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) }
                         setBackgroundColor(Color.TRANSPARENT); setLayerType(View.LAYER_TYPE_SOFTWARE, null)
                         settings.javaScriptEnabled = true; settings.domStorageEnabled = true
+                        // FIX: without these, WebView renders a narrow
+                        // "mobile" layout of the page regardless of box
+                        // size — that's why it never looked like a full
+                        // "100%" page. This forces the page's own desktop
+                        // layout width, scaled to fit the box.
+                        settings.useWideViewPort = true
+                        settings.loadWithOverviewMode = true
                         webViewClient = WebViewClient(); webChromeClient = WebChromeClient(); loadUrl(finalUrl)
                     }
                     overlayContainer.addView(webView)
