@@ -74,6 +74,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private lateinit var tvCommentsFeed: TextView
     private lateinit var commentsScrollView: ScrollView
 
+    // Task B Variables
+    private lateinit var btnOverlayMenu: ImageButton
+    private lateinit var btnOverlayDone: Button
+    private var currentMode = "DRAG"
+    private val resizeHandles = mutableListOf<View>()
+
     private var selectedOverlay: View? = null
     private var isAudioMuted = false
     private var isMenuExpanded = false
@@ -155,10 +161,39 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         tvCommentsFeed = findViewById(R.id.tvCommentsFeed)
         commentsScrollView = findViewById(R.id.commentsScrollView)
         
+        // Task B Setup
+        btnOverlayMenu = findViewById(R.id.btnOverlayMenu)
+        btnOverlayDone = findViewById(R.id.btnOverlayDone)
+
+        btnOverlayMenu.setOnClickListener {
+            val target = selectedOverlay ?: return@setOnClickListener
+            val popup = PopupMenu(this, btnOverlayMenu)
+            popup.menu.add("Resize")
+            if (target !is TextView) popup.menu.add("Crop")
+            popup.setOnMenuItemClickListener { item ->
+                when (item.title) {
+                    "Resize" -> enterResizeMode(target)
+                    "Crop" -> enterCropMode(target)
+                }
+                true
+            }
+            popup.show()
+        }
+
+        btnOverlayDone.setOnClickListener {
+            currentMode = "DRAG"
+            btnOverlayDone.visibility = View.GONE
+            val root = findViewById<RelativeLayout>(R.id.rootLayout)
+            resizeHandles.forEach { root.removeView(it) }
+            resizeHandles.clear()
+            selectedOverlay?.let { makeDraggableAndScalable(it) }
+            updateOverlayMenuButtonPosition()
+            updateSnapshot()
+        }
+
         // Setup YouTube Menu Toggle
         val btnToggleMenu: ImageButton = findViewById(R.id.btnToggleMenu)
         val menuLabelsContainer: LinearLayout = findViewById(R.id.menuLabelsContainer)
-        val tvMenuToggle: TextView = findViewById(R.id.tvMenuToggle)
 
         btnToggleMenu.setOnClickListener {
             if (isMenuExpanded) {
@@ -177,7 +212,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val btnToggleLayouts: ImageButton = findViewById(R.id.btnToggleLayouts)
         val btnToggleOverlays: ImageButton = findViewById(R.id.btnToggleOverlays)
 
-        // Popups
         val popupLayouts: LinearLayout = findViewById(R.id.popupLayouts)
         val popupOverlays: LinearLayout = findViewById(R.id.popupOverlays)
         val btnCloseLayouts: Button = findViewById(R.id.btnCloseLayouts)
@@ -188,33 +222,25 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnCloseLayouts.setOnClickListener { popupLayouts.visibility = View.GONE }
         btnCloseOverlays.setOnClickListener { popupOverlays.visibility = View.GONE }
 
-        // Mic logic swapping icon properly
         btnMicToggle.setOnClickListener {
             if (isAudioMuted) {
-                rtmpCamera.enableAudio()
-                isAudioMuted = false
+                rtmpCamera.enableAudio(); isAudioMuted = false
                 btnMicToggle.setImageResource(R.drawable.ic_mic_on)
             } else {
-                rtmpCamera.disableAudio()
-                isAudioMuted = true
+                rtmpCamera.disableAudio(); isAudioMuted = true
                 btnMicToggle.setImageResource(R.drawable.ic_mic_off)
             }
         }
 
         btnSwitchCamera.setOnClickListener {
-            try {
-                rtmpCamera.switchCamera()
-                if (!rtmpCamera.isStreaming) { rtmpCamera.stopPreview(); tryStartCameraPreview() }
-            } catch (e: Exception) {}
+            try { rtmpCamera.switchCamera(); if (!rtmpCamera.isStreaming) { rtmpCamera.stopPreview(); tryStartCameraPreview() } } catch (e: Exception) {}
         }
 
-        // Layout Actions
         findViewById<ImageButton>(R.id.btnLayoutFull).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.FULL); popupLayouts.visibility = View.GONE }
         findViewById<ImageButton>(R.id.btnLayoutSplit).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.SPLIT_LEFT); popupLayouts.visibility = View.GONE }
         findViewById<ImageButton>(R.id.btnLayoutCornerTL).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.CORNER_TOP_LEFT); popupLayouts.visibility = View.GONE }
         findViewById<ImageButton>(R.id.btnLayoutCornerBR).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.CORNER_BOTTOM_RIGHT); popupLayouts.visibility = View.GONE }
 
-        // Overlays Actions
         findViewById<ImageButton>(R.id.btnAddText).setOnClickListener { popupOverlays.visibility = View.GONE; showAddTextDialog() }
         findViewById<ImageButton>(R.id.btnAddWebOverlay).setOnClickListener { popupOverlays.visibility = View.GONE; showAddWebDialog() }
         findViewById<ImageButton>(R.id.btnAddLogo).setOnClickListener { popupOverlays.visibility = View.GONE; val intent = Intent(Intent.ACTION_GET_CONTENT); intent.type = "image/*"; startActivityForResult(intent, PICK_IMAGE_REQUEST) }
@@ -225,34 +251,22 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
         findViewById<ImageButton>(R.id.btnRemoveSelected).setOnClickListener { 
             popupOverlays.visibility = View.GONE
-            selectedOverlay?.let { if (it != dragScoreboard) { overlayContainer.removeView(it); selectedOverlay = null; updateSnapshot() } } 
+            selectedOverlay?.let { if (it != dragScoreboard) { overlayContainer.removeView(it); selectedOverlay = null; updateOverlayMenuButtonPosition(); updateSnapshot() } } 
         }
 
-        // Zoom +/-
         findViewById<Button>(R.id.btnZoomIn).setOnClickListener {
             val targetZoom = (lastAppliedZoomFactor + 0.2f).coerceIn(1f, 5f)
-            if (targetZoom != lastAppliedZoomFactor) {
-                val delta = targetZoom / lastAppliedZoomFactor
-                lastAppliedZoomFactor = targetZoom
-                sendSyntheticZoomEvent(MotionEvent.ACTION_MOVE, 300f, delta)
-            }
+            if (targetZoom != lastAppliedZoomFactor) { val delta = targetZoom / lastAppliedZoomFactor; lastAppliedZoomFactor = targetZoom; sendSyntheticZoomEvent(MotionEvent.ACTION_MOVE, 300f, delta) }
         }
         findViewById<Button>(R.id.btnZoomOut).setOnClickListener {
             val targetZoom = (lastAppliedZoomFactor - 0.2f).coerceIn(1f, 5f)
-            if (targetZoom != lastAppliedZoomFactor) {
-                val delta = targetZoom / lastAppliedZoomFactor
-                lastAppliedZoomFactor = targetZoom
-                sendSyntheticZoomEvent(MotionEvent.ACTION_MOVE, 300f, delta)
-            }
+            if (targetZoom != lastAppliedZoomFactor) { val delta = targetZoom / lastAppliedZoomFactor; lastAppliedZoomFactor = targetZoom; sendSyntheticZoomEvent(MotionEvent.ACTION_MOVE, 300f, delta) }
         }
 
         rtmpCamera = RtmpCamera2(openGlView, this)
         openGlView.holder.addCallback(this)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !hasCameraPermissions()) {
-            requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
-        }
-
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !hasCameraPermissions()) requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
         imageFilterRender = ImageObjectFilterRender()
         overlayContainer.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
 
@@ -264,41 +278,132 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         ivProfilePhoto.setOnClickListener { if (GoogleSignIn.getLastSignedInAccount(this) == null) { startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST) } }
 
         btnGoLive.setOnClickListener {
-            if (rtmpCamera.isStreaming) {
-                AlertDialog.Builder(this)
-                    .setTitle("Stop Live Stream?")
-                    .setMessage("This will end your YouTube broadcast permanently. Are you sure?")
-                    .setPositiveButton("End Stream") { _, _ -> stopLiveStream() }
-                    .setNegativeButton("Cancel", null)
-                    .show()
-                return@setOnClickListener
-            }
-
-            if (!rtmpCamera.isOnPreview) {
-                tryStartCameraPreview()
-                Toast.makeText(this, "Camera starting, try LIVE again in a moment.", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-
+            if (rtmpCamera.isStreaming) { AlertDialog.Builder(this).setTitle("Stop Live Stream?").setMessage("This will end your YouTube broadcast permanently.").setPositiveButton("End Stream") { _, _ -> stopLiveStream() }.setNegativeButton("Cancel", null).show(); return@setOnClickListener }
+            if (!rtmpCamera.isOnPreview) { tryStartCameraPreview(); Toast.makeText(this, "Camera starting, try LIVE again in a moment.", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
             val currentAccount = GoogleSignIn.getLastSignedInAccount(this)
-            if (currentAccount == null) {
-                Toast.makeText(this@MainActivity, "Please Sign In with YouTube first!", Toast.LENGTH_SHORT).show()
-                startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST)
-                return@setOnClickListener
-            }
-
-            val youtubeScope = Scope("https://www.googleapis.com/auth/youtube")
-            if (!GoogleSignIn.hasPermissions(currentAccount, youtubeScope)) {
-                GoogleSignIn.requestPermissions(this, REQUEST_AUTHORIZATION, currentAccount, youtubeScope)
-                return@setOnClickListener
-            }
-
+            if (currentAccount == null) { Toast.makeText(this, "Please Sign In with YouTube first!", Toast.LENGTH_SHORT).show(); startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST); return@setOnClickListener }
+            if (!GoogleSignIn.hasPermissions(currentAccount, Scope("https://www.googleapis.com/auth/youtube"))) { GoogleSignIn.requestPermissions(this, REQUEST_AUTHORIZATION, currentAccount, Scope("https://www.googleapis.com/auth/youtube")); return@setOnClickListener }
             showGoLiveDialog()
         }
 
         makeDraggableAndScalable(dragScoreboard)
         makeStudioPanelDraggable(commentsPanel)
     }
+
+    // --- TASK B: RESIZE & CROP LOGIC ---
+    private fun updateOverlayMenuButtonPosition() {
+        val target = selectedOverlay
+        if (target == null || currentMode != "DRAG") { btnOverlayMenu.visibility = View.GONE; return }
+        btnOverlayMenu.visibility = View.VISIBLE
+        btnOverlayMenu.x = target.x + target.width - (32 * resources.displayMetrics.density)
+        btnOverlayMenu.y = target.y - (16 * resources.displayMetrics.density)
+    }
+
+    private fun positionDoneButton(target: View) {
+        btnOverlayDone.x = target.x
+        btnOverlayDone.y = target.y - (40 * resources.displayMetrics.density)
+    }
+
+    private fun addResizeHandle(target: View, xAlign: Float, yAlign: Float, wMult: Int, hMult: Int, isEdge: Boolean) {
+        val size = (if (isEdge) 12 else 24 * resources.displayMetrics.density).toInt()
+        val handle = View(this).apply {
+            layoutParams = RelativeLayout.LayoutParams(size, size)
+            setBackgroundColor(if (isEdge) Color.parseColor("#8800BCD4") else Color.parseColor("#00BCD4"))
+        }
+        val root = findViewById<RelativeLayout>(R.id.rootLayout)
+        root.addView(handle)
+        resizeHandles.add(handle)
+        
+        val updateHandlePos = {
+            handle.x = target.x + (target.width * target.scaleX * xAlign) - size / 2
+            handle.y = target.y + (target.height * target.scaleY * yAlign) - size / 2
+        }
+        updateHandlePos()
+        
+        var dX = 0f; var dY = 0f
+        var startW = 0; var startH = 0
+        var startX = 0f; var startY = 0f
+        
+        handle.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    dX = event.rawX; dY = event.rawY
+                    startW = target.width; startH = target.height
+                    startX = target.x; startY = target.y
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val diffX = (event.rawX - dX).toInt()
+                    val diffY = (event.rawY - dY).toInt()
+                    var newW = startW + (diffX * wMult)
+                    var newH = startH + (diffY * hMult)
+                    if (newW < 100) newW = 100
+                    if (newH < 100) newH = 100
+                    target.layoutParams.width = newW; target.layoutParams.height = newH; target.requestLayout()
+                    if (wMult < 0) target.x = startX + (startW - newW)
+                    if (hMult < 0) target.y = startY + (startH - newH)
+                    updateHandlePos()
+                    root.post { resizeHandles.forEach { (it.tag as? ()->Unit)?.invoke() } }
+                }
+                MotionEvent.ACTION_UP -> updateSnapshot()
+            }
+            true
+        }
+        handle.tag = updateHandlePos
+    }
+
+    private fun enterResizeMode(target: View) {
+        currentMode = "RESIZE"
+        btnOverlayMenu.visibility = View.GONE; btnOverlayDone.visibility = View.VISIBLE
+        positionDoneButton(target)
+        target.setOnTouchListener(null)
+        addResizeHandle(target, 0f, 0f, -1, -1, false)
+        addResizeHandle(target, 1f, 0f, 1, -1, false)
+        addResizeHandle(target, 0f, 1f, -1, 1, false)
+        addResizeHandle(target, 1f, 1f, 1, 1, false)
+        addResizeHandle(target, 0.5f, 0f, 0, -1, true)
+        addResizeHandle(target, 0.5f, 1f, 0, 1, true)
+        addResizeHandle(target, 0f, 0.5f, -1, 0, true)
+        addResizeHandle(target, 1f, 0.5f, 1, 0, true)
+    }
+
+    private fun enterCropMode(target: View) {
+        currentMode = "CROP"
+        btnOverlayMenu.visibility = View.GONE; btnOverlayDone.visibility = View.VISIBLE
+        positionDoneButton(target)
+        when (target) {
+            is ImageView -> {
+                target.scaleType = ImageView.ScaleType.MATRIX
+                var scale = 1f; var transX = 0f; var transY = 0f
+                val scaleDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                    override fun onScale(d: ScaleGestureDetector): Boolean { scale = (scale * d.scaleFactor).coerceIn(1f, 10f); applyImageMatrix(target, scale, transX, transY); return true }
+                })
+                var dX = 0f; var dY = 0f
+                target.setOnTouchListener { _, event ->
+                    if (currentMode != "CROP") return@setOnTouchListener false
+                    scaleDetector.onTouchEvent(event)
+                    if (!scaleDetector.isInProgress) {
+                        when (event.actionMasked) {
+                            MotionEvent.ACTION_DOWN -> { dX = transX - event.rawX; dY = transY - event.rawY }
+                            MotionEvent.ACTION_MOVE -> { transX = event.rawX + dX; transY = event.rawY + dY; applyImageMatrix(target, scale, transX, transY) }
+                            MotionEvent.ACTION_UP -> updateSnapshot()
+                        }
+                    }
+                    true
+                }
+            }
+            is WebView -> {
+                target.settings.builtInZoomControls = true; target.settings.displayZoomControls = false
+                target.setOnTouchListener(null)
+            }
+        }
+    }
+
+    private fun applyImageMatrix(iv: ImageView, scale: Float, tx: Float, ty: Float) {
+        val matrix = android.graphics.Matrix()
+        matrix.postScale(scale, scale); matrix.postTranslate(tx, ty)
+        iv.imageMatrix = matrix; updateSnapshot()
+    }
+    // ------------------------------------
 
     private fun showAddTextDialog() {
         val input = EditText(this).apply { hint = "Enter text..."; inputType = InputType.TYPE_CLASS_TEXT }
@@ -325,14 +430,20 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 val url = input.text.toString().trim()
                 if (url.isNotEmpty()) {
                     val finalUrl = if (!url.startsWith("http")) "https://$url" else url
+                    
+                    // Task A: 85% Box Dimension
+                    val displayMetrics = resources.displayMetrics
+                    val boxWidth = (displayMetrics.widthPixels * 0.85).toInt()
+                    val boxHeight = (displayMetrics.heightPixels * 0.85).toInt()
+                    
                     val webView = WebView(this).apply {
-                        layoutParams = RelativeLayout.LayoutParams(600, 400).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) }
+                        layoutParams = RelativeLayout.LayoutParams(boxWidth, boxHeight).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) }
                         setBackgroundColor(Color.TRANSPARENT); setLayerType(View.LAYER_TYPE_SOFTWARE, null)
                         settings.javaScriptEnabled = true; settings.domStorageEnabled = true
                         webViewClient = WebViewClient(); webChromeClient = WebChromeClient(); loadUrl(finalUrl)
                     }
                     overlayContainer.addView(webView)
-                    makeDraggableAndScalable(webView); selectedOverlay = webView
+                    makeDraggableAndScalable(webView); selectedOverlay = webView; updateOverlayMenuButtonPosition()
                     overlayHandler.postDelayed({ updateSnapshot() }, 2000)
                 }
             }.setNegativeButton("Cancel", null).show()
@@ -532,26 +643,30 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     private fun addTextOverlayToScreen(text: String) {
         val textView = TextView(this).apply { this.text = text; setTextColor(Color.YELLOW); textSize = 30f; setTypeface(null, Typeface.BOLD); layoutParams = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) } }
-        overlayContainer.addView(textView); makeDraggableAndScalable(textView); selectedOverlay = textView; updateSnapshot()
+        overlayContainer.addView(textView); makeDraggableAndScalable(textView); selectedOverlay = textView; updateOverlayMenuButtonPosition(); updateSnapshot()
     }
 
     private fun addImageOverlayToScreen(bitmap: Bitmap) {
         val imageView = ImageView(this).apply { setImageBitmap(bitmap); layoutParams = RelativeLayout.LayoutParams(300, 300).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) } }
-        overlayContainer.addView(imageView); makeDraggableAndScalable(imageView); selectedOverlay = imageView; updateSnapshot()
+        overlayContainer.addView(imageView); makeDraggableAndScalable(imageView); selectedOverlay = imageView; updateOverlayMenuButtonPosition(); updateSnapshot()
     }
 
     @SuppressLint("ClickableViewAccessibility")
     private fun makeDraggableAndScalable(view: View) {
         val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            override fun onScale(detector: ScaleGestureDetector): Boolean { view.scaleX *= detector.scaleFactor; view.scaleY *= detector.scaleFactor; return true }
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                if (view is WebView) return false
+                view.scaleX *= detector.scaleFactor; view.scaleY *= detector.scaleFactor; return true
+            }
         })
-        var dX = 0f; var dY = 0f
+        var localDX = 0f; var localDY = 0f
         view.setOnTouchListener { v, event ->
+            if (currentMode != "DRAG") return@setOnTouchListener false
             scaleGestureDetector.onTouchEvent(event)
             if (!scaleGestureDetector.isInProgress) {
                 when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { dX = v.x - event.rawX; dY = v.y - event.rawY; selectedOverlay = v; }
-                    MotionEvent.ACTION_MOVE -> { v.x = event.rawX + dX; v.y = event.rawY + dY }
+                    MotionEvent.ACTION_DOWN -> { localDX = v.x - event.rawX; localDY = v.y - event.rawY; selectedOverlay = v; updateOverlayMenuButtonPosition() }
+                    MotionEvent.ACTION_MOVE -> { v.x = event.rawX + localDX; v.y = event.rawY + localDY; updateOverlayMenuButtonPosition() }
                     MotionEvent.ACTION_UP -> { updateSnapshot() }
                 }
             }
