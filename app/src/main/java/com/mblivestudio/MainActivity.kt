@@ -244,13 +244,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             try { rtmpCamera.switchCamera(); if (!rtmpCamera.isStreaming) { rtmpCamera.stopPreview(); tryStartCameraPreview() } } catch (e: Exception) {}
         }
 
-        // EXPERIMENTAL — Bluetooth mic routing is a known, still-unresolved
-        // pain point in RootEncoder itself (library issues #297, #1664),
-        // not something guaranteed to work on every device. This is the
-        // standard Android approach (AudioManager SCO), applied before a
-        // fresh prepareAudio() re-init so the system has the best chance
-        // of routing input through the Bluetooth device. Only allowed
-        // before going live — toggling mid-stream is not supported.
         btnBluetoothMic.setOnClickListener {
             if (rtmpCamera.isStreaming) {
                 Toast.makeText(this, "Stop the stream before switching mic source.", Toast.LENGTH_SHORT).show()
@@ -323,9 +316,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val target = selectedOverlay
         if (target == null || currentMode != "DRAG") { btnOverlayMenu.visibility = View.GONE; return }
         btnOverlayMenu.visibility = View.VISIBLE
-        // FIX: was using target.width directly, which is the LAID-OUT
-        // width and doesn't reflect a pinch-applied scaleX/scaleY. After
-        // resizing via pinch, the button drifted to the wrong spot.
         val effectiveWidth = target.width * target.scaleX
         btnOverlayMenu.x = target.x + effectiveWidth - (32 * resources.displayMetrics.density)
         btnOverlayMenu.y = target.y - (16 * resources.displayMetrics.density)
@@ -337,9 +327,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     private fun addResizeHandle(target: View, xAlign: Float, yAlign: Float, wMult: Int, hMult: Int, isEdge: Boolean) {
-        // FIX: missing parentheses meant edge-handle size was 12 RAW
-        // pixels (not dp) regardless of screen density — nearly invisible
-        // on higher-density screens. Density now applies to both sizes.
         val size = ((if (isEdge) 12 else 24) * resources.displayMetrics.density).toInt()
         val handle = View(this).apply {
             layoutParams = RelativeLayout.LayoutParams(size, size)
@@ -386,13 +373,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         handle.tag = updateHandlePos
     }
 
-    /**
-     * Purely visual — a border rectangle + 4 corner squares showing the
-     * fixed crop-window bounds. Crop itself works by pinch/pan on the
-     * content INSIDE this box (image matrix / WebView native zoom), so
-     * these markers are informational only, not draggable. This is what
-     * was missing before: crop had no visible indicator at all.
-     */
     private fun showCropFrame(target: View) {
         val root = findViewById<RelativeLayout>(R.id.rootLayout)
         val density = resources.displayMetrics.density
@@ -424,32 +404,36 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
+    // --- BLUETOOTH SCO LOGIC FIX ---
     private fun toggleBluetoothMic(button: ImageButton) {
         if (!isBluetoothMicActive) {
             try {
+                audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
                 audioManager.startBluetoothSco()
                 audioManager.isBluetoothScoOn = true
                 isBluetoothMicActive = true
                 button.setBackgroundColor(Color.parseColor("#4CAF50"))
-                Toast.makeText(this, "Bluetooth mic requested (experimental — restarting camera to apply)", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Connecting Bluetooth Mic... Please wait 2s", Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
-                Toast.makeText(this, "Could not enable Bluetooth mic on this device.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Could not enable Bluetooth mic.", Toast.LENGTH_SHORT).show()
                 return
             }
         } else {
             try {
                 audioManager.stopBluetoothSco()
                 audioManager.isBluetoothScoOn = false
+                audioManager.mode = AudioManager.MODE_NORMAL
             } catch (e: Exception) {}
             isBluetoothMicActive = false
             button.setBackgroundColor(Color.TRANSPARENT)
+            Toast.makeText(this, "Switched to Phone Mic", Toast.LENGTH_SHORT).show()
         }
-        // Force a clean prepareAudio() re-init while the SCO route is
-        // (de)activated — audio routing generally isn't picked up by an
-        // already-running AudioRecord instance.
+        
         if (rtmpCamera.isOnPreview) {
             try { rtmpCamera.stopPreview() } catch (e: Exception) {}
-            tryStartCameraPreview()
+            Handler(Looper.getMainLooper()).postDelayed({
+                tryStartCameraPreview()
+            }, 2000)
         }
     }
 
@@ -459,11 +443,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         positionDoneButton(target)
         target.setOnTouchListener(null)
 
-        // FIX: default ImageView scaleType (FIT_CENTER) keeps the photo's
-        // own aspect ratio no matter how the box changes — so dragging
-        // only the right edge just added empty space instead of visibly
-        // stretching the photo. FIT_XY makes content always exactly fill
-        // the box — true "make bigger/smaller", nothing ever clipped.
         if (target is ImageView) target.scaleType = ImageView.ScaleType.FIT_XY
 
         addResizeHandle(target, 0f, 0f, -1, -1, false)
@@ -489,13 +468,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 val boxW = target.width.toFloat()
                 val boxH = target.height.toFloat()
 
-                // FIX (professional crop, like Instagram/standard photo
-                // editors): start already FILLING the box (like
-                // CENTER_CROP), centered — not at scale=1 with the image
-                // sitting tiny/offset in a corner, which is what made
-                // crop look "broken" before. minScale is locked to this
-                // fill-scale so you can never zoom out far enough to
-                // reveal empty space around the photo.
                 val fillScale = maxOf(boxW / bmpW, boxH / bmpH)
                 val minScale = fillScale
                 val maxScale = fillScale * 4f
@@ -506,9 +478,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 var transY = (boxH - bmpH * scale) / 2f
 
                 fun clampAndApply() {
-                    // Pan is clamped so the image can never be dragged
-                    // far enough to expose empty space past its edges —
-                    // the box always stays fully covered by the photo.
                     val minTx = boxW - bmpW * scale
                     val minTy = boxH - bmpH * scale
                     transX = transX.coerceIn(minTx, 0f)
@@ -578,7 +547,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 if (url.isNotEmpty()) {
                     val finalUrl = if (!url.startsWith("http")) "https://$url" else url
                     
-                    // Task A: 85% Box Dimension
                     val displayMetrics = resources.displayMetrics
                     val boxWidth = (displayMetrics.widthPixels * 0.85).toInt()
                     val boxHeight = (displayMetrics.heightPixels * 0.85).toInt()
@@ -587,11 +555,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                         layoutParams = RelativeLayout.LayoutParams(boxWidth, boxHeight).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) }
                         setBackgroundColor(Color.TRANSPARENT); setLayerType(View.LAYER_TYPE_SOFTWARE, null)
                         settings.javaScriptEnabled = true; settings.domStorageEnabled = true
-                        // FIX: without these, WebView renders a narrow
-                        // "mobile" layout of the page regardless of box
-                        // size — that's why it never looked like a full
-                        // "100%" page. This forces the page's own desktop
-                        // layout width, scaled to fit the box.
                         settings.useWideViewPort = true
                         settings.loadWithOverviewMode = true
                         webViewClient = WebViewClient(); webChromeClient = WebChromeClient(); loadUrl(finalUrl)
@@ -854,8 +817,33 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) { super.onRequestPermissionsResult(requestCode, permissions, grantResults); tryStartCameraPreview() }
     override fun surfaceCreated(holder: SurfaceHolder) {}
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) { surfaceReady = true; tryStartCameraPreview() }
-    override fun surfaceDestroyed(holder: SurfaceHolder) { surfaceReady = false; if (rtmpCamera.isStreaming) rtmpCamera.stopStream(); if (rtmpCamera.isOnPreview) rtmpCamera.stopPreview() }
-    override fun onDestroy() { super.onDestroy(); overlayHandler.removeCallbacksAndMessages(null); chatHandler.removeCallbacksAndMessages(null); timerHandler.removeCallbacksAndMessages(null); try { if (rtmpCamera.isStreaming) rtmpCamera.stopStream() } catch (e: Exception) {}; try { if (rtmpCamera.isOnPreview) rtmpCamera.stopPreview() } catch (e: Exception) {}; lastOverlayBitmap?.let { if (!it.isRecycled) it.recycle() }; lastOverlayBitmap = null }
+    
+    override fun surfaceDestroyed(holder: SurfaceHolder) { 
+        surfaceReady = false
+        if (rtmpCamera.isStreaming) rtmpCamera.stopStream()
+        if (rtmpCamera.isOnPreview) rtmpCamera.stopPreview() 
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        overlayHandler.removeCallbacksAndMessages(null)
+        chatHandler.removeCallbacksAndMessages(null)
+        timerHandler.removeCallbacksAndMessages(null)
+        
+        try {
+            if (isBluetoothMicActive) {
+                audioManager.stopBluetoothSco()
+                audioManager.isBluetoothScoOn = false
+                audioManager.mode = AudioManager.MODE_NORMAL
+            }
+        } catch (e: Exception) {}
+
+        try { if (rtmpCamera.isStreaming) rtmpCamera.stopStream() } catch (e: Exception) {}
+        try { if (rtmpCamera.isOnPreview) rtmpCamera.stopPreview() } catch (e: Exception) {}
+        lastOverlayBitmap?.let { if (!it.isRecycled) it.recycle() }
+        lastOverlayBitmap = null
+    }
+    
     override fun onAuthError() {}
     override fun onAuthSuccess() {}
     override fun onConnectionStarted(url: String) {}
