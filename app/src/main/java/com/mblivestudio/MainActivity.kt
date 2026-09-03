@@ -219,6 +219,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val btnToggleLayouts: ImageButton = findViewById(R.id.btnToggleLayouts)
         val btnToggleOverlays: ImageButton = findViewById(R.id.btnToggleOverlays)
+        val btnToggleComments: ImageButton = findViewById(R.id.btnToggleComments)
 
         val popupLayouts: LinearLayout = findViewById(R.id.popupLayouts)
         val popupOverlays: LinearLayout = findViewById(R.id.popupOverlays)
@@ -229,6 +230,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnToggleOverlays.setOnClickListener { popupOverlays.visibility = View.VISIBLE; popupLayouts.visibility = View.GONE }
         btnCloseLayouts.setOnClickListener { popupLayouts.visibility = View.GONE }
         btnCloseOverlays.setOnClickListener { popupOverlays.visibility = View.GONE }
+
+        // Live Chat Toggle Link
+        btnToggleComments.setOnClickListener {
+            commentsPanel.visibility = if (commentsPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        }
 
         btnMicToggle.setOnClickListener {
             if (isAudioMuted) {
@@ -821,14 +827,39 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     private fun hasCameraPermissions(): Boolean = checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
     private fun tryStartCameraPreview() { if (surfaceReady && hasCameraPermissions()) startCameraPreview() }
+    
     private fun startCameraPreview() {
         if (!hasCameraPermissions() || rtmpCamera.isOnPreview) return
         var isSuccess = false
         val fallback = if (streamWidth >= streamHeight) listOf(Triple(streamWidth, streamHeight, streamBitrate), Triple(1280, 720, 3_000_000), Triple(854, 480, 1_500_000), Triple(640, 480, 1_000_000)) else listOf(Triple(streamWidth, streamHeight, streamBitrate), Triple(720, 1280, 3_000_000), Triple(480, 854, 1_500_000), Triple(480, 640, 1_000_000))
         for (res in fallback) { try { if (rtmpCamera.prepareVideo(res.first, res.second, 30, res.third, 2, 0)) { isSuccess = true; break } } catch (e: Exception) {} }
         if (!isSuccess) try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) {}
-        var aReady = false; try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { }
-        if (isSuccess && aReady) { rtmpCamera.glInterface.setFilter(cameraLayoutFilter); rtmpCamera.glInterface.addFilter(imageFilterRender); rtmpCamera.startPreview(); overlayHandler.postDelayed({ updateSnapshot() }, 1000) } else { runOnUiThread { Toast.makeText(this, "CAMERA ERROR: Device encoder not supported.", Toast.LENGTH_LONG).show() } }
+        
+        var aReady = false
+        
+        // FIX FOR "TICK TICK" / "TRRR TRRR" SOUND: 
+        // Enabled Hardware Echo Cancellation and Noise Suppression natively in the encoder.
+        try { 
+            aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, true, true, true) 
+        } catch (e: Exception) { }
+        
+        // Bluetooth Fallback
+        if (!aReady) {
+            try { aReady = rtmpCamera.prepareAudio(64 * 1024, 32000, false, true, true) } catch (e: Exception) {}
+        }
+        
+        if (!aReady) {
+            try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { }
+        }
+
+        if (isSuccess && aReady) { 
+            rtmpCamera.glInterface.setFilter(cameraLayoutFilter); 
+            rtmpCamera.glInterface.addFilter(imageFilterRender); 
+            rtmpCamera.startPreview(); 
+            overlayHandler.postDelayed({ updateSnapshot() }, 1000) 
+        } else { 
+            runOnUiThread { Toast.makeText(this, "CAMERA ERROR: Device encoder not supported.", Toast.LENGTH_LONG).show() } 
+        }
     }
 
     override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "🔥 YOU ARE LIVE!", Toast.LENGTH_LONG).show(); startStudioTimer() } }
