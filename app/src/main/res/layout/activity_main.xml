@@ -168,7 +168,7 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- Task 2: Horizontal Zoom Pill (Bottom Right) -->
+    <!-- Horizontal Zoom Pill (Bottom Right) -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -240,6 +240,7 @@
         <Button android:id="@+id/btnCloseOverlays" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@android:color/transparent" android:text="CLOSE" android:textColor="#FF5252" android:layout_marginTop="8dp"/>
     </LinearLayout>
 
+    <!-- Comments Panel -->
     <LinearLayout
         android:id="@+id/commentsPanel"
         android:layout_width="260dp"
@@ -251,7 +252,7 @@
         android:padding="6dp"
         android:layout_margin="16dp"
         android:visibility="gone">
-        <TextView layout_width="match_parent" android:layout_height="wrap_content" android:text="LIVE CHAT" android:textColor="#03A9F4" android:textStyle="bold" android:textSize="12sp" android:layout_marginBottom="4dp" />
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="LIVE CHAT" android:textColor="#03A9F4" android:textStyle="bold" android:textSize="12sp" android:layout_marginBottom="4dp" />
         <ScrollView android:id="@+id/commentsScrollView" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
             <TextView android:id="@+id/tvCommentsFeed" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="#FFFFFF" android:textSize="12sp" />
         </ScrollView>
