@@ -318,11 +318,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     // --- BLUETOOTH SCO LOGIC FIX FOR ANDROID 12+ ---
+    private var scoStateReceiver: android.content.BroadcastReceiver? = null
+    private val scoConnectTimeoutHandler = Handler(Looper.getMainLooper())
+
     private fun toggleBluetoothMic(button: ImageButton) {
         if (!isBluetoothMicActive) {
             try {
                 audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-                var routed = false
+                var routedSynchronously = false
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     val devices = audioManager.availableCommunicationDevices
@@ -332,24 +335,76 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                         it.type == android.media.AudioDeviceInfo.TYPE_BLE_SPEAKER
                     }
                     if (btDevice != null) {
-                        routed = audioManager.setCommunicationDevice(btDevice)
+                        routedSynchronously = audioManager.setCommunicationDevice(btDevice)
                     }
-                }
-
-                if (!routed) {
-                    audioManager.startBluetoothSco()
-                    audioManager.isBluetoothScoOn = true
                 }
 
                 isBluetoothMicActive = true
                 button.setColorFilter(Color.parseColor("#4CAF50"))
-                Toast.makeText(this, "Connecting Buds... कृपया 3 सेकंड रुकें", Toast.LENGTH_LONG).show()
+
+                if (routedSynchronously) {
+                    // FIX: setCommunicationDevice() (Android 12+) takes
+                    // effect essentially as soon as it returns true — no
+                    // need to guess a delay, a short settle is enough.
+                    Toast.makeText(this, "Buds connected", Toast.LENGTH_SHORT).show()
+                    restartCameraForAudioChange(400)
+                } else {
+                    // FIX: classic startBluetoothSco() is ASYNCHRONOUS —
+                    // the previous version used a fixed 3-second guess,
+                    // which is why audio was sometimes silent (camera
+                    // restarted before SCO actually finished connecting)
+                    // and sometimes crackly (restarted mid-negotiation).
+                    // Wait for Android's own "SCO actually connected"
+                    // broadcast instead of guessing.
+                    Toast.makeText(this, "Connecting Buds...", Toast.LENGTH_SHORT).show()
+                    val filter = android.content.IntentFilter(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED)
+                    val receiver = object : android.content.BroadcastReceiver() {
+                        override fun onReceive(context: Context?, intent: Intent?) {
+                            val state = intent?.getIntExtra(AudioManager.EXTRA_SCO_AUDIO_STATE, -1)
+                            if (state == AudioManager.SCO_AUDIO_STATE_CONNECTED) {
+                                scoConnectTimeoutHandler.removeCallbacksAndMessages(null)
+                                try { unregisterReceiver(this) } catch (e: Exception) {}
+                                scoStateReceiver = null
+                                restartCameraForAudioChange(200)
+                            } else if (state == AudioManager.SCO_AUDIO_STATE_DISCONNECTED) {
+                                // Connection attempt failed — bail out cleanly.
+                                scoConnectTimeoutHandler.removeCallbacksAndMessages(null)
+                                try { unregisterReceiver(this) } catch (e: Exception) {}
+                                scoStateReceiver = null
+                                isBluetoothMicActive = false
+                                button.setColorFilter(Color.WHITE)
+                                Toast.makeText(this@MainActivity, "Buds didn't connect — try again", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                    scoStateReceiver = receiver
+                    registerReceiver(receiver, filter)
+                    audioManager.startBluetoothSco()
+                    audioManager.isBluetoothScoOn = true
+
+                    // Safety timeout — if the device never sends a
+                    // CONNECTED/DISCONNECTED broadcast at all (some OEMs
+                    // are unreliable here), don't wait forever.
+                    scoConnectTimeoutHandler.postDelayed({
+                        scoStateReceiver?.let {
+                            try { unregisterReceiver(it) } catch (e: Exception) {}
+                            scoStateReceiver = null
+                            Toast.makeText(this, "Buds connection timed out — try again", Toast.LENGTH_SHORT).show()
+                            isBluetoothMicActive = false
+                            button.setColorFilter(Color.WHITE)
+                        }
+                    }, 8000)
+                }
 
             } catch (e: Exception) {
                 Toast.makeText(this, "Error: बड्स कनेक्ट नहीं हो पाए", Toast.LENGTH_SHORT).show()
+                isBluetoothMicActive = false
                 return
             }
         } else {
+            scoStateReceiver?.let { try { unregisterReceiver(it) } catch (e: Exception) {} }
+            scoStateReceiver = null
+            scoConnectTimeoutHandler.removeCallbacksAndMessages(null)
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     audioManager.clearCommunicationDevice()
@@ -362,14 +417,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             isBluetoothMicActive = false
             button.setColorFilter(Color.WHITE)
             Toast.makeText(this, "वापस Phone Mic पर सेट हो गया", Toast.LENGTH_SHORT).show()
+            restartCameraForAudioChange(200)
         }
+    }
 
-        if (rtmpCamera.isOnPreview) {
-            try { rtmpCamera.stopPreview() } catch (e: Exception) {}
-            Handler(Looper.getMainLooper()).postDelayed({
-                tryStartCameraPreview()
-            }, 3000)
-        }
+    private fun restartCameraForAudioChange(delayMs: Long) {
+        if (!rtmpCamera.isOnPreview) return
+        try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+        Handler(Looper.getMainLooper()).postDelayed({ tryStartCameraPreview() }, delayMs)
     }
 
     // --- TASK B: RESIZE & CROP LOGIC ---
@@ -898,6 +953,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         overlayHandler.removeCallbacksAndMessages(null)
         chatHandler.removeCallbacksAndMessages(null)
         timerHandler.removeCallbacksAndMessages(null)
+        scoConnectTimeoutHandler.removeCallbacksAndMessages(null)
+        scoStateReceiver?.let { try { unregisterReceiver(it) } catch (e: Exception) {} }
+        scoStateReceiver = null
         
         // Bluetooth Safety Cleanup
         try {
