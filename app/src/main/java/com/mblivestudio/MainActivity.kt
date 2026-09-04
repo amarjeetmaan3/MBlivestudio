@@ -343,19 +343,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 button.setColorFilter(Color.parseColor("#4CAF50"))
 
                 if (routedSynchronously) {
-                    // FIX: setCommunicationDevice() (Android 12+) takes
-                    // effect essentially as soon as it returns true — no
-                    // need to guess a delay, a short settle is enough.
                     Toast.makeText(this, "Buds connected", Toast.LENGTH_SHORT).show()
                     restartCameraForAudioChange(400)
                 } else {
-                    // FIX: classic startBluetoothSco() is ASYNCHRONOUS —
-                    // the previous version used a fixed 3-second guess,
-                    // which is why audio was sometimes silent (camera
-                    // restarted before SCO actually finished connecting)
-                    // and sometimes crackly (restarted mid-negotiation).
-                    // Wait for Android's own "SCO actually connected"
-                    // broadcast instead of guessing.
                     Toast.makeText(this, "Connecting Buds...", Toast.LENGTH_SHORT).show()
                     val filter = android.content.IntentFilter(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED)
                     val receiver = object : android.content.BroadcastReceiver() {
@@ -367,7 +357,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                                 scoStateReceiver = null
                                 restartCameraForAudioChange(200)
                             } else if (state == AudioManager.SCO_AUDIO_STATE_DISCONNECTED) {
-                                // Connection attempt failed — bail out cleanly.
                                 scoConnectTimeoutHandler.removeCallbacksAndMessages(null)
                                 try { unregisterReceiver(this) } catch (e: Exception) {}
                                 scoStateReceiver = null
@@ -382,9 +371,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     audioManager.startBluetoothSco()
                     audioManager.isBluetoothScoOn = true
 
-                    // Safety timeout — if the device never sends a
-                    // CONNECTED/DISCONNECTED broadcast at all (some OEMs
-                    // are unreliable here), don't wait forever.
                     scoConnectTimeoutHandler.postDelayed({
                         scoStateReceiver?.let {
                             try { unregisterReceiver(it) } catch (e: Exception) {}
@@ -602,7 +588,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         matrix.postScale(scale, scale); matrix.postTranslate(tx, ty)
         iv.imageMatrix = matrix; updateSnapshot()
     }
-    // ------------------------------------
 
     private fun showAddTextDialog() {
         val input = EditText(this).apply { hint = "Enter text..."; inputType = InputType.TYPE_CLASS_TEXT }
@@ -892,44 +877,32 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         
         var aReady = false
 
-        // REVERTED: the SCO-rate change (16000/8000Hz) was wrong — on
-        // this device, requesting those specific rates made Android's
-        // audio system silently switch input back to the phone's
-        // built-in mic, even with SCO connected. 44100Hz is what was
-        // actually keeping the route on the Bluetooth device.
-        //
-        // FIX for the crackling instead: when Bluetooth mic is active,
-        // disable echoCanceler/noiseSuppressor (false, false). These DSP
-        // effects are tuned for the phone's own mic; running them on a
-        // Bluetooth SCO's compressed, narrowband audio stream is a
-        // well-documented cause of crackling/static on many devices —
-        // the earbuds' own hardware typically already does noise
-        // handling, so stacking the phone's software effects on top of
-        // it is what was producing the "trrr/chrrr" sound.
+        // FIX FOR "TICK TICK" / "TRRR TRRR" ROBOTIC SOUND: 
+        // Bluetooth SCO audio is strictly MONO (1 channel). 
+        // Forcing Stereo (true) on Bluetooth causes severe buffer mismatch -> "trrr trrr" sound.
+        // We MUST use Mono (false) and disable hardware DSP (false, false) for Bluetooth.
         if (isBluetoothMicActive) {
-            try { aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, true, false, false) } catch (e: Exception) {}
+            try { aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, false, false, false) } catch (e: Exception) {}
+            // Fallback to 32kHz Mono if 44.1kHz is rejected by the OS
+            if (!aReady) {
+                try { aReady = rtmpCamera.prepareAudio(64 * 1024, 32000, false, false, false) } catch (e: Exception) {}
+            }
+        } else {
+            // Normal phone-mic path (Stereo, with AEC/NS enabled)
+            try { aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, true, true, true) } catch (e: Exception) {}
+            if (!aReady) {
+                try { aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, false, false, false) } catch (e: Exception) {}
+            }
         }
 
-        // Normal phone-mic path (also used as fallback if the Bluetooth
-        // attempt above failed for some reason).
-        if (!aReady) {
-            try {
-                aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, true, true, true)
-            } catch (e: Exception) { }
-        }
-
-        if (!aReady) {
-            try { aReady = rtmpCamera.prepareAudio(64 * 1024, 32000, false, true, true) } catch (e: Exception) {}
-        }
-        
         if (!aReady) {
             try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { }
         }
 
         if (isSuccess && aReady) { 
-            rtmpCamera.glInterface.setFilter(cameraLayoutFilter); 
-            rtmpCamera.glInterface.addFilter(imageFilterRender); 
-            rtmpCamera.startPreview(); 
+            rtmpCamera.glInterface.setFilter(cameraLayoutFilter)
+            rtmpCamera.glInterface.addFilter(imageFilterRender)
+            rtmpCamera.startPreview()
             overlayHandler.postDelayed({ updateSnapshot() }, 1000) 
         } else { 
             runOnUiThread { Toast.makeText(this, "CAMERA ERROR: Device encoder not supported.", Toast.LENGTH_LONG).show() } 
