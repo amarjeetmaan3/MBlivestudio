@@ -164,6 +164,15 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
+    // FIX 1: LOWER THIRD CONTINUOUS TICKER HANDLER
+    private val tickerHandler = Handler(Looper.getMainLooper())
+    private val tickerRunnable = object : Runnable {
+        override fun run() {
+            updateSnapshot(50) // Faster refresh for smooth ticker animation
+            tickerHandler.postDelayed(this, 100)
+        }
+    }
+
     override fun attachBaseContext(newBase: Context?) {
         super.attachBaseContext(newBase)
         System.setProperty("java.net.preferIPv4Stack", "true")
@@ -199,15 +208,25 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnOverlayMenu = findViewById(R.id.btnOverlayMenu)
         btnOverlayDone = findViewById(R.id.btnOverlayDone)
 
+        // FIX 2: COLOR PICKER MOVED TO ⋮ MENU
         btnOverlayMenu.setOnClickListener {
             val target = selectedOverlay ?: return@setOnClickListener
             val popup = PopupMenu(this, btnOverlayMenu)
             popup.menu.add("Resize")
-            if (target !is TextView) popup.menu.add("Crop")
+            
+            if (target !is TextView && target.tag != "LOWER_THIRD") {
+                popup.menu.add("Crop")
+            }
+            
+            if (target is TextView || target is EditText || target.tag == "LOWER_THIRD") {
+                popup.menu.add("Change Color")
+            }
+            
             popup.setOnMenuItemClickListener { item ->
                 when (item.title) {
                     "Resize" -> enterResizeMode(target)
                     "Crop" -> enterCropMode(target)
+                    "Change Color" -> showCustomColorPickerDialog()
                 }
                 true
             }
@@ -275,17 +294,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         
         findViewById<ImageButton>(R.id.btnAddLowerThird).setOnClickListener { popupOverlays.visibility = View.GONE; showAddLowerThirdDialog() }
 
-        // MIC BUTTON: GREEN/RED LOGIC
-        btnMicToggle.setColorFilter(Color.parseColor("#4CAF50")) // Initial Green
+        btnMicToggle.setColorFilter(Color.parseColor("#4CAF50"))
         btnMicToggle.setOnClickListener {
             if (isAudioMuted) {
                 rtmpCamera.enableAudio(); isAudioMuted = false
                 btnMicToggle.setImageResource(R.drawable.ic_mic_on)
-                btnMicToggle.setColorFilter(Color.parseColor("#4CAF50")) // Green
+                btnMicToggle.setColorFilter(Color.parseColor("#4CAF50"))
             } else {
                 rtmpCamera.disableAudio(); isAudioMuted = true
                 btnMicToggle.setImageResource(R.drawable.ic_mic_on) 
-                btnMicToggle.setColorFilter(Color.parseColor("#E53935")) // Red
+                btnMicToggle.setColorFilter(Color.parseColor("#E53935"))
             }
         }
 
@@ -307,9 +325,23 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         findViewById<ImageButton>(R.id.btnAddText).setOnClickListener { popupOverlays.visibility = View.GONE; showAddTextDialog() }
         findViewById<ImageButton>(R.id.btnAddWebOverlay).setOnClickListener { popupOverlays.visibility = View.GONE; showAddWebDialog() }
         findViewById<ImageButton>(R.id.btnAddLogo).setOnClickListener { popupOverlays.visibility = View.GONE; val intent = Intent(Intent.ACTION_GET_CONTENT); intent.type = "image/*"; startActivityForResult(intent, PICK_IMAGE_REQUEST) }
-        findViewById<ImageButton>(R.id.btnTextColors).setOnClickListener { popupOverlays.visibility = View.GONE; showCustomColorPickerDialog() }
+        
         findViewById<ImageButton>(R.id.btnToggleScore).setOnClickListener { popupOverlays.visibility = View.GONE; if (dragScoreboard.visibility == View.VISIBLE) { dragScoreboard.visibility = View.GONE; updateSnapshot() } else { showScoreboardDialog() } }
-        findViewById<ImageButton>(R.id.btnRemoveSelected).setOnClickListener { popupOverlays.visibility = View.GONE; selectedOverlay?.let { if (it != dragScoreboard) { overlayContainer.removeView(it); selectedOverlay = null; updateOverlayMenuButtonPosition(); updateSnapshot() } } }
+        
+        findViewById<ImageButton>(R.id.btnRemoveSelected).setOnClickListener { 
+            popupOverlays.visibility = View.GONE
+            selectedOverlay?.let { 
+                if (it != dragScoreboard) { 
+                    if (it.tag == "LOWER_THIRD") {
+                        tickerHandler.removeCallbacks(tickerRunnable) // Stop loop
+                    }
+                    overlayContainer.removeView(it)
+                    selectedOverlay = null
+                    updateOverlayMenuButtonPosition()
+                    updateSnapshot() 
+                } 
+            } 
+        }
 
         findViewById<Button>(R.id.btnZoomIn).setOnClickListener { val targetZoom = (lastAppliedZoomFactor + 0.2f).coerceIn(1f, 5f); if (targetZoom != lastAppliedZoomFactor) { val delta = targetZoom / lastAppliedZoomFactor; lastAppliedZoomFactor = targetZoom; sendSyntheticZoomEvent(MotionEvent.ACTION_MOVE, 300f, delta) } }
         findViewById<Button>(R.id.btnZoomOut).setOnClickListener { val targetZoom = (lastAppliedZoomFactor - 0.2f).coerceIn(1f, 5f); if (targetZoom != lastAppliedZoomFactor) { val delta = targetZoom / lastAppliedZoomFactor; lastAppliedZoomFactor = targetZoom; sendSyntheticZoomEvent(MotionEvent.ACTION_MOVE, 300f, delta) } }
@@ -544,7 +576,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }.setNegativeButton("Cancel", null).show()
     }
 
-    // LOWER THIRD TICKER (Group 2)
     private fun showAddLowerThirdDialog() {
         val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(40,20,40,20) }
         val titleInput = EditText(this).apply { hint = "Title (e.g. BREAKING NEWS)" }
@@ -554,12 +585,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         AlertDialog.Builder(this).setTitle("Add Lower Third Ticker").setView(container)
             .setPositiveButton("Add") { _, _ -> 
                 val wrapper = LinearLayout(this).apply {
+                    tag = "LOWER_THIRD"
                     orientation = LinearLayout.HORIZONTAL
                     layoutParams = RelativeLayout.LayoutParams(1200, RelativeLayout.LayoutParams.WRAP_CONTENT).apply { addRule(RelativeLayout.ALIGN_PARENT_BOTTOM, RelativeLayout.TRUE); bottomMargin = 100; leftMargin = 50 }
                 }
                 val tvTitle = TextView(this).apply {
                     text = titleInput.text.toString()
-                    setBackgroundColor(Color.parseColor("#1565C0")) // Default Blue
+                    setBackgroundColor(Color.parseColor("#1565C0"))
                     setTextColor(Color.WHITE)
                     textSize = 24f
                     setTypeface(null, Typeface.BOLD)
@@ -567,7 +599,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 }
                 val tvMsg = TextView(this).apply {
                     text = msgInput.text.toString()
-                    setBackgroundColor(Color.parseColor("#C62828")) // Default Red
+                    setBackgroundColor(Color.parseColor("#C62828"))
                     setTextColor(Color.WHITE)
                     textSize = 24f
                     setPadding(30, 20, 30, 20)
@@ -575,18 +607,22 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     ellipsize = TextUtils.TruncateAt.MARQUEE
                     marqueeRepeatLimit = -1
                     isSingleLine = true
-                    isSelected = true // Activates marquee
+                    isSelected = true
                 }
                 wrapper.addView(tvTitle); wrapper.addView(tvMsg)
                 overlayContainer.addView(wrapper)
                 makeDraggableAndScalable(wrapper)
                 selectedOverlay = wrapper
+                
+                // FIX 1: Start animating the ticker
+                tickerHandler.post(tickerRunnable)
+                
                 updateOverlayMenuButtonPosition()
                 updateSnapshot()
             }.setNegativeButton("Cancel", null).show()
     }
 
-    // CUSTOM COLOR PICKER (RGB)
+    // FIX 3: DYNAMIC COLOR PICKER (Checks if Lower Third or Normal Text)
     private fun showCustomColorPickerDialog() {
         val target = selectedOverlay ?: run { Toast.makeText(this, "Select a text/overlay first.", Toast.LENGTH_SHORT).show(); return }
         val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(40,20,40,20) }
@@ -614,23 +650,30 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         container.addView(TextView(this).apply { text = "Blue"; setPadding(0,20,0,0) }); container.addView(bSeek)
         
         val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0,30,0,0) }
-        val btnTextColor = Button(this).apply { text = "Apply to Text"; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
-        val btnBgColor = Button(this).apply { text = "Apply to Background"; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
-        btnRow.addView(btnTextColor); btnRow.addView(btnBgColor)
-        container.addView(btnRow)
-
         val dialog = AlertDialog.Builder(this).setTitle("Custom Color Picker").setView(container).setNegativeButton("Close", null).create()
+
+        if (target.tag == "LOWER_THIRD" && target is LinearLayout) {
+            val btnTitleBg = Button(this).apply { text = "Title BG"; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
+            val btnTickerBg = Button(this).apply { text = "Ticker BG"; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
+            val btnTextColor = Button(this).apply { text = "Text Color"; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
+            
+            btnTitleBg.setOnClickListener { (target.getChildAt(0) as? TextView)?.setBackgroundColor(Color.rgb(r, g, b)); updateSnapshot(); dialog.dismiss() }
+            btnTickerBg.setOnClickListener { (target.getChildAt(1) as? TextView)?.setBackgroundColor(Color.rgb(r, g, b)); updateSnapshot(); dialog.dismiss() }
+            btnTextColor.setOnClickListener { 
+                (target.getChildAt(0) as? TextView)?.setTextColor(Color.rgb(r, g, b))
+                (target.getChildAt(1) as? TextView)?.setTextColor(Color.rgb(r, g, b))
+                updateSnapshot(); dialog.dismiss() 
+            }
+            btnRow.addView(btnTitleBg); btnRow.addView(btnTickerBg); btnRow.addView(btnTextColor)
+        } else {
+            val btnTextColor = Button(this).apply { text = "Apply to Text"; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
+            val btnBgColor = Button(this).apply { text = "Apply to Background"; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
+            btnTextColor.setOnClickListener { (target as? TextView)?.setTextColor(Color.rgb(r, g, b)); updateSnapshot(); dialog.dismiss() }
+            btnBgColor.setOnClickListener { (target as? TextView)?.setBackgroundColor(Color.rgb(r, g, b)); updateSnapshot(); dialog.dismiss() }
+            btnRow.addView(btnTextColor); btnRow.addView(btnBgColor)
+        }
         
-        btnTextColor.setOnClickListener {
-            if (target is TextView) { target.setTextColor(Color.rgb(r, g, b)); updateSnapshot() }
-            else if (target is LinearLayout && target.childCount == 2) { (target.getChildAt(0) as? TextView)?.setTextColor(Color.rgb(r, g, b)); (target.getChildAt(1) as? TextView)?.setTextColor(Color.rgb(r, g, b)); updateSnapshot() }
-            dialog.dismiss()
-        }
-        btnBgColor.setOnClickListener {
-            if (target is TextView || target is EditText) { target.setBackgroundColor(Color.rgb(r, g, b)); updateSnapshot() }
-            else if (target is LinearLayout && target.childCount == 2) { (target.getChildAt(0) as? TextView)?.setBackgroundColor(Color.rgb(r, g, b)); updateSnapshot() } // Sets title bg for lower third
-            dialog.dismiss()
-        }
+        container.addView(btnRow)
         dialog.show()
     }
 
@@ -679,7 +722,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint); return output
     }
 
-    // STREAM MANAGER LOGIC
     private fun saveStreamLocally(title: String, broadcastId: String, chatId: String, rtmpUrl: String) {
         val prefs = getSharedPreferences("MBLiveStreams", Context.MODE_PRIVATE)
         val arr = org.json.JSONArray(prefs.getString("streams", "[]"))
@@ -822,7 +864,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private fun startStudioTimer() { liveStartTimeMillis = System.currentTimeMillis(); timerRunning = true; tvLiveTimer.visibility = View.VISIBLE; timerHandler.post(timerRunnable) }
     private fun stopStudioTimer() { timerRunning = false; timerHandler.removeCallbacksAndMessages(null); tvLiveTimer.visibility = View.GONE; tvLiveTimer.text = "00:00:00" }
 
-    private fun updateSnapshot() {
+    private fun updateSnapshot(delay: Long = 200) {
         if (!rtmpCamera.isOnPreview || overlayContainer.width == 0 || overlayContainer.height == 0 || pendingRefresh) return
         pendingRefresh = true
         overlayHandler.postDelayed({
@@ -834,7 +876,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 lastOverlayBitmap = newBitmap
             } catch (e: Exception) { e.printStackTrace() }
             pendingRefresh = false
-        }, 200)
+        }, delay)
     }
 
     private fun stopLiveStream() {
@@ -842,12 +884,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         Thread {
             currentBroadcastId?.let { broadcastId -> 
                 try { youtubeClient?.liveBroadcasts()?.transition("complete", broadcastId, "status")?.execute() } catch (e: Exception) { e.printStackTrace() }
-                removeSavedStream(broadcastId) // Remove from saved streams once completed
+                removeSavedStream(broadcastId)
                 currentBroadcastId = null 
             }
             try { rtmpCamera.stopStream() } catch (e: Exception) {}
             runOnUiThread {
-                // CAMERA BLACK SCREEN FIX: Removed rtmpCamera.stopPreview() to keep local camera running
                 btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
                 Toast.makeText(this@MainActivity, "Stream Ended Permanently.", Toast.LENGTH_SHORT).show()
                 generatedRtmpUrl = null; stopChatPolling(); stopStudioTimer()
@@ -986,6 +1027,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onDestroy() {
         super.onDestroy()
         overlayHandler.removeCallbacksAndMessages(null); chatHandler.removeCallbacksAndMessages(null); timerHandler.removeCallbacksAndMessages(null); scoConnectTimeoutHandler.removeCallbacksAndMessages(null)
+        tickerHandler.removeCallbacksAndMessages(null)
         scoStateReceiver?.let { try { unregisterReceiver(it) } catch (e: Exception) {} }; scoStateReceiver = null
         try { clearBluetoothRoute() } catch (_: Exception) {}
         try { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) { audioDeviceCallback?.let { audioManager.unregisterAudioDeviceCallback(it) } } } catch (_: Exception) {}
