@@ -31,6 +31,7 @@ import android.view.ScaleGestureDetector
 import android.view.SurfaceHolder
 import android.view.View
 import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -136,7 +137,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private var chatPollingActive = false
     private val chatHandler = Handler(Looper.getMainLooper())
     
-    // Dynamic Chat History Storage
     private val streamChatHistory = mutableListOf<String>()
 
     private var liveStartTimeMillis: Long = 0L
@@ -208,7 +208,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             resizeHandles.clear()
             cropFrameViews.forEach { root.removeView(it) }
             cropFrameViews.clear()
-            selectedOverlay?.let { it.setOnTouchListener(null); makeDraggableAndScalable(it) }
+            selectedOverlay?.let { 
+                if (it is EditText) it.clearFocus()
+                it.setOnTouchListener(null)
+                makeDraggableAndScalable(it) 
+            }
             updateOverlayMenuButtonPosition()
             updateSnapshot()
         }
@@ -238,6 +242,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val btnToggleOverlays: ImageButton = findViewById(R.id.btnToggleOverlays)
         val btnToggleComments: ImageButton = findViewById(R.id.btnToggleComments)
         val btnToggleStreamChat: ImageButton = findViewById(R.id.btnToggleStreamChat)
+        val btnLiveText: ImageButton = findViewById(R.id.btnLiveText)
 
         val popupLayouts: LinearLayout = findViewById(R.id.popupLayouts)
         val popupOverlays: LinearLayout = findViewById(R.id.popupOverlays)
@@ -253,7 +258,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             commentsPanel.visibility = if (commentsPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         }
 
-        // Live Stream Chat Overlay Toggle
         btnToggleStreamChat.setOnClickListener {
             popupOverlays.visibility = View.GONE
             if (tvStreamChatOverlay.visibility == View.VISIBLE) {
@@ -273,6 +277,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 selectedOverlay = tvStreamChatOverlay
                 updateOverlayMenuButtonPosition()
             }
+        }
+
+        // Live Text Button Setup
+        btnLiveText.setOnClickListener {
+            popupOverlays.visibility = View.GONE
+            addLiveTextOverlay()
         }
 
         btnMicToggle.setOnClickListener {
@@ -538,21 +548,17 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         Handler(Looper.getMainLooper()).postDelayed({ tryStartCameraPreview() }, delayMs)
     }
 
-    // --- DYNAMIC CHAT BOX REFRESH ---
     private fun refreshChatOverlayText(forcedHeight: Int? = null) {
         if (tvStreamChatOverlay.visibility != View.VISIBLE) return
         val boxHeight = forcedHeight ?: tvStreamChatOverlay.height
-        
         val maxLines = if (boxHeight > 0 && tvStreamChatOverlay.lineHeight > 0) {
             boxHeight / tvStreamChatOverlay.lineHeight
         } else {
             8
         }
-        
         tvStreamChatOverlay.text = streamChatHistory.takeLast(maxLines.coerceAtLeast(1)).joinToString("\n")
     }
 
-    // --- TASK B: RESIZE & CROP LOGIC ---
     private fun updateOverlayMenuButtonPosition() {
         val target = selectedOverlay
         if (target == null || currentMode != "DRAG") { btnOverlayMenu.visibility = View.GONE; return }
@@ -734,71 +740,71 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         iv.imageMatrix = matrix; updateSnapshot()
     }
 
-    // ====================================================================
-    // LIVE TEXT FEATURE: Types directly to the stream as you press keys
-    // ====================================================================
+    // ==========================================
+    // NORMAL TEXT DIALOG (Reverted to Pop-up)
+    // ==========================================
     private fun showAddTextDialog() {
-        // 1. Create a transparent text view and place it on stream instantly
-        val textView = TextView(this).apply { 
-            text = " " // Initial space so it's not collapsed
+        val input = EditText(this).apply { hint = "Enter text..."; inputType = InputType.TYPE_CLASS_TEXT }
+        AlertDialog.Builder(this).setTitle("Add Text Overlay").setView(input)
+            .setPositiveButton("Add") { _, _ -> 
+                val txt = input.text.toString().trim()
+                if (txt.isNotEmpty()) {
+                    val textView = TextView(this).apply { 
+                        this.text = txt
+                        setTextColor(Color.YELLOW)
+                        textSize = 30f
+                        setTypeface(null, Typeface.BOLD)
+                        layoutParams = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) } 
+                    }
+                    overlayContainer.addView(textView)
+                    makeDraggableAndScalable(textView)
+                    selectedOverlay = textView
+                    updateOverlayMenuButtonPosition()
+                    updateSnapshot()
+                }
+            }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    // ==========================================
+    // NEW LIVE TEXT FEATURE (No Pop-up)
+    // ==========================================
+    private fun addLiveTextOverlay() {
+        val liveEditText = EditText(this).apply {
+            hint = "Start typing..."
+            setHintTextColor(Color.argb(128, 255, 255, 255)) // Semi-transparent hint
             setTextColor(Color.YELLOW)
             textSize = 30f
             setTypeface(null, Typeface.BOLD)
-            setShadowLayer(5f, 2f, 2f, Color.BLACK) // Black outline for visibility
+            background = null // Removes the default underline
+            setShadowLayer(5f, 2f, 2f, Color.BLACK)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            
             layoutParams = RelativeLayout.LayoutParams(
-                RelativeLayout.LayoutParams.WRAP_CONTENT, 
+                RelativeLayout.LayoutParams.WRAP_CONTENT,
                 RelativeLayout.LayoutParams.WRAP_CONTENT
-            ).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) } 
+            ).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) }
+
+            // Burns keystrokes to the stream instantly
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                    updateSnapshot() 
+                }
+                override fun afterTextChanged(s: Editable?) {}
+            })
         }
-        overlayContainer.addView(textView)
-        makeDraggableAndScalable(textView)
-        selectedOverlay = textView
+
+        overlayContainer.addView(liveEditText)
+        makeDraggableAndScalable(liveEditText)
+        selectedOverlay = liveEditText
         updateOverlayMenuButtonPosition()
         updateSnapshot()
 
-        // 2. Open the keyboard input dialog
-        val input = EditText(this).apply { 
-            hint = "Start typing... (Live on stream)"
-            inputType = InputType.TYPE_CLASS_TEXT 
-        }
-
-        // 3. The magic: TextWatcher captures keystrokes live
-        input.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                val newText = s?.toString() ?: ""
-                textView.text = if (newText.isEmpty()) " " else newText
-                updateSnapshot() // Instantly burn the new character to the stream
-            }
-            override fun afterTextChanged(s: Editable?) {}
-        })
-
-        AlertDialog.Builder(this)
-            .setTitle("Live Text Overlay")
-            .setView(input)
-            .setPositiveButton("Done") { _, _ -> 
-                if (input.text.toString().trim().isEmpty()) {
-                    overlayContainer.removeView(textView) // Remove if empty
-                    selectedOverlay = null
-                    updateOverlayMenuButtonPosition()
-                    updateSnapshot()
-                }
-            }
-            .setNegativeButton("Cancel") { _, _ -> 
-                overlayContainer.removeView(textView) // Remove if user cancels
-                selectedOverlay = null
-                updateOverlayMenuButtonPosition()
-                updateSnapshot()
-            }
-            .setOnCancelListener {
-                if (input.text.toString().trim().isEmpty()) {
-                    overlayContainer.removeView(textView)
-                    selectedOverlay = null
-                    updateOverlayMenuButtonPosition()
-                    updateSnapshot()
-                }
-            }
-            .show()
+        // Force open keyboard natively
+        liveEditText.requestFocus()
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.showSoftInput(liveEditText, InputMethodManager.SHOW_IMPLICIT)
     }
 
     private fun showScoreboardDialog() {
@@ -1094,6 +1100,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     MotionEvent.ACTION_MOVE -> { v.x = event.rawX + localDX; v.y = event.rawY + localDY; updateOverlayMenuButtonPosition() }
                     MotionEvent.ACTION_UP -> { updateSnapshot() }
                 }
+            }
+            // CRITICAL: Let EditText process touches for cursor placement & keyboard pop
+            if (v is EditText) {
+                v.onTouchEvent(event)
             }
             true
         }
