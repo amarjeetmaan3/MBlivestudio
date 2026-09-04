@@ -129,6 +129,20 @@
             android:paddingVertical="4dp"
             android:visibility="gone" />
 
+        <!-- API QUOTA TRACKER (Group 1 Task) -->
+        <TextView
+            android:id="@+id/tvApiQuota"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="⚙️ 0/10K"
+            android:textColor="#03A9F4"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:background="#80000000"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="4dp" />
+
         <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
 
         <Button
