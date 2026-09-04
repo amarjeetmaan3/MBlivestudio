@@ -23,7 +23,9 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.text.Editable
 import android.text.InputType
+import android.text.TextWatcher
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.SurfaceHolder
@@ -133,6 +135,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private var chatNextPageToken: String? = null
     private var chatPollingActive = false
     private val chatHandler = Handler(Looper.getMainLooper())
+    
+    // Dynamic Chat History Storage
+    private val streamChatHistory = mutableListOf<String>()
 
     private var liveStartTimeMillis: Long = 0L
     private var timerRunning = false
@@ -177,7 +182,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         commentsScrollView = findViewById(R.id.commentsScrollView)
         tvStreamChatOverlay = findViewById(R.id.tvStreamChatOverlay)
         
-        // Task B Setup
         btnOverlayMenu = findViewById(R.id.btnOverlayMenu)
         btnOverlayDone = findViewById(R.id.btnOverlayDone)
 
@@ -209,7 +213,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             updateSnapshot()
         }
 
-        // Setup YouTube Menu Toggle
         val btnToggleMenu: ImageButton = findViewById(R.id.btnToggleMenu)
         val menuLabelsContainer: LinearLayout = findViewById(R.id.menuLabelsContainer)
 
@@ -246,12 +249,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnCloseLayouts.setOnClickListener { popupLayouts.visibility = View.GONE }
         btnCloseOverlays.setOnClickListener { popupOverlays.visibility = View.GONE }
 
-        // Live Chat Toggle Link (Studio Only)
         btnToggleComments.setOnClickListener {
             commentsPanel.visibility = if (commentsPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         }
 
-        // Stream Chat Toggle (Burned-in)
+        // Live Stream Chat Overlay Toggle
         btnToggleStreamChat.setOnClickListener {
             popupOverlays.visibility = View.GONE
             if (tvStreamChatOverlay.visibility == View.VISIBLE) {
@@ -263,10 +265,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 updateSnapshot()
             } else {
                 tvStreamChatOverlay.visibility = View.VISIBLE
+                tvStreamChatOverlay.post { 
+                    refreshChatOverlayText() 
+                    updateSnapshot()
+                }
                 makeDraggableAndScalable(tvStreamChatOverlay)
                 selectedOverlay = tvStreamChatOverlay
                 updateOverlayMenuButtonPosition()
-                updateSnapshot()
             }
         }
 
@@ -351,7 +356,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         makeStudioPanelDraggable(commentsPanel)
     }
 
-    // --- AUDIO ROUTING: PHONE / BLUETOOTH HFP-BLE / WIRED ---
     private var scoStateReceiver: android.content.BroadcastReceiver? = null
     private val scoConnectTimeoutHandler = Handler(Looper.getMainLooper())
 
@@ -361,7 +365,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
                 updateDetectedMicRoute(true)
             }
-
             override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
                 val bluetoothWasRemoved = removedDevices.any { isBluetoothInputType(it.type) }
                 if (bluetoothWasRemoved && isBluetoothMicActive) {
@@ -389,20 +392,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     private fun getInputDevices(): List<AudioDeviceInfo> {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return emptyList()
-        return try {
-            audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS).toList()
-        } catch (_: Exception) {
-            emptyList()
-        }
+        return try { audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS).toList() } catch (_: Exception) { emptyList() }
     }
 
-    private fun findBluetoothInput(): AudioDeviceInfo? {
-        return getInputDevices().firstOrNull { isBluetoothInputType(it.type) }
-    }
-
-    private fun findWiredInput(): AudioDeviceInfo? {
-        return getInputDevices().firstOrNull { isWiredInputType(it.type) }
-    }
+    private fun findBluetoothInput(): AudioDeviceInfo? { return getInputDevices().firstOrNull { isBluetoothInputType(it.type) } }
+    private fun findWiredInput(): AudioDeviceInfo? { return getInputDevices().firstOrNull { isWiredInputType(it.type) } }
 
     private fun updateDetectedMicRoute(showToast: Boolean) {
         val route = when {
@@ -425,19 +419,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     private fun toggleBluetoothMic(button: ImageButton) {
         if (!isBluetoothMicActive) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 2)
                 return
             }
-
             val btInput = findBluetoothInput()
             if (btInput == null) {
                 Toast.makeText(this, "Bluetooth earbuds/neckband mic not available. Connect it first.", Toast.LENGTH_LONG).show()
                 updateDetectedMicRoute(false)
                 return
             }
-
             if (routeBluetoothMic()) {
                 isBluetoothMicActive = true
                 bluetoothCommunicationDevice = btInput
@@ -472,13 +463,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val communicationDevice = audioManager.availableCommunicationDevices.firstOrNull {
-                    isBluetoothInputType(it.type)
-                } ?: return false
-
+                val communicationDevice = audioManager.availableCommunicationDevices.firstOrNull { isBluetoothInputType(it.type) } ?: return false
                 val accepted = audioManager.setCommunicationDevice(communicationDevice)
                 if (!accepted) return false
-
                 Handler(Looper.getMainLooper()).postDelayed({ updateDetectedMicRoute(false) }, 150)
                 true
             } else {
@@ -526,9 +513,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 }, 8000)
                 true
             }
-        } catch (e: Exception) {
-            false
-        }
+        } catch (e: Exception) { false }
     }
 
     @SuppressLint("MissingPermission")
@@ -551,6 +536,20 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (!rtmpCamera.isOnPreview || rtmpCamera.isStreaming) return
         try { rtmpCamera.stopPreview() } catch (_: Exception) {}
         Handler(Looper.getMainLooper()).postDelayed({ tryStartCameraPreview() }, delayMs)
+    }
+
+    // --- DYNAMIC CHAT BOX REFRESH ---
+    private fun refreshChatOverlayText(forcedHeight: Int? = null) {
+        if (tvStreamChatOverlay.visibility != View.VISIBLE) return
+        val boxHeight = forcedHeight ?: tvStreamChatOverlay.height
+        
+        val maxLines = if (boxHeight > 0 && tvStreamChatOverlay.lineHeight > 0) {
+            boxHeight / tvStreamChatOverlay.lineHeight
+        } else {
+            8
+        }
+        
+        tvStreamChatOverlay.text = streamChatHistory.takeLast(maxLines.coerceAtLeast(1)).joinToString("\n")
     }
 
     // --- TASK B: RESIZE & CROP LOGIC ---
@@ -606,7 +605,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     if (wMult < 0) target.x = startX + (startW - newW)
                     if (hMult < 0) target.y = startY + (startH - newH)
                     updateHandlePos()
+                    
+                    if (target == tvStreamChatOverlay) {
+                        refreshChatOverlayText(newH)
+                    }
+
                     root.post { resizeHandles.forEach { (it.tag as? ()->Unit)?.invoke() } }
+                    updateSnapshot()
                 }
                 MotionEvent.ACTION_UP -> updateSnapshot()
             }
@@ -729,11 +734,71 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         iv.imageMatrix = matrix; updateSnapshot()
     }
 
+    // ====================================================================
+    // LIVE TEXT FEATURE: Types directly to the stream as you press keys
+    // ====================================================================
     private fun showAddTextDialog() {
-        val input = EditText(this).apply { hint = "Enter text..."; inputType = InputType.TYPE_CLASS_TEXT }
-        AlertDialog.Builder(this).setTitle("Add Text Overlay").setView(input)
-            .setPositiveButton("Add") { _, _ -> val txt = input.text.toString().trim(); if (txt.isNotEmpty()) addTextOverlayToScreen(txt) }
-            .setNegativeButton("Cancel", null).show()
+        // 1. Create a transparent text view and place it on stream instantly
+        val textView = TextView(this).apply { 
+            text = " " // Initial space so it's not collapsed
+            setTextColor(Color.YELLOW)
+            textSize = 30f
+            setTypeface(null, Typeface.BOLD)
+            setShadowLayer(5f, 2f, 2f, Color.BLACK) // Black outline for visibility
+            layoutParams = RelativeLayout.LayoutParams(
+                RelativeLayout.LayoutParams.WRAP_CONTENT, 
+                RelativeLayout.LayoutParams.WRAP_CONTENT
+            ).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) } 
+        }
+        overlayContainer.addView(textView)
+        makeDraggableAndScalable(textView)
+        selectedOverlay = textView
+        updateOverlayMenuButtonPosition()
+        updateSnapshot()
+
+        // 2. Open the keyboard input dialog
+        val input = EditText(this).apply { 
+            hint = "Start typing... (Live on stream)"
+            inputType = InputType.TYPE_CLASS_TEXT 
+        }
+
+        // 3. The magic: TextWatcher captures keystrokes live
+        input.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                val newText = s?.toString() ?: ""
+                textView.text = if (newText.isEmpty()) " " else newText
+                updateSnapshot() // Instantly burn the new character to the stream
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+
+        AlertDialog.Builder(this)
+            .setTitle("Live Text Overlay")
+            .setView(input)
+            .setPositiveButton("Done") { _, _ -> 
+                if (input.text.toString().trim().isEmpty()) {
+                    overlayContainer.removeView(textView) // Remove if empty
+                    selectedOverlay = null
+                    updateOverlayMenuButtonPosition()
+                    updateSnapshot()
+                }
+            }
+            .setNegativeButton("Cancel") { _, _ -> 
+                overlayContainer.removeView(textView) // Remove if user cancels
+                selectedOverlay = null
+                updateOverlayMenuButtonPosition()
+                updateSnapshot()
+            }
+            .setOnCancelListener {
+                if (input.text.toString().trim().isEmpty()) {
+                    overlayContainer.removeView(textView)
+                    selectedOverlay = null
+                    updateOverlayMenuButtonPosition()
+                    updateSnapshot()
+                }
+            }
+            .show()
     }
 
     private fun showScoreboardDialog() {
@@ -855,15 +920,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         return row
     }
 
-    // ==========================================
-    // YOUTUBE API: VIEWER COUNT & CHAT POLLING
-    // ==========================================
     private fun startChatPolling(liveChatId: String) { 
         currentLiveChatId = liveChatId
         chatNextPageToken = null
         chatPollingActive = true
         pollChatOnce()
-        pollViewersOnce() // Start concurrent viewer polling
+        pollViewersOnce()
     }
 
     private fun stopChatPolling() { 
@@ -878,7 +940,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val youtube = youtubeClient ?: return
         Thread {
             try {
-                // Request liveStreamingDetails to get concurrentViewers
                 val response = youtube.videos().list("liveStreamingDetails").setId(currentBroadcastId).execute()
                 val details = response.items?.firstOrNull()?.liveStreamingDetails
                 val viewers = details?.concurrentViewers?.toString() ?: "0"
@@ -888,8 +949,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 }
             } catch (e: Exception) { e.printStackTrace() }
             
-            // YouTube Viewer Count updates slowly, polling every 15 seconds is optimal
-            if (chatPollingActive) chatHandler.postDelayed({ pollViewersOnce() }, 15000L)
+            if (chatPollingActive) chatHandler.postDelayed({ pollViewersOnce() }, 5000L)
         }.start()
     }
 
@@ -907,18 +967,17 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 
                 if (newLines.isNotEmpty()) {
                     runOnUiThread {
-                        // Update Studio-only comments panel
                         val existing = tvCommentsFeed.text.toString()
                         tvCommentsFeed.text = (existing.lines() + newLines).takeLast(30).joinToString("\n")
                         commentsScrollView.post { commentsScrollView.fullScroll(View.FOCUS_DOWN) }
 
-                        // Update Burned-in Stream Chat Overlay (limits to last 5 messages to avoid screen clutter)
-                        if (tvStreamChatOverlay.visibility == View.VISIBLE) {
-                            val streamExisting = tvStreamChatOverlay.text.toString()
-                            val combinedLines = streamExisting.lines().filter { it.isNotBlank() } + newLines
-                            tvStreamChatOverlay.text = combinedLines.takeLast(5).joinToString("\n")
-                            updateSnapshot() // Burn the new comment into the stream frame
+                        streamChatHistory.addAll(newLines)
+                        if (streamChatHistory.size > 50) {
+                            streamChatHistory.subList(0, streamChatHistory.size - 50).clear()
                         }
+                        
+                        refreshChatOverlayText()
+                        updateSnapshot()
                     }
                 }
                 val delay = (response.pollingIntervalMillis ?: 10000L).coerceAtLeast(8000L)
@@ -1010,11 +1069,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK && data != null) data.data?.let { uri -> addImageOverlayToScreen(MediaStore.Images.Media.getBitmap(contentResolver, uri)) }
         if (requestCode == PICK_THUMBNAIL_REQUEST && resultCode == RESULT_OK && data != null) data.data?.let { uri -> pendingThumbnailUri = uri; thumbnailPreviewImageView?.setImageURI(uri) }
         if (requestCode == SIGN_IN_REQUEST) try { val account = GoogleSignIn.getSignedInAccountFromIntent(data).getResult(ApiException::class.java); connectedAccountEmail = account?.email; if (account != null) applyAccountToHeader(account) } catch (e: ApiException) { }
-    }
-
-    private fun addTextOverlayToScreen(text: String) {
-        val textView = TextView(this).apply { this.text = text; setTextColor(Color.YELLOW); textSize = 30f; setTypeface(null, Typeface.BOLD); layoutParams = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) } }
-        overlayContainer.addView(textView); makeDraggableAndScalable(textView); selectedOverlay = textView; updateOverlayMenuButtonPosition(); updateSnapshot()
     }
 
     private fun addImageOverlayToScreen(bitmap: Bitmap) {
