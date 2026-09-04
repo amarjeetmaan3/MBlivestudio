@@ -317,6 +317,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         makeStudioPanelDraggable(commentsPanel)
     }
 
+    // --- BLUETOOTH SCO LOGIC FIX FOR ANDROID 12+ ---
     private fun toggleBluetoothMic(button: ImageButton) {
         if (!isBluetoothMicActive) {
             try {
@@ -835,28 +836,42 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (!isSuccess) try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) {}
         
         var aReady = false
-        
-        // FIX FOR "TICK TICK" / "TRRR TRRR" SOUND: 
-        // Bluetooth SCO audio is strictly MONO (1 channel) and runs at 16000Hz. 
-        // Forcing 44100Hz Stereo on Bluetooth causes severe buffer underruns -> "trrr trrr" robotic stutter.
+
+        // FIX: previous attempt (44100 -> 32000 -> default) never used a
+        // Bluetooth-SCO-compatible sample rate. SCO audio hardware only
+        // runs at 16000Hz (wideband/mSBC, better quality, most modern
+        // buds/neckbands support it) or 8000Hz (narrowband, universal
+        // fallback). Requesting 44100/32000 while routed through SCO
+        // forces Android to resample on the fly — that mismatch is
+        // exactly what causes the "trrr/chrrr" crackling. When Bluetooth
+        // mic is active, try SCO-correct rates FIRST.
         if (isBluetoothMicActive) {
             try { aReady = rtmpCamera.prepareAudio(64 * 1024, 16000, false, true, true) } catch (e: Exception) {}
-            if (!aReady) try { aReady = rtmpCamera.prepareAudio(64 * 1024, 32000, false, true, true) } catch (e: Exception) {}
-        } else {
-            // Normal Device Mic can handle 44.1kHz Stereo perfectly
-            try { aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, true, true, true) } catch (e: Exception) {}
-            if (!aReady) try { aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, false, true, true) } catch (e: Exception) {}
+            if (!aReady) {
+                try { aReady = rtmpCamera.prepareAudio(64 * 1024, 8000, false, true, true) } catch (e: Exception) {}
+            }
         }
 
-        // Final Fallback
+        // Normal phone-mic path (also used as fallback if Bluetooth rates
+        // above failed for some reason).
+        if (!aReady) {
+            try {
+                aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, true, true, true)
+            } catch (e: Exception) { }
+        }
+
+        if (!aReady) {
+            try { aReady = rtmpCamera.prepareAudio(64 * 1024, 32000, false, true, true) } catch (e: Exception) {}
+        }
+        
         if (!aReady) {
             try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { }
         }
 
         if (isSuccess && aReady) { 
-            rtmpCamera.glInterface.setFilter(cameraLayoutFilter)
-            rtmpCamera.glInterface.addFilter(imageFilterRender)
-            rtmpCamera.startPreview()
+            rtmpCamera.glInterface.setFilter(cameraLayoutFilter); 
+            rtmpCamera.glInterface.addFilter(imageFilterRender); 
+            rtmpCamera.startPreview(); 
             overlayHandler.postDelayed({ updateSnapshot() }, 1000) 
         } else { 
             runOnUiThread { Toast.makeText(this, "CAMERA ERROR: Device encoder not supported.", Toast.LENGTH_LONG).show() } 
