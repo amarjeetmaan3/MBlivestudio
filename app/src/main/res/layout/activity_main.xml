@@ -17,11 +17,11 @@
         android:layout_height="match_parent"
         android:background="@android:color/transparent">
 
-        <!-- STREAM CHAT OVERLAY (Burned into Stream) -->
+        <!-- STREAM CHAT OVERLAY -->
         <TextView
             android:id="@+id/tvStreamChatOverlay"
             android:layout_width="300dp"
-            android:layout_height="wrap_content"
+            android:layout_height="250dp"
             android:textColor="#FFFFFF"
             android:textSize="18sp"
             android:textStyle="bold"
@@ -32,6 +32,7 @@
             android:layout_margin="20dp"
             android:layout_alignParentLeft="true"
             android:layout_centerVertical="true"
+            android:gravity="bottom"
             android:visibility="gone" />
 
         <LinearLayout
@@ -64,7 +65,7 @@
         </LinearLayout>
     </RelativeLayout>
 
-    <!-- Studio Only Overlay Controls (Task B) -->
+    <!-- Studio Only Overlay Controls -->
     <ImageButton
         android:id="@+id/btnOverlayMenu"
         android:layout_width="32dp"
@@ -221,7 +222,6 @@
                 android:scaleType="centerInside"
                 android:padding="14dp" />
 
-            <!-- Chat Studio Toggle -->
             <ImageButton
                 android:id="@+id/btnToggleComments"
                 android:layout_width="52dp"
@@ -301,22 +301,18 @@
         android:padding="20dp"
         android:visibility="gone">
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="ADD OVERLAYS" android:textColor="#FFF" android:textStyle="bold" android:layout_gravity="center" android:layout_marginBottom="12dp"/>
-        
         <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal">
             <ImageButton android:id="@+id/btnAddText" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_add_text" android:padding="12dp"/>
             <ImageButton android:id="@+id/btnAddLogo" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_add_logo" android:padding="12dp"/>
             <ImageButton android:id="@+id/btnAddWebOverlay" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_web" android:padding="12dp"/>
             <ImageButton android:id="@+id/btnToggleScore" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_scoreboard" android:padding="12dp"/>
         </LinearLayout>
-        
         <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_gravity="center">
             <ImageButton android:id="@+id/btnTextColors" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_colors" android:padding="12dp"/>
-            <!-- Stream Chat Button Added Here -->
             <ImageButton android:id="@+id/btnToggleStreamChat" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_chat" android:padding="12dp"/>
             <ImageButton android:id="@+id/btnRemoveSelected" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_remove" android:padding="12dp"/>
         </LinearLayout>
-        
-        <Button android:id="@+id/btnCloseOverlays" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@android:color/transparent" android:text="CLOSE" android:textColor="#FF5252" android:layout_marginTop="8dp"/>
+        <Button android:id="@+id/btnCloseOverlays" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@android:color/transparent" text="CLOSE" android:textColor="#FF5252" android:layout_marginTop="8dp"/>
     </LinearLayout>
 
     <!-- Studio-Only Comments Panel -->
