@@ -72,10 +72,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private lateinit var btnGoLive: Button
     private lateinit var ivProfilePhoto: ImageView
     private lateinit var tvLiveTimer: TextView
+    private lateinit var tvViewerCount: TextView
 
     private lateinit var commentsPanel: LinearLayout
     private lateinit var tvCommentsFeed: TextView
     private lateinit var commentsScrollView: ScrollView
+    private lateinit var tvStreamChatOverlay: TextView
 
     // Task B Variables
     private lateinit var btnOverlayMenu: ImageButton
@@ -168,9 +170,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnGoLive = findViewById(R.id.btnGoLive)
         ivProfilePhoto = findViewById(R.id.ivProfilePhoto)
         tvLiveTimer = findViewById(R.id.tvLiveTimer)
+        tvViewerCount = findViewById(R.id.tvViewerCount)
+        
         commentsPanel = findViewById(R.id.commentsPanel)
         tvCommentsFeed = findViewById(R.id.tvCommentsFeed)
         commentsScrollView = findViewById(R.id.commentsScrollView)
+        tvStreamChatOverlay = findViewById(R.id.tvStreamChatOverlay)
         
         // Task B Setup
         btnOverlayMenu = findViewById(R.id.btnOverlayMenu)
@@ -229,6 +234,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val btnToggleLayouts: ImageButton = findViewById(R.id.btnToggleLayouts)
         val btnToggleOverlays: ImageButton = findViewById(R.id.btnToggleOverlays)
         val btnToggleComments: ImageButton = findViewById(R.id.btnToggleComments)
+        val btnToggleStreamChat: ImageButton = findViewById(R.id.btnToggleStreamChat)
 
         val popupLayouts: LinearLayout = findViewById(R.id.popupLayouts)
         val popupOverlays: LinearLayout = findViewById(R.id.popupOverlays)
@@ -240,9 +246,28 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnCloseLayouts.setOnClickListener { popupLayouts.visibility = View.GONE }
         btnCloseOverlays.setOnClickListener { popupOverlays.visibility = View.GONE }
 
-        // Live Chat Toggle Link
+        // Live Chat Toggle Link (Studio Only)
         btnToggleComments.setOnClickListener {
             commentsPanel.visibility = if (commentsPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        }
+
+        // Stream Chat Toggle (Burned-in)
+        btnToggleStreamChat.setOnClickListener {
+            popupOverlays.visibility = View.GONE
+            if (tvStreamChatOverlay.visibility == View.VISIBLE) {
+                tvStreamChatOverlay.visibility = View.GONE
+                if (selectedOverlay == tvStreamChatOverlay) {
+                    selectedOverlay = null
+                    updateOverlayMenuButtonPosition()
+                }
+                updateSnapshot()
+            } else {
+                tvStreamChatOverlay.visibility = View.VISIBLE
+                makeDraggableAndScalable(tvStreamChatOverlay)
+                selectedOverlay = tvStreamChatOverlay
+                updateOverlayMenuButtonPosition()
+                updateSnapshot()
+            }
         }
 
         btnMicToggle.setOnClickListener {
@@ -830,8 +855,44 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         return row
     }
 
-    private fun startChatPolling(liveChatId: String) { currentLiveChatId = liveChatId; chatNextPageToken = null; chatPollingActive = true; pollChatOnce() }
-    private fun stopChatPolling() { chatPollingActive = false; chatHandler.removeCallbacksAndMessages(null); currentLiveChatId = null }
+    // ==========================================
+    // YOUTUBE API: VIEWER COUNT & CHAT POLLING
+    // ==========================================
+    private fun startChatPolling(liveChatId: String) { 
+        currentLiveChatId = liveChatId
+        chatNextPageToken = null
+        chatPollingActive = true
+        pollChatOnce()
+        pollViewersOnce() // Start concurrent viewer polling
+    }
+
+    private fun stopChatPolling() { 
+        chatPollingActive = false
+        chatHandler.removeCallbacksAndMessages(null)
+        currentLiveChatId = null
+        runOnUiThread { tvViewerCount.visibility = View.GONE }
+    }
+
+    private fun pollViewersOnce() {
+        if (!chatPollingActive || currentBroadcastId == null) return
+        val youtube = youtubeClient ?: return
+        Thread {
+            try {
+                // Request liveStreamingDetails to get concurrentViewers
+                val response = youtube.videos().list("liveStreamingDetails").setId(currentBroadcastId).execute()
+                val details = response.items?.firstOrNull()?.liveStreamingDetails
+                val viewers = details?.concurrentViewers?.toString() ?: "0"
+                runOnUiThread {
+                    tvViewerCount.text = "👁️ $viewers"
+                    tvViewerCount.visibility = View.VISIBLE
+                }
+            } catch (e: Exception) { e.printStackTrace() }
+            
+            // YouTube Viewer Count updates slowly, polling every 15 seconds is optimal
+            if (chatPollingActive) chatHandler.postDelayed({ pollViewersOnce() }, 15000L)
+        }.start()
+    }
+
     private fun pollChatOnce() {
         if (!chatPollingActive) return
         val chatId = currentLiveChatId ?: return
@@ -843,11 +904,21 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 val response = request.execute()
                 chatNextPageToken = response.nextPageToken
                 val newLines = response.items.orEmpty().mapNotNull { msg -> val author = msg.authorDetails?.displayName ?: "Viewer"; val text = msg.snippet?.displayMessage ?: return@mapNotNull null; "$author: $text" }
+                
                 if (newLines.isNotEmpty()) {
                     runOnUiThread {
+                        // Update Studio-only comments panel
                         val existing = tvCommentsFeed.text.toString()
                         tvCommentsFeed.text = (existing.lines() + newLines).takeLast(30).joinToString("\n")
                         commentsScrollView.post { commentsScrollView.fullScroll(View.FOCUS_DOWN) }
+
+                        // Update Burned-in Stream Chat Overlay (limits to last 5 messages to avoid screen clutter)
+                        if (tvStreamChatOverlay.visibility == View.VISIBLE) {
+                            val streamExisting = tvStreamChatOverlay.text.toString()
+                            val combinedLines = streamExisting.lines().filter { it.isNotBlank() } + newLines
+                            tvStreamChatOverlay.text = combinedLines.takeLast(5).joinToString("\n")
+                            updateSnapshot() // Burn the new comment into the stream frame
+                        }
                     }
                 }
                 val delay = (response.pollingIntervalMillis ?: 10000L).coerceAtLeast(8000L)
@@ -992,22 +1063,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         
         var aReady = false
 
-        // ====================================================================
-        // FIX FOR THE LAST 5% CRACKLE / TICK TICK SOUND:
-        // By changing the Bitrate down to 32kbps (32 * 1024), the audio 
-        // encoder correctly matches the physical Bluetooth SCO bandwidth.
-        // Pushing 64kbps was causing the audio buffer to "starve", resulting 
-        // in micro-crackles. 32kbps @ 16000Hz is the sweet spot.
-        // ====================================================================
         if (isBluetoothMicActive) {
-            // Try 16000Hz Wideband SCO with 32kbps
             try { aReady = rtmpCamera.prepareAudio(32 * 1024, 16000, false, false, false) } catch (e: Exception) {}
             if (!aReady) {
-                // Fallback to older 8000Hz Narrowband SCO with 16kbps
                 try { aReady = rtmpCamera.prepareAudio(16 * 1024, 8000, false, false, false) } catch (e: Exception) {}
             }
         } else {
-            // Normal Phone Mic - Stereo (true), 128kbps, Full Noise Suppression
             val useEchoCanceler = detectedMicRoute == MicRoute.PHONE
             try { aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, true, useEchoCanceler, true) } catch (e: Exception) {}
             if (!aReady) {
