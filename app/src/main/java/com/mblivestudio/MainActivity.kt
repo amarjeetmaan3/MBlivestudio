@@ -447,9 +447,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                // setCommunicationDevice() is the supported API on Android 12+.
-                // Selecting the BT communication sink causes the matching BT input
-                // (HFP/SCO or supported BLE headset input) to be used by communication audio.
                 val communicationDevice = audioManager.availableCommunicationDevices.firstOrNull {
                     isBluetoothInputType(it.type)
                 } ?: return false
@@ -457,7 +454,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 val accepted = audioManager.setCommunicationDevice(communicationDevice)
                 if (!accepted) return false
 
-                // Give Android a short moment to publish the corresponding input route.
                 Handler(Looper.getMainLooper()).postDelayed({ updateDetectedMicRoute(false) }, 150)
                 true
             } else {
@@ -996,36 +992,31 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         
         var aReady = false
 
-        // RootEncoder's RtmpCamera2 creates its own AudioRecord internally.
-        // Keep the capture pipeline mono for speech and use stable, library-supported
-        // sample rates. Bluetooth HFP/SCO is treated separately because its microphone
-        // transport is normally narrowband/wideband communication audio.
+        // ====================================================================
+        // FIX FOR THE LAST 5% CRACKLE / TICK TICK SOUND:
+        // By changing the Bitrate down to 32kbps (32 * 1024), the audio 
+        // encoder correctly matches the physical Bluetooth SCO bandwidth.
+        // Pushing 64kbps was causing the audio buffer to "starve", resulting 
+        // in micro-crackles. 32kbps @ 16000Hz is the sweet spot.
+        // ====================================================================
         if (isBluetoothMicActive) {
-            // Bluetooth HFP: 16 kHz mono is the safest voice configuration.
-            try { aReady = rtmpCamera.prepareAudio(64 * 1024, 16000, false, false, false) } catch (_: Exception) {}
+            // Try 16000Hz Wideband SCO with 32kbps
+            try { aReady = rtmpCamera.prepareAudio(32 * 1024, 16000, false, false, false) } catch (e: Exception) {}
             if (!aReady) {
-                try { aReady = rtmpCamera.prepareAudio(64 * 1024, 32000, false, false, false) } catch (_: Exception) {}
-            }
-            if (!aReady) {
-                try { aReady = rtmpCamera.prepareAudio(64 * 1024, 44100, false, false, false) } catch (_: Exception) {}
+                // Fallback to older 8000Hz Narrowband SCO with 16kbps
+                try { aReady = rtmpCamera.prepareAudio(16 * 1024, 8000, false, false, false) } catch (e: Exception) {}
             }
         } else {
-            // Phone mic: mono voice capture with AEC + noise suppression.
-            // Wired/USB mic: mono voice capture with noise suppression only;
-            // AEC is normally unnecessary because a headset mic is physically
-            // separated from the phone speaker.
+            // Normal Phone Mic - Stereo (true), 128kbps, Full Noise Suppression
             val useEchoCanceler = detectedMicRoute == MicRoute.PHONE
-            try { aReady = rtmpCamera.prepareAudio(64 * 1024, 44100, false, useEchoCanceler, true) } catch (_: Exception) {}
+            try { aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, true, useEchoCanceler, true) } catch (e: Exception) {}
             if (!aReady) {
-                try { aReady = rtmpCamera.prepareAudio(64 * 1024, 32000, false, useEchoCanceler, true) } catch (_: Exception) {}
-            }
-            if (!aReady) {
-                try { aReady = rtmpCamera.prepareAudio(64 * 1024, 44100, false, false, false) } catch (_: Exception) {}
+                try { aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, false, useEchoCanceler, true) } catch (e: Exception) {}
             }
         }
 
         if (!aReady) {
-            try { aReady = rtmpCamera.prepareAudio() } catch (_: Exception) {}
+            try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { }
         }
 
         if (isSuccess && aReady) { 
