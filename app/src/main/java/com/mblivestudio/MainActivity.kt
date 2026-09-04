@@ -76,6 +76,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private lateinit var ivProfilePhoto: ImageView
     private lateinit var tvLiveTimer: TextView
     private lateinit var tvViewerCount: TextView
+    private lateinit var tvApiQuota: TextView // Added API Quota Tracker
 
     private lateinit var commentsPanel: LinearLayout
     private lateinit var tvCommentsFeed: TextView
@@ -139,6 +140,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     
     private val streamChatHistory = mutableListOf<String>()
 
+    private var dailyQuotaUsed = 0 // API Quota Counter
+
     private var liveStartTimeMillis: Long = 0L
     private var timerRunning = false
     private val timerHandler = Handler(Looper.getMainLooper())
@@ -176,7 +179,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         ivProfilePhoto = findViewById(R.id.ivProfilePhoto)
         tvLiveTimer = findViewById(R.id.tvLiveTimer)
         tvViewerCount = findViewById(R.id.tvViewerCount)
+        tvApiQuota = findViewById(R.id.tvApiQuota) // API Quota Text Load
         
+        loadQuota() // Load Daily Quota Usage
+
         commentsPanel = findViewById(R.id.commentsPanel)
         tvCommentsFeed = findViewById(R.id.tvCommentsFeed)
         commentsScrollView = findViewById(R.id.commentsScrollView)
@@ -279,19 +285,21 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
         }
 
-        // Live Text Button Setup
         btnLiveText.setOnClickListener {
             popupOverlays.visibility = View.GONE
             addLiveTextOverlay()
         }
 
+        // MIC BUG FIX: Tint the button explicitly to prevent disappearing icon
         btnMicToggle.setOnClickListener {
             if (isAudioMuted) {
                 rtmpCamera.enableAudio(); isAudioMuted = false
                 btnMicToggle.setImageResource(R.drawable.ic_mic_on)
+                btnMicToggle.clearColorFilter()
             } else {
                 rtmpCamera.disableAudio(); isAudioMuted = true
-                btnMicToggle.setImageResource(R.drawable.ic_mic_off)
+                btnMicToggle.setImageResource(R.drawable.ic_mic_on) // Reuse valid icon
+                btnMicToggle.setColorFilter(Color.parseColor("#E53935")) // Red Tint to show muted
             }
         }
 
@@ -351,7 +359,26 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val account = GoogleSignIn.getLastSignedInAccount(this)
         if (account != null) { connectedAccountEmail = account.email; applyAccountToHeader(account) }
 
-        ivProfilePhoto.setOnClickListener { if (GoogleSignIn.getLastSignedInAccount(this) == null) { startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST) } }
+        // LOGOUT & SWITCH CHANNEL FIX
+        ivProfilePhoto.setOnClickListener { 
+            val acc = GoogleSignIn.getLastSignedInAccount(this)
+            if (acc == null) {
+                startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST) 
+            } else {
+                AlertDialog.Builder(this)
+                    .setTitle("Account Options")
+                    .setMessage("Logged in as: ${acc.email}")
+                    .setPositiveButton("Logout / Switch Channel") { _, _ ->
+                        googleSignInClient.signOut().addOnCompleteListener {
+                            connectedAccountEmail = null
+                            ivProfilePhoto.setImageResource(android.R.drawable.sym_def_app_icon)
+                            Toast.makeText(this, "Logged out. You can now login with another channel.", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
+        }
 
         btnGoLive.setOnClickListener {
             if (rtmpCamera.isStreaming) { AlertDialog.Builder(this).setTitle("Stop Live Stream?").setMessage("This will end your YouTube broadcast permanently.").setPositiveButton("End Stream") { _, _ -> stopLiveStream() }.setNegativeButton("Cancel", null).show(); return@setOnClickListener }
@@ -364,6 +391,30 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         makeDraggableAndScalable(dragScoreboard)
         makeStudioPanelDraggable(commentsPanel)
+    }
+
+    // --- API QUOTA LOGIC ---
+    private fun loadQuota() {
+        val prefs = getSharedPreferences("MBLivePrefs", Context.MODE_PRIVATE)
+        val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+        val savedDate = prefs.getString("QuotaDate", "")
+        if (savedDate != today) {
+            dailyQuotaUsed = 0
+            prefs.edit().putString("QuotaDate", today).putInt("QuotaUsed", 0).apply()
+        } else {
+            dailyQuotaUsed = prefs.getInt("QuotaUsed", 0)
+        }
+        updateQuotaUI()
+    }
+
+    private fun addQuota(amount: Int) {
+        dailyQuotaUsed += amount
+        getSharedPreferences("MBLivePrefs", Context.MODE_PRIVATE).edit().putInt("QuotaUsed", dailyQuotaUsed).apply()
+        runOnUiThread { updateQuotaUI() }
+    }
+
+    private fun updateQuotaUI() {
+        tvApiQuota.text = "⚙️ $dailyQuotaUsed/10K"
     }
 
     private var scoStateReceiver: android.content.BroadcastReceiver? = null
@@ -740,9 +791,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         iv.imageMatrix = matrix; updateSnapshot()
     }
 
-    // ==========================================
-    // NORMAL TEXT DIALOG (Reverted to Pop-up)
-    // ==========================================
     private fun showAddTextDialog() {
         val input = EditText(this).apply { hint = "Enter text..."; inputType = InputType.TYPE_CLASS_TEXT }
         AlertDialog.Builder(this).setTitle("Add Text Overlay").setView(input)
@@ -766,17 +814,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             .setNegativeButton("Cancel", null).show()
     }
 
-    // ==========================================
-    // NEW LIVE TEXT FEATURE (No Pop-up)
-    // ==========================================
     private fun addLiveTextOverlay() {
         val liveEditText = EditText(this).apply {
             hint = "Start typing..."
-            setHintTextColor(Color.argb(128, 255, 255, 255)) // Semi-transparent hint
+            setHintTextColor(Color.argb(128, 255, 255, 255))
             setTextColor(Color.YELLOW)
             textSize = 30f
             setTypeface(null, Typeface.BOLD)
-            background = null // Removes the default underline
+            background = null
             setShadowLayer(5f, 2f, 2f, Color.BLACK)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             
@@ -785,7 +830,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 RelativeLayout.LayoutParams.WRAP_CONTENT
             ).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) }
 
-            // Burns keystrokes to the stream instantly
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
@@ -801,7 +845,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         updateOverlayMenuButtonPosition()
         updateSnapshot()
 
-        // Force open keyboard natively
         liveEditText.requestFocus()
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         imm.showSoftInput(liveEditText, InputMethodManager.SHOW_IMPLICIT)
@@ -945,6 +988,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (!chatPollingActive || currentBroadcastId == null) return
         val youtube = youtubeClient ?: return
         Thread {
+            addQuota(1) // API Call Tracker Fix
             try {
                 val response = youtube.videos().list("liveStreamingDetails").setId(currentBroadcastId).execute()
                 val details = response.items?.firstOrNull()?.liveStreamingDetails
@@ -964,6 +1008,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val chatId = currentLiveChatId ?: return
         val youtube = youtubeClient ?: return
         Thread {
+            addQuota(1) // API Call Tracker Fix
             try {
                 val request = youtube.liveChatMessages().list(chatId, "snippet,authorDetails")
                 chatNextPageToken?.let { request.pageToken = it }
@@ -986,11 +1031,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                         updateSnapshot()
                     }
                 }
-                val delay = (response.pollingIntervalMillis ?: 10000L).coerceAtLeast(8000L)
-                if (chatPollingActive) chatHandler.postDelayed({ pollChatOnce() }, delay)
+                // SMART CHAT LIMIT FIX
+                val youtubeDelay = response.pollingIntervalMillis ?: 5000L
+                val finalDelay = if (youtubeDelay > 5000L) youtubeDelay else 5000L
+                if (chatPollingActive) chatHandler.postDelayed({ pollChatOnce() }, finalDelay)
             } catch (e: Exception) {
                 e.printStackTrace()
-                if (chatPollingActive) chatHandler.postDelayed({ pollChatOnce() }, 15000L)
+                if (chatPollingActive) chatHandler.postDelayed({ pollChatOnce() }, 10000L)
             }
         }.start()
     }
@@ -1035,6 +1082,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val finalDesc = pendingDesc.trim().ifEmpty { "Streaming via Android App" }
         val privacyInput = pendingPrivacy
         Thread {
+            addQuota(150) // API Quota Fix (Cost of creating room/stream)
             try {
                 val credential = GoogleAccountCredential.usingOAuth2(this@MainActivity, listOf("https://www.googleapis.com/auth/youtube"))
                 val signInAccount = GoogleSignIn.getLastSignedInAccount(this@MainActivity)
@@ -1101,7 +1149,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     MotionEvent.ACTION_UP -> { updateSnapshot() }
                 }
             }
-            // CRITICAL: Let EditText process touches for cursor placement & keyboard pop
             if (v is EditText) {
                 v.onTouchEvent(event)
             }
@@ -1178,7 +1225,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         scoStateReceiver?.let { try { unregisterReceiver(it) } catch (e: Exception) {} }
         scoStateReceiver = null
         
-        // Audio routing cleanup
         try { clearBluetoothRoute() } catch (_: Exception) {}
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
