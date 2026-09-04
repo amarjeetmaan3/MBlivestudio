@@ -1,26 +1,342 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    
-    <application
-        android:allowBackup="true"
-        android:icon="@drawable/app_logo"
-        android:roundIcon="@drawable/app_logo"
-        android:label="MB Live Studio"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/rootLayout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <!-- 100% Full Screen Camera -->
+    <com.pedro.library.view.OpenGlView
+        android:id="@+id/surfaceView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <RelativeLayout
+        android:id="@+id/overlayContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@android:color/transparent">
+
+        <!-- STREAM CHAT OVERLAY -->
+        <TextView
+            android:id="@+id/tvStreamChatOverlay"
+            android:layout_width="300dp"
+            android:layout_height="250dp"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:shadowColor="#000000"
+            android:shadowRadius="5"
+            android:shadowDx="2"
+            android:shadowDy="2"
+            android:layout_margin="20dp"
+            android:layout_alignParentLeft="true"
+            android:layout_centerVertical="true"
+            android:gravity="bottom"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:id="@+id/dragScoreboard"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#A6000000"
+            android:padding="15dp"
+            android:layout_alignParentBottom="true"
+            android:layout_alignParentRight="true"
+            android:layout_margin="20dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/scoreMainText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="IND 245/3 (40.2)"
+                android:textColor="#FFFFFF"
+                android:textSize="32sp"
+                android:textStyle="bold" />
+            <TextView
+                android:id="@+id/scoreSubText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Target: 312 | CRR: 6.08"
+                android:textColor="#FFFF00"
+                android:textSize="18sp" />
+        </LinearLayout>
+    </RelativeLayout>
+
+    <!-- Studio Only Overlay Controls -->
+    <ImageButton
+        android:id="@+id/btnOverlayMenu"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:background="#CC000000"
+        android:src="@android:drawable/ic_menu_more"
+        android:tint="#FFFFFF"
+        android:visibility="gone" />
+
+    <Button
+        android:id="@+id/btnOverlayDone"
+        android:layout_width="wrap_content"
+        android:layout_height="32dp"
+        android:backgroundTint="#4CAF50"
+        android:text="✓ DONE"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
+        android:visibility="gone" />
+
+    <!-- Top Bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="16dp">
+
+        <ImageView
+            android:id="@+id/ivProfilePhoto"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:src="@android:drawable/sym_def_app_icon" />
+
+        <TextView
+            android:id="@+id/tvLiveTimer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:text="00:00:00"
+            android:textColor="#FF5252"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:background="#80000000"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="4dp"
+            android:visibility="gone" />
+
+        <!-- VIEWER COUNT -->
+        <TextView
+            android:id="@+id/tvViewerCount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="👁️ 0"
+            android:textColor="#FFEB3B"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:background="#80000000"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="4dp"
+            android:visibility="gone" />
+
+        <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
+
+        <Button
+            android:id="@+id/btnGoLive"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="GO LIVE"
+            android:backgroundTint="#D32F2F"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- RIGHT SIDE YOUTUBE STYLE MENU -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentRight="true"
+        android:layout_centerVertical="true"
+        android:orientation="horizontal"
+        android:layout_marginEnd="16dp">
+
+        <!-- Labels Column -->
+        <LinearLayout
+            android:id="@+id/menuLabelsContainer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone"
+            android:gravity="end"
+            android:layout_marginEnd="12dp">
+            
+            <TextView android:layout_width="wrap_content" android:layout_height="52dp" android:gravity="center_vertical|end" android:text="Flip" android:textColor="#FFFFFF" android:textSize="16sp" android:textStyle="bold" android:shadowColor="#000000" android:shadowRadius="4" android:shadowDx="1" android:shadowDy="1" />
+            <TextView android:layout_width="wrap_content" android:layout_height="52dp" android:gravity="center_vertical|end" android:text="Bluetooth" android:textColor="#FFFFFF" android:textSize="16sp" android:textStyle="bold" android:shadowColor="#000000" android:shadowRadius="4" android:shadowDx="1" android:shadowDy="1" />
+            <TextView android:layout_width="wrap_content" android:layout_height="52dp" android:gravity="center_vertical|end" android:text="Mute" android:textColor="#FFFFFF" android:textSize="16sp" android:textStyle="bold" android:shadowColor="#000000" android:shadowRadius="4" android:shadowDx="1" android:shadowDy="1" />
+            <TextView android:layout_width="wrap_content" android:layout_height="52dp" android:gravity="center_vertical|end" android:text="Layouts" android:textColor="#FFFFFF" android:textSize="16sp" android:textStyle="bold" android:shadowColor="#000000" android:shadowRadius="4" android:shadowDx="1" android:shadowDy="1" />
+            <TextView android:layout_width="wrap_content" android:layout_height="52dp" android:gravity="center_vertical|end" android:text="Overlays" android:textColor="#FFFFFF" android:textSize="16sp" android:textStyle="bold" android:shadowColor="#000000" android:shadowRadius="4" android:shadowDx="1" android:shadowDy="1" />
+            <TextView android:layout_width="wrap_content" android:layout_height="52dp" android:gravity="center_vertical|end" android:text="Chat Studio" android:textColor="#FFFFFF" android:textSize="16sp" android:textStyle="bold" android:shadowColor="#000000" android:shadowRadius="4" android:shadowDx="1" android:shadowDy="1" />
+            <TextView android:id="@+id/tvMenuToggle" android:layout_width="wrap_content" android:layout_height="52dp" android:gravity="center_vertical|end" android:text="Close" android:textColor="#FFFFFF" android:textSize="16sp" android:textStyle="bold" android:shadowColor="#000000" android:shadowRadius="4" android:shadowDx="1" android:shadowDy="1" />
+        </LinearLayout>
+
+        <!-- Pill Icons Column -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_pill_menu"
+            android:paddingVertical="8dp">
+
+            <ImageButton
+                android:id="@+id/btnSwitchCamera"
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:background="@android:color/transparent"
+                android:src="@drawable/ic_camera_flip"
+                android:scaleType="centerInside"
+                android:padding="14dp" />
+
+            <ImageButton
+                android:id="@+id/btnBluetoothMic"
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:background="@android:color/transparent"
+                android:src="@drawable/ic_bluetooth"
+                android:scaleType="centerInside"
+                android:padding="14dp" />
+
+            <ImageButton
+                android:id="@+id/btnMicToggle"
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:background="@android:color/transparent"
+                android:src="@drawable/ic_mic_on"
+                android:scaleType="centerInside"
+                android:padding="14dp" />
+
+            <ImageButton
+                android:id="@+id/btnToggleLayouts"
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:background="@android:color/transparent"
+                android:src="@drawable/ic_layout_full"
+                android:scaleType="centerInside"
+                android:padding="14dp" />
+
+            <ImageButton
+                android:id="@+id/btnToggleOverlays"
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:background="@android:color/transparent"
+                android:src="@drawable/ic_add_text"
+                android:scaleType="centerInside"
+                android:padding="14dp" />
+
+            <ImageButton
+                android:id="@+id/btnToggleComments"
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:background="@android:color/transparent"
+                android:src="@drawable/ic_chat"
+                android:scaleType="centerInside"
+                android:padding="14dp" />
+
+            <ImageButton
+                android:id="@+id/btnToggleMenu"
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:background="@android:color/transparent"
+                android:src="@drawable/ic_arrow_down"
+                android:scaleType="centerInside"
+                android:padding="16dp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Horizontal Zoom Pill -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentRight="true"
+        android:layout_alignParentBottom="true"
+        android:orientation="horizontal"
+        android:background="@drawable/bg_pill_menu"
+        android:layout_margin="16dp"
+        android:paddingHorizontal="4dp">
+        <Button
+            android:id="@+id/btnZoomOut"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:background="@android:color/transparent"
+            android:text="-"
+            android:textSize="24sp"
+            android:textColor="#FFF" />
+        <Button
+            android:id="@+id/btnZoomIn"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:background="@android:color/transparent"
+            android:text="+"
+            android:textSize="24sp"
+            android:textColor="#FFF" />
+    </LinearLayout>
+
+    <!-- CENTER POPUP: LAYOUTS -->
+    <LinearLayout
+        android:id="@+id/popupLayouts"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerInParent="true"
+        android:orientation="vertical"
+        android:background="@drawable/bg_pill_menu"
+        android:padding="20dp"
+        android:visibility="gone">
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="CAMERA LAYOUTS" android:textColor="#FFF" android:textStyle="bold" android:layout_gravity="center" android:layout_marginBottom="12dp"/>
+        <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal">
+            <ImageButton android:id="@+id/btnLayoutFull" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_layout_full" android:padding="12dp"/>
+            <ImageButton android:id="@+id/btnLayoutSplit" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_layout_split_l" android:padding="12dp"/>
+            <ImageButton android:id="@+id/btnLayoutCornerTL" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_layout_tl" android:padding="12dp"/>
+            <ImageButton android:id="@+id/btnLayoutCornerBR" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_layout_br" android:padding="12dp"/>
+        </LinearLayout>
+        <Button android:id="@+id/btnCloseLayouts" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@android:color/transparent" android:text="CLOSE" android:textColor="#FF5252" android:layout_marginTop="8dp"/>
+    </LinearLayout>
+
+    <!-- CENTER POPUP: OVERLAYS -->
+    <LinearLayout
+        android:id="@+id/popupOverlays"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerInParent="true"
+        android:orientation="vertical"
+        android:background="@drawable/bg_pill_menu"
+        android:padding="20dp"
+        android:visibility="gone">
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="ADD OVERLAYS" android:textColor="#FFF" android:textStyle="bold" android:layout_gravity="center" android:layout_marginBottom="12dp"/>
         
-        <activity
-            android:name=".MainActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+        <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal">
+            <ImageButton android:id="@+id/btnAddText" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_add_text" android:padding="12dp"/>
+            <ImageButton android:id="@+id/btnAddLogo" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_add_logo" android:padding="12dp"/>
+            <ImageButton android:id="@+id/btnAddWebOverlay" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_web" android:padding="12dp"/>
+            <ImageButton android:id="@+id/btnToggleScore" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_scoreboard" android:padding="12dp"/>
+        </LinearLayout>
         
-    </application>
-</manifest>
+        <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_gravity="center">
+            <ImageButton android:id="@+id/btnTextColors" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_colors" android:padding="12dp"/>
+            <!-- Stream Chat Button -->
+            <ImageButton android:id="@+id/btnToggleStreamChat" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_chat" android:padding="12dp"/>
+            <!-- New Live Text Button Added Here -->
+            <ImageButton android:id="@+id/btnLiveText" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@android:drawable/ic_menu_edit" android:padding="12dp"/>
+            <ImageButton android:id="@+id/btnRemoveSelected" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_remove" android:padding="12dp"/>
+        </LinearLayout>
+        
+        <Button android:id="@+id/btnCloseOverlays" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@android:color/transparent" android:text="CLOSE" android:textColor="#FF5252" android:layout_marginTop="8dp"/>
+    </LinearLayout>
+
+    <!-- Studio-Only Comments Panel -->
+    <LinearLayout
+        android:id="@+id/commentsPanel"
+        android:layout_width="260dp"
+        android:layout_height="180dp"
+        android:layout_alignParentBottom="true"
+        android:layout_alignParentLeft="true"
+        android:orientation="vertical"
+        android:background="#A6000000"
+        android:padding="6dp"
+        android:layout_margin="16dp"
+        android:visibility="gone">
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="LIVE CHAT" android:textColor="#03A9F4" android:textStyle="bold" android:textSize="12sp" android:layout_marginBottom="4dp" />
+        <ScrollView android:id="@+id/commentsScrollView" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
+            <TextView android:id="@+id/tvCommentsFeed" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="#FFFFFF" android:textSize="12sp" />
+        </ScrollView>
+    </LinearLayout>
+
+</RelativeLayout>
