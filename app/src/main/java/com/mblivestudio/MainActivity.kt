@@ -892,23 +892,26 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         
         var aReady = false
 
-        // FIX: previous attempt (44100 -> 32000 -> default) never used a
-        // Bluetooth-SCO-compatible sample rate. SCO audio hardware only
-        // runs at 16000Hz (wideband/mSBC, better quality, most modern
-        // buds/neckbands support it) or 8000Hz (narrowband, universal
-        // fallback). Requesting 44100/32000 while routed through SCO
-        // forces Android to resample on the fly — that mismatch is
-        // exactly what causes the "trrr/chrrr" crackling. When Bluetooth
-        // mic is active, try SCO-correct rates FIRST.
+        // REVERTED: the SCO-rate change (16000/8000Hz) was wrong — on
+        // this device, requesting those specific rates made Android's
+        // audio system silently switch input back to the phone's
+        // built-in mic, even with SCO connected. 44100Hz is what was
+        // actually keeping the route on the Bluetooth device.
+        //
+        // FIX for the crackling instead: when Bluetooth mic is active,
+        // disable echoCanceler/noiseSuppressor (false, false). These DSP
+        // effects are tuned for the phone's own mic; running them on a
+        // Bluetooth SCO's compressed, narrowband audio stream is a
+        // well-documented cause of crackling/static on many devices —
+        // the earbuds' own hardware typically already does noise
+        // handling, so stacking the phone's software effects on top of
+        // it is what was producing the "trrr/chrrr" sound.
         if (isBluetoothMicActive) {
-            try { aReady = rtmpCamera.prepareAudio(64 * 1024, 16000, false, true, true) } catch (e: Exception) {}
-            if (!aReady) {
-                try { aReady = rtmpCamera.prepareAudio(64 * 1024, 8000, false, true, true) } catch (e: Exception) {}
-            }
+            try { aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, true, false, false) } catch (e: Exception) {}
         }
 
-        // Normal phone-mic path (also used as fallback if Bluetooth rates
-        // above failed for some reason).
+        // Normal phone-mic path (also used as fallback if the Bluetooth
+        // attempt above failed for some reason).
         if (!aReady) {
             try {
                 aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, true, true, true)
