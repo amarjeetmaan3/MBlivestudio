@@ -15,6 +15,8 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Shader
 import android.graphics.Typeface
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
@@ -87,6 +89,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private var isMenuExpanded = false
     private var isBluetoothMicActive = false
     private lateinit var audioManager: AudioManager
+
+    private enum class MicRoute { PHONE, BLUETOOTH, WIRED }
+    private var detectedMicRoute = MicRoute.PHONE
+    private var bluetoothCommunicationDevice: AudioDeviceInfo? = null
+    private var audioDeviceCallback: AudioDeviceCallback? = null
 
     private val PICK_IMAGE_REQUEST = 101
     private val SIGN_IN_REQUEST = 102
@@ -217,6 +224,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val btnMicToggle: ImageButton = findViewById(R.id.btnMicToggle)
         val btnBluetoothMic: ImageButton = findViewById(R.id.btnBluetoothMic)
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        registerAudioDeviceMonitoring()
+        updateDetectedMicRoute(false)
         val btnToggleLayouts: ImageButton = findViewById(R.id.btnToggleLayouts)
         val btnToggleOverlays: ImageButton = findViewById(R.id.btnToggleOverlays)
         val btnToggleComments: ImageButton = findViewById(R.id.btnToggleComments)
@@ -317,99 +326,209 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         makeStudioPanelDraggable(commentsPanel)
     }
 
-    // --- BLUETOOTH SCO LOGIC FIX FOR ANDROID 12+ ---
+    // --- AUDIO ROUTING: PHONE / BLUETOOTH HFP-BLE / WIRED ---
     private var scoStateReceiver: android.content.BroadcastReceiver? = null
     private val scoConnectTimeoutHandler = Handler(Looper.getMainLooper())
 
-    private fun toggleBluetoothMic(button: ImageButton) {
-        if (!isBluetoothMicActive) {
-            try {
-                audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-                var routedSynchronously = false
-
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    val devices = audioManager.availableCommunicationDevices
-                    val btDevice = devices.firstOrNull {
-                        it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-                        it.type == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET ||
-                        it.type == android.media.AudioDeviceInfo.TYPE_BLE_SPEAKER
-                    }
-                    if (btDevice != null) {
-                        routedSynchronously = audioManager.setCommunicationDevice(btDevice)
-                    }
-                }
-
-                isBluetoothMicActive = true
-                button.setColorFilter(Color.parseColor("#4CAF50"))
-
-                if (routedSynchronously) {
-                    Toast.makeText(this, "Buds connected", Toast.LENGTH_SHORT).show()
-                    restartCameraForAudioChange(400)
-                } else {
-                    Toast.makeText(this, "Connecting Buds...", Toast.LENGTH_SHORT).show()
-                    val filter = android.content.IntentFilter(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED)
-                    val receiver = object : android.content.BroadcastReceiver() {
-                        override fun onReceive(context: Context?, intent: Intent?) {
-                            val state = intent?.getIntExtra(AudioManager.EXTRA_SCO_AUDIO_STATE, -1)
-                            if (state == AudioManager.SCO_AUDIO_STATE_CONNECTED) {
-                                scoConnectTimeoutHandler.removeCallbacksAndMessages(null)
-                                try { unregisterReceiver(this) } catch (e: Exception) {}
-                                scoStateReceiver = null
-                                restartCameraForAudioChange(200)
-                            } else if (state == AudioManager.SCO_AUDIO_STATE_DISCONNECTED) {
-                                scoConnectTimeoutHandler.removeCallbacksAndMessages(null)
-                                try { unregisterReceiver(this) } catch (e: Exception) {}
-                                scoStateReceiver = null
-                                isBluetoothMicActive = false
-                                button.setColorFilter(Color.WHITE)
-                                Toast.makeText(this@MainActivity, "Buds didn't connect — try again", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
-                    scoStateReceiver = receiver
-                    registerReceiver(receiver, filter)
-                    audioManager.startBluetoothSco()
-                    audioManager.isBluetoothScoOn = true
-
-                    scoConnectTimeoutHandler.postDelayed({
-                        scoStateReceiver?.let {
-                            try { unregisterReceiver(it) } catch (e: Exception) {}
-                            scoStateReceiver = null
-                            Toast.makeText(this, "Buds connection timed out — try again", Toast.LENGTH_SHORT).show()
-                            isBluetoothMicActive = false
-                            button.setColorFilter(Color.WHITE)
-                        }
-                    }, 8000)
-                }
-
-            } catch (e: Exception) {
-                Toast.makeText(this, "Error: बड्स कनेक्ट नहीं हो पाए", Toast.LENGTH_SHORT).show()
-                isBluetoothMicActive = false
-                return
+    private fun registerAudioDeviceMonitoring() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        audioDeviceCallback = object : AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+                updateDetectedMicRoute(true)
             }
-        } else {
-            scoStateReceiver?.let { try { unregisterReceiver(it) } catch (e: Exception) {} }
-            scoStateReceiver = null
-            scoConnectTimeoutHandler.removeCallbacksAndMessages(null)
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    audioManager.clearCommunicationDevice()
+
+            override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
+                val bluetoothWasRemoved = removedDevices.any { isBluetoothInputType(it.type) }
+                if (bluetoothWasRemoved && isBluetoothMicActive) {
+                    isBluetoothMicActive = false
+                    bluetoothCommunicationDevice = null
+                    clearBluetoothRoute()
+                    restartCameraForAudioChange(250)
                 }
-                audioManager.stopBluetoothSco()
-                audioManager.isBluetoothScoOn = false
-                audioManager.mode = AudioManager.MODE_NORMAL
-            } catch (e: Exception) {}
-            
-            isBluetoothMicActive = false
-            button.setColorFilter(Color.WHITE)
-            Toast.makeText(this, "वापस Phone Mic पर सेट हो गया", Toast.LENGTH_SHORT).show()
-            restartCameraForAudioChange(200)
+                updateDetectedMicRoute(true)
+            }
+        }
+        audioManager.registerAudioDeviceCallback(audioDeviceCallback, null)
+    }
+
+    private fun isBluetoothInputType(type: Int): Boolean {
+        return type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && type == AudioDeviceInfo.TYPE_BLE_HEADSET)
+    }
+
+    private fun isWiredInputType(type: Int): Boolean {
+        return type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+            type == AudioDeviceInfo.TYPE_USB_DEVICE ||
+            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && type == AudioDeviceInfo.TYPE_USB_HEADSET)
+    }
+
+    private fun getInputDevices(): List<AudioDeviceInfo> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return emptyList()
+        return try {
+            audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS).toList()
+        } catch (_: Exception) {
+            emptyList()
         }
     }
 
+    private fun findBluetoothInput(): AudioDeviceInfo? {
+        return getInputDevices().firstOrNull { isBluetoothInputType(it.type) }
+    }
+
+    private fun findWiredInput(): AudioDeviceInfo? {
+        return getInputDevices().firstOrNull { isWiredInputType(it.type) }
+    }
+
+    private fun updateDetectedMicRoute(showToast: Boolean) {
+        val route = when {
+            isBluetoothMicActive && findBluetoothInput() != null -> MicRoute.BLUETOOTH
+            findWiredInput() != null -> MicRoute.WIRED
+            else -> MicRoute.PHONE
+        }
+        val changed = route != detectedMicRoute
+        detectedMicRoute = route
+
+        if (showToast && changed && !isFinishing) {
+            val label = when (route) {
+                MicRoute.BLUETOOTH -> "Bluetooth mic detected"
+                MicRoute.WIRED -> "Wired/USB mic detected"
+                MicRoute.PHONE -> "Phone mic active"
+            }
+            Toast.makeText(this, label, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun toggleBluetoothMic(button: ImageButton) {
+        if (!isBluetoothMicActive) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 2)
+                return
+            }
+
+            val btInput = findBluetoothInput()
+            if (btInput == null) {
+                Toast.makeText(this, "Bluetooth earbuds/neckband mic not available. Connect it first.", Toast.LENGTH_LONG).show()
+                updateDetectedMicRoute(false)
+                return
+            }
+
+            if (routeBluetoothMic()) {
+                isBluetoothMicActive = true
+                bluetoothCommunicationDevice = btInput
+                detectedMicRoute = MicRoute.BLUETOOTH
+                button.setColorFilter(Color.parseColor("#4CAF50"))
+                Toast.makeText(this, "Bluetooth mic selected: ${btInput.productName}", Toast.LENGTH_SHORT).show()
+                restartCameraForAudioChange(300)
+            } else {
+                isBluetoothMicActive = false
+                bluetoothCommunicationDevice = null
+                button.clearColorFilter()
+                Toast.makeText(this, "Bluetooth mic could not be selected. Phone/Wired mic remains active.", Toast.LENGTH_LONG).show()
+            }
+        } else {
+            clearBluetoothRoute()
+            isBluetoothMicActive = false
+            bluetoothCommunicationDevice = null
+            button.clearColorFilter()
+            updateDetectedMicRoute(false)
+            val fallbackName = when {
+                findWiredInput() != null -> "Wired/USB mic"
+                else -> "Phone mic"
+            }
+            Toast.makeText(this, "Bluetooth mic off — $fallbackName selected", Toast.LENGTH_SHORT).show()
+            restartCameraForAudioChange(250)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun routeBluetoothMic(): Boolean {
+        return try {
+            audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                // setCommunicationDevice() is the supported API on Android 12+.
+                // Selecting the BT communication sink causes the matching BT input
+                // (HFP/SCO or supported BLE headset input) to be used by communication audio.
+                val communicationDevice = audioManager.availableCommunicationDevices.firstOrNull {
+                    isBluetoothInputType(it.type)
+                } ?: return false
+
+                val accepted = audioManager.setCommunicationDevice(communicationDevice)
+                if (!accepted) return false
+
+                // Give Android a short moment to publish the corresponding input route.
+                Handler(Looper.getMainLooper()).postDelayed({ updateDetectedMicRoute(false) }, 150)
+                true
+            } else {
+                if (!audioManager.isBluetoothScoAvailableOffCall) return false
+                val filter = android.content.IntentFilter(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED)
+                val receiver = object : android.content.BroadcastReceiver() {
+                    override fun onReceive(context: Context?, intent: Intent?) {
+                        val state = intent?.getIntExtra(AudioManager.EXTRA_SCO_AUDIO_STATE, -1)
+                        when (state) {
+                            AudioManager.SCO_AUDIO_STATE_CONNECTED -> {
+                                scoConnectTimeoutHandler.removeCallbacksAndMessages(null)
+                                try { unregisterReceiver(this) } catch (_: Exception) {}
+                                scoStateReceiver = null
+                                restartCameraForAudioChange(150)
+                            }
+                            AudioManager.SCO_AUDIO_STATE_DISCONNECTED -> {
+                                scoConnectTimeoutHandler.removeCallbacksAndMessages(null)
+                                try { unregisterReceiver(this) } catch (_: Exception) {}
+                                scoStateReceiver = null
+                                isBluetoothMicActive = false
+                                bluetoothCommunicationDevice = null
+                                Toast.makeText(this@MainActivity, "Bluetooth mic disconnected.", Toast.LENGTH_SHORT).show()
+                                updateDetectedMicRoute(false)
+                            }
+                        }
+                    }
+                }
+                scoStateReceiver = receiver
+                registerReceiver(receiver, filter)
+                audioManager.startBluetoothSco()
+                audioManager.isBluetoothScoOn = true
+
+                scoConnectTimeoutHandler.postDelayed({
+                    scoStateReceiver?.let {
+                        try { unregisterReceiver(it) } catch (_: Exception) {}
+                        scoStateReceiver = null
+                        isBluetoothMicActive = false
+                        bluetoothCommunicationDevice = null
+                        try { audioManager.stopBluetoothSco() } catch (_: Exception) {}
+                        try { audioManager.isBluetoothScoOn = false } catch (_: Exception) {}
+                        try { audioManager.mode = AudioManager.MODE_NORMAL } catch (_: Exception) {}
+                        updateDetectedMicRoute(false)
+                        Toast.makeText(this, "Bluetooth mic connection timed out.", Toast.LENGTH_LONG).show()
+                    }
+                }, 8000)
+                true
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun clearBluetoothRoute() {
+        scoStateReceiver?.let { try { unregisterReceiver(it) } catch (_: Exception) {} }
+        scoStateReceiver = null
+        scoConnectTimeoutHandler.removeCallbacksAndMessages(null)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                audioManager.clearCommunicationDevice()
+            } else {
+                audioManager.stopBluetoothSco()
+                audioManager.isBluetoothScoOn = false
+            }
+            audioManager.mode = AudioManager.MODE_NORMAL
+        } catch (_: Exception) {}
+    }
+
     private fun restartCameraForAudioChange(delayMs: Long) {
-        if (!rtmpCamera.isOnPreview) return
-        try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+        if (!rtmpCamera.isOnPreview || rtmpCamera.isStreaming) return
+        try { rtmpCamera.stopPreview() } catch (_: Exception) {}
         Handler(Looper.getMainLooper()).postDelayed({ tryStartCameraPreview() }, delayMs)
     }
 
@@ -877,26 +996,36 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         
         var aReady = false
 
-        // FIX FOR "TICK TICK" / "TRRR TRRR" ROBOTIC SOUND: 
-        // Bluetooth SCO audio is strictly MONO (1 channel). 
-        // Forcing Stereo (true) on Bluetooth causes severe buffer mismatch -> "trrr trrr" sound.
-        // We MUST use Mono (false) and disable hardware DSP (false, false) for Bluetooth.
+        // RootEncoder's RtmpCamera2 creates its own AudioRecord internally.
+        // Keep the capture pipeline mono for speech and use stable, library-supported
+        // sample rates. Bluetooth HFP/SCO is treated separately because its microphone
+        // transport is normally narrowband/wideband communication audio.
         if (isBluetoothMicActive) {
-            try { aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, false, false, false) } catch (e: Exception) {}
-            // Fallback to 32kHz Mono if 44.1kHz is rejected by the OS
+            // Bluetooth HFP: 16 kHz mono is the safest voice configuration.
+            try { aReady = rtmpCamera.prepareAudio(64 * 1024, 16000, false, false, false) } catch (_: Exception) {}
             if (!aReady) {
-                try { aReady = rtmpCamera.prepareAudio(64 * 1024, 32000, false, false, false) } catch (e: Exception) {}
+                try { aReady = rtmpCamera.prepareAudio(64 * 1024, 32000, false, false, false) } catch (_: Exception) {}
+            }
+            if (!aReady) {
+                try { aReady = rtmpCamera.prepareAudio(64 * 1024, 44100, false, false, false) } catch (_: Exception) {}
             }
         } else {
-            // Normal phone-mic path (Stereo, with AEC/NS enabled)
-            try { aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, true, true, true) } catch (e: Exception) {}
+            // Phone mic: mono voice capture with AEC + noise suppression.
+            // Wired/USB mic: mono voice capture with noise suppression only;
+            // AEC is normally unnecessary because a headset mic is physically
+            // separated from the phone speaker.
+            val useEchoCanceler = detectedMicRoute == MicRoute.PHONE
+            try { aReady = rtmpCamera.prepareAudio(64 * 1024, 44100, false, useEchoCanceler, true) } catch (_: Exception) {}
             if (!aReady) {
-                try { aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, false, false, false) } catch (e: Exception) {}
+                try { aReady = rtmpCamera.prepareAudio(64 * 1024, 32000, false, useEchoCanceler, true) } catch (_: Exception) {}
+            }
+            if (!aReady) {
+                try { aReady = rtmpCamera.prepareAudio(64 * 1024, 44100, false, false, false) } catch (_: Exception) {}
             }
         }
 
         if (!aReady) {
-            try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { }
+            try { aReady = rtmpCamera.prepareAudio() } catch (_: Exception) {}
         }
 
         if (isSuccess && aReady) { 
@@ -933,17 +1062,15 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         scoStateReceiver?.let { try { unregisterReceiver(it) } catch (e: Exception) {} }
         scoStateReceiver = null
         
-        // Bluetooth Safety Cleanup
+        // Audio routing cleanup
+        try { clearBluetoothRoute() } catch (_: Exception) {}
         try {
-            if (isBluetoothMicActive) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    audioManager.clearCommunicationDevice()
-                }
-                audioManager.stopBluetoothSco()
-                audioManager.isBluetoothScoOn = false
-                audioManager.mode = AudioManager.MODE_NORMAL
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                audioDeviceCallback?.let { audioManager.unregisterAudioDeviceCallback(it) }
             }
-        } catch (e: Exception) {}
+        } catch (_: Exception) {}
+        audioDeviceCallback = null
+        isBluetoothMicActive = false
 
         try { if (rtmpCamera.isStreaming) rtmpCamera.stopStream() } catch (e: Exception) {}
         try { if (rtmpCamera.isOnPreview) rtmpCamera.stopPreview() } catch (e: Exception) {}
