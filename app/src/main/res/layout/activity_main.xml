@@ -114,7 +114,6 @@
             android:paddingVertical="4dp"
             android:visibility="gone" />
 
-        <!-- VIEWER COUNT -->
         <TextView
             android:id="@+id/tvViewerCount"
             android:layout_width="wrap_content"
@@ -129,7 +128,6 @@
             android:paddingVertical="4dp"
             android:visibility="gone" />
 
-        <!-- API QUOTA TRACKER -->
         <TextView
             android:id="@+id/tvApiQuota"
             android:layout_width="wrap_content"
@@ -145,7 +143,6 @@
 
         <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
 
-        <!-- STREAM MANAGER BUTTON -->
         <Button
             android:id="@+id/btnStreamsManager"
             android:layout_width="wrap_content"
@@ -166,7 +163,6 @@
             android:textStyle="bold" />
     </LinearLayout>
 
-    <!-- RIGHT SIDE YOUTUBE STYLE MENU -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -183,7 +179,6 @@
             android:visibility="gone"
             android:gravity="end"
             android:layout_marginEnd="12dp">
-            
             <TextView android:layout_width="wrap_content" android:layout_height="52dp" android:gravity="center_vertical|end" android:text="Flip" android:textColor="#FFFFFF" android:textSize="16sp" android:textStyle="bold" android:shadowColor="#000000" android:shadowRadius="4" />
             <TextView android:layout_width="wrap_content" android:layout_height="52dp" android:gravity="center_vertical|end" android:text="Bluetooth" android:textColor="#FFFFFF" android:textSize="16sp" android:textStyle="bold" android:shadowColor="#000000" android:shadowRadius="4" />
             <TextView android:layout_width="wrap_content" android:layout_height="52dp" android:gravity="center_vertical|end" android:text="Mute" android:textColor="#FFFFFF" android:textSize="16sp" android:textStyle="bold" android:shadowColor="#000000" android:shadowRadius="4" />
@@ -210,7 +205,6 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- Horizontal Zoom Pill -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -264,9 +258,11 @@
         </LinearLayout>
         
         <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_gravity="center">
-            <ImageButton android:id="@+id/btnTextColors" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_colors" android:padding="12dp"/>
-            <!-- Lower Third Button -->
+            <!-- Ticker Button -->
             <ImageButton android:id="@+id/btnAddLowerThird" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@android:drawable/ic_menu_sort_alphabetically" android:padding="12dp"/>
+            <!-- Stream Chat Button -->
+            <ImageButton android:id="@+id/btnToggleStreamChat" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_chat" android:padding="12dp"/>
+            <!-- Live Text Button -->
             <ImageButton android:id="@+id/btnLiveText" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@android:drawable/ic_menu_edit" android:padding="12dp"/>
             <ImageButton android:id="@+id/btnRemoveSelected" android:layout_width="56dp" android:layout_height="56dp" android:background="@android:color/transparent" android:src="@drawable/ic_remove" android:padding="12dp"/>
         </LinearLayout>
