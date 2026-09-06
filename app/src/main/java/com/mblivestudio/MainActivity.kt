@@ -89,7 +89,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private lateinit var tvCommentsFeed: TextView
     private lateinit var commentsScrollView: ScrollView
     private lateinit var tvStreamChatOverlay: TextView
-    private lateinit var switchChatSync: Switch // ADDED CHAT SYNC TOGGLE
+    private lateinit var switchChatSync: Switch
 
     private lateinit var btnOverlayMenu: ImageButton
     private lateinit var btnOverlayDone: Button
@@ -129,7 +129,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private var streamWidth = 1920
     private var streamHeight = 1080
     private var streamBitrate = 5_000_000
-    private var lastAppliedZoomFactor = 1f
 
     private var pendingTitle: String = ""
     private var pendingDesc: String = ""
@@ -173,12 +172,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // FIX 2: WEB OVERLAY CONTINUOUS SYNC HANDLER
     private val webSyncHandler = Handler(Looper.getMainLooper())
     private val webSyncRunnable = object : Runnable {
         override fun run() {
-            updateSnapshot(100) // Snapshots webview to push to stream
-            webSyncHandler.postDelayed(this, 1000) // Every 1 second
+            updateSnapshot(100)
+            webSyncHandler.postDelayed(this, 1000)
         }
     }
 
@@ -188,7 +186,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         System.setProperty("java.net.preferIPv6Addresses", "false")
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
+    @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -213,7 +211,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         tvCommentsFeed = findViewById(R.id.tvCommentsFeed)
         commentsScrollView = findViewById(R.id.commentsScrollView)
         tvStreamChatOverlay = findViewById(R.id.tvStreamChatOverlay)
-        switchChatSync = findViewById(R.id.switchChatSync) // INIT TOGGLE
+        switchChatSync = findViewById(R.id.switchChatSync)
         
         btnOverlayMenu = findViewById(R.id.btnOverlayMenu)
         btnOverlayDone = findViewById(R.id.btnOverlayDone)
@@ -280,6 +278,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         registerAudioDeviceMonitoring()
         updateDetectedMicRoute(false)
+        
         val btnToggleLayouts: ImageButton = findViewById(R.id.btnToggleLayouts)
         val btnToggleOverlays: ImageButton = findViewById(R.id.btnToggleOverlays)
         val btnToggleComments: ImageButton = findViewById(R.id.btnToggleComments)
@@ -300,7 +299,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
 
         btnLiveText.setOnClickListener { popupOverlays.visibility = View.GONE; addLiveTextOverlay() }
-        
         findViewById<ImageButton>(R.id.btnAddLowerThird).setOnClickListener { popupOverlays.visibility = View.GONE; showAddLowerThirdDialog() }
 
         btnMicToggle.setColorFilter(Color.parseColor("#4CAF50"))
@@ -345,7 +343,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                         tickerHandler.removeCallbacks(tickerRunnable)
                     }
                     if (it.tag == "WEB_OVERLAY") {
-                        webSyncHandler.removeCallbacks(webSyncRunnable) // Stop web sync loop
+                        webSyncHandler.removeCallbacks(webSyncRunnable)
                     }
                     overlayContainer.removeView(it)
                     selectedOverlay = null
@@ -355,8 +353,18 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             } 
         }
 
-        findViewById<Button>(R.id.btnZoomIn).setOnClickListener { val targetZoom = (lastAppliedZoomFactor + 0.2f).coerceIn(1f, 5f); if (targetZoom != lastAppliedZoomFactor) { val delta = targetZoom / lastAppliedZoomFactor; lastAppliedZoomFactor = targetZoom; sendSyntheticZoomEvent(MotionEvent.ACTION_MOVE, 300f, delta) } }
-        findViewById<Button>(R.id.btnZoomOut).setOnClickListener { val targetZoom = (lastAppliedZoomFactor - 0.2f).coerceIn(1f, 5f); if (targetZoom != lastAppliedZoomFactor) { val delta = targetZoom / lastAppliedZoomFactor; lastAppliedZoomFactor = targetZoom; sendSyntheticZoomEvent(MotionEvent.ACTION_MOVE, 300f, delta) } }
+        // SMOOTH ZOOM IMPLEMENTATION
+        findViewById<Button>(R.id.btnZoomIn).setOnClickListener { performSmoothZoom(true) }
+        findViewById<Button>(R.id.btnZoomOut).setOnClickListener { performSmoothZoom(false) }
+
+        openGlView.setOnTouchListener { _, event ->
+            if (event.pointerCount > 1) {
+                try { rtmpCamera.setZoom(event) } catch (e: Exception) {}
+                true
+            } else {
+                false
+            }
+        }
 
         rtmpCamera = RtmpCamera2(openGlView, this)
         openGlView.holder.addCallback(this)
@@ -714,13 +722,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 val finalUrl = if (!url.startsWith("http")) "https://$url" else url
                 val displayMetrics = resources.displayMetrics; val boxWidth = (displayMetrics.widthPixels * 0.85).toInt(); val boxHeight = (displayMetrics.heightPixels * 0.85).toInt()
                 val webView = WebView(this).apply {
-                    tag = "WEB_OVERLAY" // FIX 2: Tag for WebSync
+                    tag = "WEB_OVERLAY"
                     layoutParams = RelativeLayout.LayoutParams(boxWidth, boxHeight).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) }
                     setBackgroundColor(Color.TRANSPARENT); setLayerType(View.LAYER_TYPE_SOFTWARE, null); settings.javaScriptEnabled = true; settings.domStorageEnabled = true; settings.useWideViewPort = true; settings.loadWithOverviewMode = true; webViewClient = WebViewClient(); webChromeClient = WebChromeClient(); loadUrl(finalUrl)
                 }
                 overlayContainer.addView(webView); makeDraggableAndScalable(webView); selectedOverlay = webView; updateOverlayMenuButtonPosition(); 
                 
-                webSyncHandler.post(webSyncRunnable) // FIX 2: Start auto-syncing the webview
+                webSyncHandler.post(webSyncRunnable)
                 
                 overlayHandler.postDelayed({ updateSnapshot() }, 2000)
             }
@@ -850,9 +858,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private fun pollChatOnce() {
         if (!chatPollingActive) return
         
-        // FIX 3: CHECK CHAT SYNC TOGGLE STATE
         if (!switchChatSync.isChecked) {
-            chatHandler.postDelayed({ pollChatOnce() }, 5000L) // Wait 5s and check toggle again without API call
+            chatHandler.postDelayed({ pollChatOnce() }, 5000L)
             return
         }
 
@@ -1066,5 +1073,27 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onConnectionStarted(url: String) {}
     override fun onNewBitrate(bitrate: Long) {}
     private fun applyCameraLayout(rect: FloatArray) { cameraLayoutFilter.setRect(rect[0], rect[1], rect[2], rect[3]); cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f) }
-    private fun sendSyntheticZoomEvent(action: Int, pointerDistance: Float, delta: Float) { val now = android.os.SystemClock.uptimeMillis(); val props = arrayOf(MotionEvent.PointerProperties(), MotionEvent.PointerProperties()); props[0].id = 0; props[1].id = 1; val coords = arrayOf(MotionEvent.PointerCoords(), MotionEvent.PointerCoords()); coords[0].x = 0f; coords[0].y = 0f; coords[1].x = pointerDistance; coords[1].y = 0f; val event = MotionEvent.obtain(now, now, action, 2, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0); try { rtmpCamera.setZoom(event, delta) } catch (e: Exception) {}; event.recycle() }
+
+    private var currentZoomDistance = 100f
+
+    private fun performSmoothZoom(zoomIn: Boolean) {
+        val now = android.os.SystemClock.uptimeMillis()
+        val props = arrayOf(MotionEvent.PointerProperties(), MotionEvent.PointerProperties())
+        props[0].id = 0; props[1].id = 1
+        val coords = arrayOf(MotionEvent.PointerCoords(), MotionEvent.PointerCoords())
+        coords[0].x = 0f; coords[0].y = 0f
+        
+        coords[1].x = currentZoomDistance; coords[1].y = 0f
+        var event = MotionEvent.obtain(now, now, MotionEvent.ACTION_MOVE, 2, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
+        try { rtmpCamera.setZoom(event) } catch (e: Exception) {}
+        event.recycle()
+
+        if (zoomIn) currentZoomDistance += 15f else currentZoomDistance -= 15f
+        if (currentZoomDistance < 100f) currentZoomDistance = 100f
+
+        coords[1].x = currentZoomDistance
+        event = MotionEvent.obtain(now, now, MotionEvent.ACTION_MOVE, 2, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
+        try { rtmpCamera.setZoom(event) } catch (e: Exception) {}
+        event.recycle()
+    }
 }
