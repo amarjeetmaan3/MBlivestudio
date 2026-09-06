@@ -190,13 +190,19 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         System.setProperty("java.net.preferIPv6Addresses", "false")
     }
 
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Ensure that snapshot triggers correctly if screen resizes
+        updateSnapshot()
+    }
+
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         
-        // Force Landscape by default to prevent rotation bugs on startup
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE
+        // FIX: Start firmly locked in Landscape mode, ignoring sensors
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         
         setContentView(R.layout.activity_main)
 
@@ -329,9 +335,20 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val btnLiveText: ImageButton = findViewById(R.id.btnLiveText)
         btnLiveText.setOnClickListener { popupSettings.visibility = View.GONE; addLiveTextOverlay() }
         
+        // FIX: Robust Delete logic to catch empty text boxes and hide keyboards
         findViewById<ImageButton>(R.id.btnRemoveSelected).setOnClickListener { 
             popupSettings.visibility = View.GONE
-            selectedOverlay?.let { 
+            
+            var target = selectedOverlay
+            if (target == null) {
+                // In case user tapped keyboard without selecting overlay
+                val focusView = currentFocus
+                if (focusView is EditText && focusView.parent == overlayContainer) {
+                    target = focusView
+                }
+            }
+
+            target?.let { 
                 if (it != dragScoreboard) { 
                     if (it.tag == "LOWER_THIRD") {
                         tickerHandler.removeCallbacks(tickerRunnable)
@@ -339,8 +356,17 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     if (it.tag == "WEB_OVERLAY") {
                         webSyncHandler.removeCallbacks(webSyncRunnable)
                     }
+                    
+                    // Force Hide Keyboard & Clear Focus
+                    if (it is EditText) {
+                        it.clearFocus()
+                        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                        imm.hideSoftInputFromWindow(it.windowToken, 0)
+                    }
+
                     overlayContainer.removeView(it)
-                    selectedOverlay = null
+                    if (selectedOverlay == it) selectedOverlay = null
+                    
                     updateOverlayMenuButtonPosition()
                     updateSnapshot() 
                 } 
@@ -370,34 +396,38 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             toggleBluetoothMic(btnBluetoothMic)
         }
 
-        // FIX 1: ORIENTATION BUG (FORCE LOCK SCREEN ORIENTATION)
+        // FIX: Absolute Lock for Orientation Toggle
         btnOrientation.setOnClickListener {
             if (rtmpCamera.isStreaming) {
                 Toast.makeText(this, "Stop stream to change orientation", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
+            
+            // Swap stream dimensions
             val temp = streamWidth
             streamWidth = streamHeight
             streamHeight = temp
 
-            if (streamWidth > streamHeight) {
-                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE
-                Toast.makeText(this, "Landscape Mode Forced", Toast.LENGTH_SHORT).show()
-            } else {
-                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT
-                Toast.makeText(this, "Portrait Mode Forced", Toast.LENGTH_SHORT).show()
-            }
-
+            // Stop preview safely before screen resize
             if (rtmpCamera.isOnPreview) {
                 rtmpCamera.stopPreview()
-                tryStartCameraPreview()
             }
+            surfaceReady = false
+
+            // Completely LOCK the screen to current selection
+            if (streamWidth > streamHeight) {
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                Toast.makeText(this, "Landscape Mode Locked", Toast.LENGTH_SHORT).show()
+            } else {
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                Toast.makeText(this, "Portrait Mode Locked", Toast.LENGTH_SHORT).show()
+            }
+            // The camera will naturally restart inside surfaceChanged() once Android rotates the UI
         }
 
         findViewById<Button>(R.id.btnZoomIn).setOnClickListener { performSmoothZoom(true) }
         findViewById<Button>(R.id.btnZoomOut).setOnClickListener { performSmoothZoom(false) }
 
-        // CAMERA VIEW TOUCH LISTENER (Handles Zoom & FIX 2: Live Text Focus Clearing)
         openGlView.setOnTouchListener { _, event ->
             if (event.action == MotionEvent.ACTION_DOWN) {
                 currentFocus?.clearFocus()
@@ -742,7 +772,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         dialog.show()
     }
 
-    // FIX 2: LIVE TEXT AUTO-DESTROY ON FOCUS LOST IF EMPTY
     private fun addLiveTextOverlay() {
         val liveEditText = EditText(this).apply {
             hint = "Start typing..."
@@ -757,7 +786,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) 
             }
             
-            // Clean up when clicked away
             setOnFocusChangeListener { _, hasFocus ->
                 if (!hasFocus && text.toString().trim().isEmpty()) {
                     overlayContainer.removeView(this)
@@ -775,13 +803,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 override fun afterTextChanged(s: Editable?) {} 
             })
         }
-        
         overlayContainer.addView(liveEditText)
         makeDraggableAndScalable(liveEditText)
         selectedOverlay = liveEditText
         updateOverlayMenuButtonPosition()
         updateSnapshot()
-        
         liveEditText.requestFocus()
         (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(liveEditText, InputMethodManager.SHOW_IMPLICIT)
     }
