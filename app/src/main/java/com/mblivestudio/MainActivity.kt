@@ -89,6 +89,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private lateinit var tvCommentsFeed: TextView
     private lateinit var commentsScrollView: ScrollView
     private lateinit var tvStreamChatOverlay: TextView
+    private lateinit var switchChatSync: Switch // ADDED CHAT SYNC TOGGLE
 
     private lateinit var btnOverlayMenu: ImageButton
     private lateinit var btnOverlayDone: Button
@@ -164,12 +165,20 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // FIX 1: LOWER THIRD CONTINUOUS TICKER HANDLER
     private val tickerHandler = Handler(Looper.getMainLooper())
     private val tickerRunnable = object : Runnable {
         override fun run() {
-            updateSnapshot(50) // Faster refresh for smooth ticker animation
+            updateSnapshot(50) 
             tickerHandler.postDelayed(this, 100)
+        }
+    }
+
+    // FIX 2: WEB OVERLAY CONTINUOUS SYNC HANDLER
+    private val webSyncHandler = Handler(Looper.getMainLooper())
+    private val webSyncRunnable = object : Runnable {
+        override fun run() {
+            updateSnapshot(100) // Snapshots webview to push to stream
+            webSyncHandler.postDelayed(this, 1000) // Every 1 second
         }
     }
 
@@ -204,11 +213,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         tvCommentsFeed = findViewById(R.id.tvCommentsFeed)
         commentsScrollView = findViewById(R.id.commentsScrollView)
         tvStreamChatOverlay = findViewById(R.id.tvStreamChatOverlay)
+        switchChatSync = findViewById(R.id.switchChatSync) // INIT TOGGLE
         
         btnOverlayMenu = findViewById(R.id.btnOverlayMenu)
         btnOverlayDone = findViewById(R.id.btnOverlayDone)
 
-        // FIX 2: COLOR PICKER MOVED TO ⋮ MENU
         btnOverlayMenu.setOnClickListener {
             val target = selectedOverlay ?: return@setOnClickListener
             val popup = PopupMenu(this, btnOverlayMenu)
@@ -333,7 +342,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             selectedOverlay?.let { 
                 if (it != dragScoreboard) { 
                     if (it.tag == "LOWER_THIRD") {
-                        tickerHandler.removeCallbacks(tickerRunnable) // Stop loop
+                        tickerHandler.removeCallbacks(tickerRunnable)
+                    }
+                    if (it.tag == "WEB_OVERLAY") {
+                        webSyncHandler.removeCallbacks(webSyncRunnable) // Stop web sync loop
                     }
                     overlayContainer.removeView(it)
                     selectedOverlay = null
@@ -614,7 +626,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 makeDraggableAndScalable(wrapper)
                 selectedOverlay = wrapper
                 
-                // FIX 1: Start animating the ticker
                 tickerHandler.post(tickerRunnable)
                 
                 updateOverlayMenuButtonPosition()
@@ -622,7 +633,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }.setNegativeButton("Cancel", null).show()
     }
 
-    // FIX 3: DYNAMIC COLOR PICKER (Checks if Lower Third or Normal Text)
     private fun showCustomColorPickerDialog() {
         val target = selectedOverlay ?: run { Toast.makeText(this, "Select a text/overlay first.", Toast.LENGTH_SHORT).show(); return }
         val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(40,20,40,20) }
@@ -704,10 +714,15 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 val finalUrl = if (!url.startsWith("http")) "https://$url" else url
                 val displayMetrics = resources.displayMetrics; val boxWidth = (displayMetrics.widthPixels * 0.85).toInt(); val boxHeight = (displayMetrics.heightPixels * 0.85).toInt()
                 val webView = WebView(this).apply {
+                    tag = "WEB_OVERLAY" // FIX 2: Tag for WebSync
                     layoutParams = RelativeLayout.LayoutParams(boxWidth, boxHeight).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) }
                     setBackgroundColor(Color.TRANSPARENT); setLayerType(View.LAYER_TYPE_SOFTWARE, null); settings.javaScriptEnabled = true; settings.domStorageEnabled = true; settings.useWideViewPort = true; settings.loadWithOverviewMode = true; webViewClient = WebViewClient(); webChromeClient = WebChromeClient(); loadUrl(finalUrl)
                 }
-                overlayContainer.addView(webView); makeDraggableAndScalable(webView); selectedOverlay = webView; updateOverlayMenuButtonPosition(); overlayHandler.postDelayed({ updateSnapshot() }, 2000)
+                overlayContainer.addView(webView); makeDraggableAndScalable(webView); selectedOverlay = webView; updateOverlayMenuButtonPosition(); 
+                
+                webSyncHandler.post(webSyncRunnable) // FIX 2: Start auto-syncing the webview
+                
+                overlayHandler.postDelayed({ updateSnapshot() }, 2000)
             }
         }.setNegativeButton("Cancel", null).show()
     }
@@ -761,7 +776,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val btnStart = Button(this).apply { text = "▶ START CAMERA"; setBackgroundColor(Color.parseColor("#4CAF50")); setTextColor(Color.WHITE); layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin=40 } }
         container.addView(btnCopy); container.addView(btnShare); container.addView(btnStart)
 
-        // FIX: Added ScrollView here so the dialog can scroll on smaller screens
         val scrollContainer = ScrollView(this).apply { addView(container) }
         val dialog = AlertDialog.Builder(this).setTitle(title).setView(scrollContainer).setNegativeButton("SAVE FOR LATER", null).create()
         
@@ -778,7 +792,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     private fun showGoLiveDialog() {
-        pendingScheduleTimeMs = 0L // Reset
+        pendingScheduleTimeMs = 0L 
         val padding = (16 * resources.displayMetrics.density).toInt()
         val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(padding, padding, padding, padding) }
         val etTitle = EditText(this).apply { hint = "Broadcast Title"; setText(pendingTitle) }
@@ -835,6 +849,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     private fun pollChatOnce() {
         if (!chatPollingActive) return
+        
+        // FIX 3: CHECK CHAT SYNC TOGGLE STATE
+        if (!switchChatSync.isChecked) {
+            chatHandler.postDelayed({ pollChatOnce() }, 5000L) // Wait 5s and check toggle again without API call
+            return
+        }
+
         val chatId = currentLiveChatId ?: return
         val youtube = youtubeClient ?: return
         Thread {
@@ -1030,6 +1051,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         super.onDestroy()
         overlayHandler.removeCallbacksAndMessages(null); chatHandler.removeCallbacksAndMessages(null); timerHandler.removeCallbacksAndMessages(null); scoConnectTimeoutHandler.removeCallbacksAndMessages(null)
         tickerHandler.removeCallbacksAndMessages(null)
+        webSyncHandler.removeCallbacksAndMessages(null)
         scoStateReceiver?.let { try { unregisterReceiver(it) } catch (e: Exception) {} }; scoStateReceiver = null
         try { clearBluetoothRoute() } catch (_: Exception) {}
         try { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) { audioDeviceCallback?.let { audioManager.unregisterAudioDeviceCallback(it) } } } catch (_: Exception) {}
