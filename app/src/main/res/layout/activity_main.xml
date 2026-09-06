@@ -85,46 +85,6 @@
         android:textSize="12sp"
         android:visibility="gone" />
 
-    <!-- TOP-CENTER QUICK ACTIONS (Camera, Mic, Bluetooth) -->
-    <LinearLayout
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_alignParentTop="true"
-        android:layout_centerHorizontal="true"
-        android:layout_marginTop="16dp"
-        android:orientation="horizontal"
-        android:background="@drawable/bg_pill_menu"
-        android:paddingHorizontal="8dp"
-        android:paddingVertical="4dp">
-
-        <ImageButton
-            android:id="@+id/btnSwitchCamera"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:background="@android:color/transparent"
-            android:src="@drawable/ic_camera_flip"
-            android:scaleType="centerInside"
-            android:padding="12dp" />
-
-        <ImageButton
-            android:id="@+id/btnMicToggle"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:background="@android:color/transparent"
-            android:src="@drawable/ic_mic_on"
-            android:scaleType="centerInside"
-            android:padding="12dp" />
-
-        <ImageButton
-            android:id="@+id/btnBluetoothMic"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:background="@android:color/transparent"
-            android:src="@drawable/ic_bluetooth"
-            android:scaleType="centerInside"
-            android:padding="12dp" />
-    </LinearLayout>
-
     <!-- Top Bar -->
     <LinearLayout
         android:layout_width="match_parent"
@@ -203,6 +163,55 @@
             android:textStyle="bold" />
     </LinearLayout>
 
+    <!-- LEFT SIDE QUICK ACTIONS (Camera, Mic, Bluetooth, Orientation) -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentLeft="true"
+        android:layout_centerVertical="true"
+        android:layout_marginStart="16dp"
+        android:orientation="vertical"
+        android:background="@drawable/bg_pill_menu"
+        android:paddingVertical="8dp">
+
+        <ImageButton
+            android:id="@+id/btnSwitchCamera"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:background="@android:color/transparent"
+            android:src="@drawable/ic_camera_flip"
+            android:scaleType="centerInside"
+            android:padding="14dp" />
+
+        <ImageButton
+            android:id="@+id/btnMicToggle"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:background="@android:color/transparent"
+            android:src="@drawable/ic_mic_on"
+            android:scaleType="centerInside"
+            android:padding="14dp" />
+
+        <ImageButton
+            android:id="@+id/btnBluetoothMic"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:background="@android:color/transparent"
+            android:src="@drawable/ic_bluetooth"
+            android:scaleType="centerInside"
+            android:padding="14dp" />
+            
+        <ImageButton
+            android:id="@+id/btnOrientation"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:background="@android:color/transparent"
+            android:src="@android:drawable/ic_menu_always_landscape_portrait"
+            android:scaleType="centerInside"
+            android:padding="14dp" />
+    </LinearLayout>
+
+    <!-- RIGHT SIDE YOUTUBE STYLE MENU (Labels and Toggle Removed) -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -210,20 +219,6 @@
         android:layout_centerVertical="true"
         android:orientation="horizontal"
         android:layout_marginEnd="16dp">
-
-        <LinearLayout
-            android:id="@+id/menuLabelsContainer"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:visibility="gone"
-            android:gravity="end"
-            android:layout_marginEnd="12dp">
-            <TextView android:layout_width="wrap_content" android:layout_height="52dp" android:gravity="center_vertical|end" android:text="Layouts" android:textColor="#FFFFFF" android:textSize="16sp" android:textStyle="bold" android:shadowColor="#000000" android:shadowRadius="4" />
-            <TextView android:layout_width="wrap_content" android:layout_height="52dp" android:gravity="center_vertical|end" android:text="Overlays" android:textColor="#FFFFFF" android:textSize="16sp" android:textStyle="bold" android:shadowColor="#000000" android:shadowRadius="4" />
-            <TextView android:layout_width="wrap_content" android:layout_height="52dp" android:gravity="center_vertical|end" android:text="Chat Studio" android:textColor="#FFFFFF" android:textSize="16sp" android:textStyle="bold" android:shadowColor="#000000" android:shadowRadius="4" />
-            <TextView android:id="@+id/tvMenuToggle" android:layout_width="wrap_content" android:layout_height="52dp" android:gravity="center_vertical|end" android:text="Close" android:textColor="#FFFFFF" android:textSize="16sp" android:textStyle="bold" android:shadowColor="#000000" android:shadowRadius="4" />
-        </LinearLayout>
 
         <LinearLayout
             android:layout_width="wrap_content"
@@ -235,10 +230,10 @@
             <ImageButton android:id="@+id/btnToggleLayouts" android:layout_width="52dp" android:layout_height="52dp" android:background="@android:color/transparent" android:src="@drawable/ic_layout_full" android:scaleType="centerInside" android:padding="14dp" />
             <ImageButton android:id="@+id/btnToggleOverlays" android:layout_width="52dp" android:layout_height="52dp" android:background="@android:color/transparent" android:src="@drawable/ic_add_text" android:scaleType="centerInside" android:padding="14dp" />
             <ImageButton android:id="@+id/btnToggleComments" android:layout_width="52dp" android:layout_height="52dp" android:background="@android:color/transparent" android:src="@drawable/ic_chat" android:scaleType="centerInside" android:padding="14dp" />
-            <ImageButton android:id="@+id/btnToggleMenu" android:layout_width="52dp" android:layout_height="52dp" android:background="@android:color/transparent" android:src="@drawable/ic_arrow_down" android:scaleType="centerInside" android:padding="16dp" />
         </LinearLayout>
     </LinearLayout>
 
+    <!-- Horizontal Zoom Pill -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
