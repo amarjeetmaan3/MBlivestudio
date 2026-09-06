@@ -1,20 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     
+    <!-- Internet & Network -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Camera & Audio Recording -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    
+    <!-- CRITICAL FIX: Required to shift audio from Phone Mic to Bluetooth Mic -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!-- Bluetooth permissions for older Android versions (Android 11 and below) -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    
+    <!-- Bluetooth permission for new Android versions (Android 12+) -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     
     <application
         android:allowBackup="true"
         android:icon="@drawable/app_logo"
         android:roundIcon="@drawable/app_logo"
-        android:label="MB Live Studio"
+        android:label="M.B. Live Studio"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         
+        <!-- configChanges ensures the stream does NOT stop when auto-rotating the phone -->
         <activity
             android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
