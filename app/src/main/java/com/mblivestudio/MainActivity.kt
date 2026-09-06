@@ -1,1219 +1,751 @@
-package com.mblivestudio
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>MB Live Studio - Controller</title>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy-deep:#050c18; --navy:#0a1628; --navy-2:#0f2140; --navy-3:#16304f;
+    --gold:#d4af37; --gold-2:#f2d878; --crimson:#b91c1c; --crimson-2:#e13939;
+    --ink:#f5f5f0; --muted:#8fa3bf; --line:#1c3352;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Rajdhani', Arial, sans-serif; }
+  html, body { height: 100dvh; background: var(--navy-deep); color: var(--ink); overflow: hidden; display: flex; flex-direction: column; }
 
-import android.Manifest
-import android.annotation.SuppressLint
-import android.app.Activity
-import android.app.AlertDialog
-import android.app.DatePickerDialog
-import android.app.TimePickerDialog
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
-import android.content.Intent
-import android.content.pm.ActivityInfo
-import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.BitmapShader
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Shader
-import android.graphics.Typeface
-import android.media.AudioDeviceCallback
-import android.media.AudioDeviceInfo
-import android.media.AudioManager
-import android.os.Build
-import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.provider.MediaStore
-import android.text.Editable
-import android.text.InputType
-import android.text.TextUtils
-import android.text.TextWatcher
-import android.view.MotionEvent
-import android.view.ScaleGestureDetector
-import android.view.SurfaceHolder
-import android.view.View
-import android.view.WindowManager
-import android.view.inputmethod.InputMethodManager
-import android.webkit.WebChromeClient
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import android.widget.*
-import com.pedro.common.ConnectChecker
-import com.pedro.library.rtmp.RtmpCamera2
-import com.pedro.library.view.OpenGlView
-import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
+  button, input, select { outline: none; border: 1px solid var(--line); background: var(--navy-2); color: var(--ink); padding: 6px 8px; border-radius: 4px; font-weight: 600; font-size: 12px; }
+  button { cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; transition: 0.1s; }
+  button:active { transform: scale(0.96); }
 
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInClient
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import com.google.android.gms.common.api.Scope
-import com.google.android.gms.common.api.ApiException
+  .btn-primary { background: var(--gold); border-color: var(--gold); color: var(--navy-deep); font-weight: 700; }
+  .btn-danger { background: var(--crimson); border-color: var(--crimson); color: #fff; font-weight: 700; }
+  .btn-blue { background: var(--navy-3); border-color: var(--line); color: var(--ink); }
+  .btn-accent { background: #3d2c00; border-color: var(--gold); color: var(--gold-2); }
+  
+  .btn-active { background: #16a34a !important; border-color: #15803d !important; color: #fff !important; }
 
-import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
-import com.google.api.client.http.HttpRequestInitializer
-import com.google.api.client.http.InputStreamContent
-import com.google.api.client.http.javanet.NetHttpTransport
-import com.google.api.client.json.gson.GsonFactory
-import com.google.api.client.util.DateTime
-import com.google.api.services.youtube.YouTube
-import com.google.api.services.youtube.model.*
-import java.net.Inet4Address
-import java.net.InetAddress
-import java.net.URL
-import java.util.Calendar
+  .screen { display: none; height: 100dvh; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 6px 8px 30px; }
+  .screen.active { display: flex; flex-direction: column; }
 
-class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .grid-6 { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
 
-    private lateinit var rtmpCamera: RtmpCamera2
-    private lateinit var openGlView: OpenGlView
-    private lateinit var overlayContainer: RelativeLayout
-    private lateinit var imageFilterRender: ImageObjectFilterRender
+  .card { background: var(--navy); border: 1px solid var(--line); padding: 7px; border-radius: 6px; margin-bottom: 6px; }
+  .card-title { font-size: 10px; color: var(--gold); text-transform: uppercase; font-weight: 700; letter-spacing: 1px; margin-bottom: 5px; display: flex; justify-content: space-between; align-items: center; }
+
+  .hud { background: linear-gradient(135deg, var(--navy) 0%, var(--navy-2) 100%); border: 1px solid var(--gold); padding: 8px 10px; border-radius: 6px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; }
+  .hud-team { font-size: 13px; font-weight: 700; color: #cbd5e1; }
+  .hud-score { font-family: 'Bebas Neue', sans-serif; font-size: 32px; color: var(--gold-2); line-height: 1; }
+  .hud-overs { font-size: 11px; font-weight: 700; color: var(--muted); }
+  .hud-stat { font-size: 11px; font-weight: 600; }
+
+  .score-pad button { height: 38px; font-size: 18px; font-weight: 900; background: var(--navy-3); border-radius: 4px; }
+  .score-pad button[data-run="4"] { background: var(--gold); color: var(--navy-deep); }
+  .score-pad button[data-run="6"] { background: var(--crimson); color: #fff; }
+
+  .extra-pad button { height: 32px; font-size: 11px; background: #4a3406; color: var(--ink); border-color: rgba(212,175,55,0.4); }
+  .wicket-pad button { height: 32px; font-size: 11px; background: var(--crimson); color: #fff; }
+
+  .banner { background: linear-gradient(90deg, var(--gold) 0%, var(--gold-2) 100%); color: var(--navy-deep); padding: 8px; border-radius: 6px; margin-bottom: 6px; text-align: center; font-weight: 700; font-size: 12px; }
+
+  .timeline { max-height: 100px; overflow-y: auto; background: var(--navy-deep); padding: 4px 6px; border-radius: 4px; border: 1px solid var(--line); }
+  .timeline-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 11px; }
+  .timeline-item button { padding: 2px 6px; font-size: 10px; height: 20px; background: var(--navy-3); }
+
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: none; align-items: center; justify-content: center; z-index: 100; padding: 12px; }
+  .modal-overlay.active { display: flex; }
+  .modal { background: var(--navy); padding: 14px; border-radius: 8px; width: 100%; max-width: 340px; border: 1px solid var(--gold); }
+  .modal h3 { font-size: 14px; color: var(--gold); margin-bottom: 8px; }
+  .small-label { font-size: 9px; color: var(--muted); text-transform: uppercase; font-weight: 700; margin-bottom: 2px; display: block; }
+  .match-item { display: flex; justify-content: space-between; align-items: center; background: var(--navy-2); padding: 6px 8px; border-radius: 4px; margin-bottom: 5px; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<!-- ================= 1. HOME SCREEN ================= -->
+<div id="screen-home" class="screen active">
+  <h2 style="color: var(--gold); font-family:'Bebas Neue',sans-serif; font-size:24px; text-align:center; margin-bottom:8px; letter-spacing:1px;">M.B. LIVE STUDIO</h2>
+
+  <div class="card">
+    <div class="card-title">Cloud Saved Matches</div>
+    <div id="savedMatchesList">Loading...</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Create New Match</div>
+    <div class="grid-2">
+      <div><span class="small-label">Team A</span><input type="text" id="tA_name" value="IND" style="width:100%"></div>
+      <div><span class="small-label">Team B</span><input type="text" id="tB_name" value="AUS" style="width:100%"></div>
+      <div><span class="small-label">Squad Size</span><input type="number" id="squadSize" value="11" min="2" style="width:100%"></div>
+      <div><span class="small-label">Max Overs</span><input type="number" id="maxOvers" value="20" min="1" style="width:100%"></div>
+      <div>
+        <span class="small-label">Toss Winner</span>
+        <select id="tossWinner" style="width:100%"><option value="A">Team A</option><option value="B">Team B</option></select>
+      </div>
+      <div>
+        <span class="small-label">Decision</span>
+        <select id="tossDecision" style="width:100%"><option value="BAT">Elected BAT</option><option value="BOWL">Elected BOWL</option></select>
+      </div>
+    </div>
+    <button class="btn-primary" style="width:100%; margin-top:8px; height:36px;" onclick="createNewMatch()">START MATCH</button>
+  </div>
+</div>
+
+<!-- ================= 2. LIVE CONTROLLER ================= -->
+<div id="screen-live" class="screen">
+
+  <div class="hud">
+    <div>
+      <div class="hud-team" id="hudTeam">IND</div>
+      <div class="hud-score"><span id="hudRuns">0</span>/<span id="hudWickets">0</span></div>
+      <div class="hud-overs">Ovs: <span id="hudOvers">0.0</span> / <span id="hudMaxOvers">20</span></div>
+    </div>
+    <div style="text-align: right; display:flex; flex-direction:column; align-items:flex-end; gap:2px;">
+      <button class="btn-danger" style="padding:2px 8px; font-size:10px; height:22px;" onclick="exitToHome()">EXIT</button>
+      <div class="hud-stat">CRR: <span id="hudCrr">0.00</span></div>
+      <div class="hud-stat" style="color:var(--gold-2);" id="hudTargetWrap">Tgt: <span id="hudTarget">—</span></div>
+    </div>
+  </div>
+
+  <div id="inningsOverBanner" class="banner" style="display:none;">
+    <div id="inningsOverText"></div>
+    <div class="grid-2" style="margin-top:5px;">
+        <button class="btn-primary" style="width:100%; height:30px;" id="inningsOverBtn" onclick="startSecondInnings()">START 2ND INNINGS</button>
+        <button class="btn-blue btn-graphic" data-graphic="result" style="width:100%; height:30px;" onclick="handleGraphicClick('result')">SHOW RESULT</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">
+      <span>CREASE CONTROL</span>
+      <div>
+        <!-- NEW: MATCH SETTINGS BUTTON (TOSS/OVERS EDIT) -->
+        <button class="btn-danger" style="display:inline-flex; padding:2px 6px; font-size:9px;" onclick="openMatchSettings()">MATCH SETTINGS</button>
+        <button class="btn-accent" style="display:inline-flex; padding:2px 6px; font-size:9px;" onclick="openEditPlayers()">EDIT TEAMS</button>
+        <button class="btn-blue" style="display:inline-flex; padding:2px 6px; font-size:9px;" onclick="swapStrike()"><i class="fas fa-exchange-alt"></i> SWAP</button>
+      </div>
+    </div>
+    <div class="grid-2" style="margin-bottom:4px;">
+      <div><span class="small-label">Striker *</span><select id="strikerSelect" onchange="manualPlayerChange()" style="width:100%"></select></div>
+      <div><span class="small-label">Non-Striker</span><select id="nonStrikerSelect" onchange="manualPlayerChange()" style="width:100%"></select></div>
+    </div>
+    <div><span class="small-label">Current Bowler</span><select id="bowlerSelect" onchange="manualPlayerChange()" style="width:100%"></select></div>
+  </div>
+
+  <div class="card score-pad">
+    <div class="grid-6">
+      <button onclick="processBall(0)">0</button><button onclick="processBall(1)">1</button>
+      <button onclick="processBall(2)">2</button><button onclick="processBall(3)">3</button>
+      <button onclick="processBall(4)" data-run="4">4</button><button onclick="processBall(6)" data-run="6">6</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="grid-2" style="margin-bottom:4px;">
+      <div class="extra-pad grid-2">
+        <button onclick="openExtraModal('WD')">WD</button><button onclick="openExtraModal('NB')">NB</button>
+        <button onclick="openExtraModal('B')">BYE</button><button onclick="openExtraModal('LB')">LB</button>
+      </div>
+      <div class="wicket-pad grid-2">
+        <button onclick="processWicket('CAUGHT', 'STRIKER')">CATCH</button>
+        <button onclick="processWicket('BOWLED', 'STRIKER')">BOWL</button>
+        <button onclick="processWicket('LBW', 'STRIKER')">LBW</button>
+        <button onclick="openWicketModal('RUN_OUT')">RUN OUT</button>
+      </div>
+    </div>
+    <div class="grid-4">
+      <button class="btn-blue" style="font-size:10px; height:26px;" onclick="openWicketModal('STUMPED')">STUMP</button>
+      <button class="btn-blue" style="font-size:10px; height:26px;" onclick="processWicket('HIT_WICKET', 'STRIKER')">HIT WKT</button>
+      <button class="btn-accent" style="font-size:10px; height:26px;" onclick="markRetiredHurt()">RETIRED</button>
+      <button class="btn-accent" style="font-size:10px; height:26px;" onclick="openAbsentModal()">ABSENT</button>
+    </div>
+  </div>
+
+  <!-- CENTER GRAPHICS -->
+  <div class="card">
+    <div class="card-title">
+      <span>CENTER GRAPHICS (16:9)</span>
+      <button class="btn-danger" style="padding:1px 6px; font-size:9px;" onclick="handleGraphicClick(null)">CLEAR ALL</button>
+    </div>
     
-    private val cameraLayoutFilter = com.mblivestudio.filters.CameraLayoutFilterRender()
-
-    private lateinit var dragScoreboard: LinearLayout
-    private lateinit var scoreMainText: TextView
-    private lateinit var scoreSubText: TextView
-
-    private lateinit var btnGoLive: Button
-    private lateinit var btnStreamsManager: Button
-    private lateinit var ivProfilePhoto: ImageView
-    private lateinit var tvLiveTimer: TextView
-    private lateinit var tvViewerCount: TextView
-    private lateinit var tvApiQuota: TextView
-
-    private lateinit var commentsPanel: LinearLayout
-    private lateinit var tvCommentsFeed: TextView
-    private lateinit var commentsScrollView: ScrollView
-    private lateinit var tvStreamChatOverlay: TextView
+    <div class="grid-2" style="margin-bottom:6px;">
+        <button id="btnInnCurr" class="btn-blue btn-active" onclick="setGraphicInnings('curr')" style="font-size:10px;">CURRENT INNINGS</button>
+        <button id="btnInnPrev" class="btn-blue" onclick="setGraphicInnings('prev')" style="font-size:10px;">1ST INNINGS RECALL</button>
+    </div>
     
-    private lateinit var switchChatSync: Switch
-    private lateinit var switchViewerSync: Switch
-    private lateinit var switchShowQuota: Switch
-    private lateinit var switchShowViewers: Switch
+    <div class="grid-4" style="margin-bottom:8px;">
+      <button class="btn-blue btn-graphic" data-graphic="squads" onclick="handleGraphicClick('squads')" style="background:#4a3406; color:#f2d878;">PLAYING 11</button>
+      <button class="btn-blue btn-graphic" data-graphic="part" onclick="handleGraphicClick('part')">PARTNER</button>
+      <button class="btn-blue btn-graphic" data-graphic="allpart" onclick="handleGraphicClick('allpart')" style="background:#5b4413; color:#f2d878; border-color:var(--gold);">ALL PARTS</button>
+      <button class="btn-blue btn-graphic" data-graphic="singlePlayer" onclick="toggleSinglePlayer()" style="background:#16304f; color:#f2d878;">PLAYER STATS</button>
+      
+      <button class="btn-blue btn-graphic" data-graphic="bat" onclick="handleGraphicClick('bat')">BAT CARD</button>
+      <button class="btn-blue btn-graphic" data-graphic="bowl" onclick="handleGraphicClick('bowl')">BOWL CARD</button>
+      <button class="btn-blue btn-graphic" data-graphic="proj" onclick="handleGraphicClick('proj')">PROJ / EQ</button>
+      <button class="btn-blue btn-graphic" data-graphic="fow" onclick="handleGraphicClick('fow')">FALL OF WKT</button>
+    </div>
 
-    private lateinit var btnOverlayMenu: ImageButton
-    private lateinit var btnOverlayDone: Button
-    private var currentMode = "DRAG"
-    private val resizeHandles = mutableListOf<View>()
-    private val cropFrameViews = mutableListOf<View>()
+    <div class="card-title"><span style="color:#f2d878;">CHARTS & GRAPHS</span></div>
+    <div class="grid-2" style="margin-bottom:6px;">
+      <button class="btn-blue btn-graphic" data-graphic="chart" onclick="handleGraphicClick('chart')" style="background:#5b4413; color:#f2d878; border-color:var(--gold);">BAR CHART</button>
+      <button class="btn-blue btn-graphic" data-graphic="worm" onclick="handleGraphicClick('worm')" style="background:#16304f; color:#f2d878; border-color:var(--gold);">WORM GRAPH</button>
+    </div>
 
-    private var selectedOverlay: View? = null
-    private var isAudioMuted = false
-    private var isBluetoothMicActive = false
-    private lateinit var audioManager: AudioManager
+    <button class="btn-blue" id="btnBugToggle" style="width:100%; height:30px; margin-top:4px;" onclick="toggleGraphic('scorebug')">TOGGLE BOTTOM SCOREBUG</button>
+  </div>
 
-    private enum class MicRoute { PHONE, BLUETOOTH, WIRED }
-    private var detectedMicRoute = MicRoute.PHONE
-    private var bluetoothCommunicationDevice: AudioDeviceInfo? = null
-    private var audioDeviceCallback: AudioDeviceCallback? = null
+  <div class="card">
+    <div class="card-title">
+      <span>BOTTOM INFO STRIP</span>
+      <button class="btn-blue" id="btnStripToggle" style="padding:1px 6px; font-size:9px;" onclick="toggleGraphic('bottomStrip')">TOGGLE ON/OFF</button>
+    </div>
+    <div class="grid-3" style="margin-bottom:4px;">
+      <button class="btn-primary" onclick="setStripQuick('part')">PARTNER</button>
+      <button class="btn-primary" onclick="setStripQuick('fow')">F.O.W.</button>
+      <button class="btn-primary" onclick="setStripQuick('proj')">PROJ SCORE</button>
+      <button class="btn-primary" onclick="setStripQuick('target')">TARGET</button>
+      <button class="btn-primary" style="grid-column: span 2;" onclick="setStripQuick('need')">CHASE EQUATION</button>
+    </div>
+    <div style="display:flex; gap:4px;">
+      <input type="text" id="customStripInput" placeholder="Custom text..." style="flex:1;">
+      <button class="btn-blue" onclick="setCustomStrip()">SET</button>
+    </div>
+  </div>
 
-    private val PICK_IMAGE_REQUEST = 101
-    private val SIGN_IN_REQUEST = 102
-    private val REQUEST_AUTHORIZATION = 1001
-    private val PICK_THUMBNAIL_REQUEST = 103
+  <div class="card">
+    <div class="card-title">TIMELINE & DEEP UNDO</div>
+    <div class="timeline" id="timelineList"></div>
+  </div>
 
-    private lateinit var googleSignInClient: GoogleSignInClient
-    private var connectedAccountEmail: String? = null
+</div>
 
-    private var retryCount = 0
-    private val MAX_RETRIES = 3
-    private var generatedRtmpUrl: String? = null
+<!-- ================= MODALS ================= -->
+<div class="modal-overlay" id="matchSettingsModal">
+  <div class="modal">
+    <h3>Match Settings</h3>
+    <div style="margin-bottom:10px;">
+      <span class="small-label">Max Overs (Editable anytime in 1st Innings)</span>
+      <input type="number" id="editMaxOvers" style="width:100%; font-size:18px;">
+    </div>
+    <div id="tossEditDiv" style="margin-bottom:10px;">
+      <span class="small-label">Toss Winner</span>
+      <select id="editTossWinner" style="width:100%; margin-bottom:5px;"></select>
+      <span class="small-label">Toss Decision</span>
+      <select id="editTossDecision" style="width:100%;">
+         <option value="BAT">Batting</option>
+         <option value="BOWL">Bowling</option>
+      </select>
+      <div style="font-size:10px; color:var(--crimson-2); margin-top:6px; font-weight:700;">*Toss / Bat / Bowl can only be changed before the 2nd over of the 1st Innings.</div>
+    </div>
+    <div class="grid-2">
+      <button class="btn-primary" onclick="saveMatchSettings()">SAVE</button>
+      <button class="btn-danger" onclick="closeModal('matchSettingsModal')">CANCEL</button>
+    </div>
+  </div>
+</div>
 
-    private val overlayHandler = Handler(Looper.getMainLooper())
-    private var pendingRefresh = false
+<div class="modal-overlay" id="extraModal">
+  <div class="modal">
+    <h3 id="extraTitle">Extra Ball</h3>
+    <div id="nbTypeDiv" style="display:none; margin-bottom:10px;">
+       <span class="small-label">Run Type on No Ball</span>
+       <select id="nbRunType" style="width:100%">
+          <option value="BAT">Runs off the Bat</option>
+          <option value="B">Byes</option>
+          <option value="LB">Leg Byes</option>
+       </select>
+    </div>
+    <span class="small-label">Runs completed (excluding penalty):</span>
+    <input type="number" id="extraRunsInput" value="0" min="0" style="width:100%; font-size:22px; text-align:center; margin-bottom:10px;">
+    <div class="grid-2">
+      <button class="btn-primary" onclick="submitExtra()">SUBMIT</button>
+      <button class="btn-danger" onclick="closeModal('extraModal')">CANCEL</button>
+    </div>
+  </div>
+</div>
 
-    private var lastOverlayBitmap: Bitmap? = null
-    private var surfaceReady = false
+<div class="modal-overlay" id="wicketModal">
+  <div class="modal">
+    <h3 id="wicketTitle">Wicket</h3>
+    <div id="runOutExtrasDiv" style="display:none; margin-bottom:10px;">
+        <span class="small-label">Delivery Type</span>
+        <select id="roDelivery" style="width:100%; margin-bottom:6px;">
+           <option value="LEGAL">Legal Delivery</option>
+           <option value="WD">Wide</option>
+           <option value="NB_BAT">No Ball (Bat)</option>
+           <option value="NB_B">No Ball (Bye)</option>
+           <option value="NB_LB">No Ball (Leg Bye)</option>
+           <option value="B">Bye</option>
+           <option value="LB">Leg Bye</option>
+        </select>
+        <span class="small-label">Runs Completed (Before Out)</span>
+        <input type="number" id="roRuns" value="0" min="0" style="width:100%; font-size:20px; text-align:center;">
+    </div>
+    <div style="margin-bottom:8px;" id="outBatterDiv">
+      <span class="small-label">Who got out?</span>
+      <select id="outBatterSelect" style="width:100%;">
+        <option value="STRIKER">Striker</option>
+        <option value="NON_STRIKER">Non-Striker</option>
+      </select>
+    </div>
+    <div style="margin-bottom:10px;" id="fielderRow">
+      <span class="small-label" id="fielderLabel">Fielder / Catcher</span>
+      <select id="fielderSelect" style="width:100%;"></select>
+    </div>
+    <div class="grid-2">
+      <button class="btn-primary" onclick="submitWicket()">CONFIRM OUT</button>
+      <button class="btn-danger" onclick="closeModal('wicketModal')">CANCEL</button>
+    </div>
+  </div>
+</div>
 
-    private var streamWidth = 1920
-    private var streamHeight = 1080
-    private var streamBitrate = 5_000_000
+<div class="modal-overlay" id="absentModal">
+  <div class="modal">
+    <h3>Mark Absent</h3>
+    <span class="small-label">Select Absent Batter</span>
+    <select id="absentSelect" style="width:100%; margin-bottom:10px;"></select>
+    <div class="grid-2">
+      <button class="btn-danger" onclick="submitAbsent()">CONFIRM</button>
+      <button class="btn-blue" onclick="closeModal('absentModal')">CANCEL</button>
+    </div>
+  </div>
+</div>
 
-    private var pendingTitle: String = ""
-    private var pendingDesc: String = ""
-    private var pendingPrivacy: String = "unlisted"
-    private var pendingScheduleTimeMs: Long = 0L
-    private var pendingThumbnailUri: android.net.Uri? = null
-    private var thumbnailPreviewImageView: ImageView? = null
+<div class="modal-overlay" id="editPlayersModal">
+  <div class="modal" style="max-height:85vh; overflow-y:auto;">
+    <h3>Edit Teams & Players</h3>
+    <div id="editPlayersList" style="margin-bottom:10px;"></div>
+    <div class="grid-2">
+      <button class="btn-primary" onclick="saveEditPlayers()">SAVE</button>
+      <button class="btn-danger" onclick="closeModal('editPlayersModal')">CANCEL</button>
+    </div>
+  </div>
+</div>
 
-    private var youtubeClient: YouTube? = null
-    private var currentLiveChatId: String? = null
-    private var currentBroadcastId: String? = null
+<!-- SINGLE PLAYER MODAL -->
+<div class="modal-overlay" id="singlePlayerModal">
+  <div class="modal">
+    <h3 style="margin-top:0;">Single Player Graphic</h3>
+    <span class="small-label">Select Player</span>
+    <select id="spPlayerSelect" style="width:100%; margin-bottom:8px;"></select>
+    <span class="small-label">Stats to Show</span>
+    <select id="spStatType" style="width:100%; margin-bottom:15px;">
+      <option value="BAT">Batting Stats Only</option>
+      <option value="BOWL">Bowling Stats Only</option>
+      <option value="BOTH">Both (Bat & Bowl)</option>
+    </select>
+    <div class="grid-2">
+      <button class="btn-primary" onclick="showSinglePlayerGraphic()">SHOW GRAPHIC</button>
+      <button class="btn-danger" onclick="closeModal('singlePlayerModal')">CANCEL</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import { getDatabase, ref, set, get, remove } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
+
+const app = initializeApp({ apiKey: "AIzaSyCgAURksaOv2NtQ9LeVHVoLj4RFtDs7PVY", authDomain: "mb-live-score.firebaseapp.com", databaseURL: "https://mb-live-score-default-rtdb.firebaseio.com", projectId: "mb-live-score" });
+const db = getDatabase(app);
+const liveRef = ref(db, "current_match");
+
+window.state = null;
+window.timelineHistory = [];
+window.tempExtraType = "";
+window.tempWicketType = "";
+window.graphicInningsMode = 'curr';
+
+function fmtOvers(balls) { return `${Math.floor(balls/6)}.${balls%6}`; }
+function getOrdinal(n) { const s = ["th","st","nd","rd"], v = n % 100; return n + (s[(v-20)%10] || s[v] || s[0]); }
+
+window.createNewMatch = function() {
+  const tA = document.getElementById('tA_name').value.trim() || "IND"; const tB = document.getElementById('tB_name').value.trim() || "AUS";
+  const squadSize = parseInt(document.getElementById('squadSize').value) || 11; const maxOvers = parseInt(document.getElementById('maxOvers').value) || 20;
+  const tossW = document.getElementById('tossWinner').value; const tossD = document.getElementById('tossDecision').value;
+  let batTeam = (tossW === "A" && tossD === "BAT") || (tossW === "B" && tossD === "BOWL") ? "A" : "B"; let bowlTeam = batTeam === "A" ? "B" : "A";
+
+  const mkRoster = (lbl) => Array.from({length: squadSize}, (_, i) => ({ id: `${lbl[0]}${i+1}`, name: `${lbl} Player ${i+1}`, isOut: false, isAbsent: false, isRetired: false, runs: 0, balls: 0, fours: 0, sixes: 0, dismissalInfo: "" }));
+  const rosterA = mkRoster(tA); const rosterB = mkRoster(tB);
+
+  state = {
+    id: "MB_" + Date.now(), title: `${tA} vs ${tB}`,
+    meta: { tA, tB, squadSize, maxOvers, batTeam, bowlTeam, tossWinner: tossW, tossDecision: tossD },
+    squads: { A: rosterA, B: rosterB },
+    innings: 1, score: 0, wickets: 0, legalBalls: 0, extras: 0, overBalls: [], currentOverRuns: 0, overHistory: [],
+    target: null, firstInnings: null, inningsOver: false,
+    partnership: { runs: 0, balls: 0, p1: rosterA[0].id, p2: rosterA[1].id, p1Runs: 0, p1Balls: 0, p2Runs: 0, p2Balls: 0 }, 
+    pastPartnerships: [],
+    bowlerStats: {}, fow: [],
+    striker: (batTeam === "A" ? rosterA : rosterB)[0].id, nonStriker: (batTeam === "A" ? rosterA : rosterB)[1].id,
+    bowler: (batTeam === "A" ? rosterB : rosterA)[0].id, lastBowler: null,
+    graphics: { scorebug: true, bottomStrip: true, centerGraphic: null, dynamicText: "M.B. LIVE STUDIO", activeEvent: null, singlePlayer: null }
+  };
+  if(batTeam === "B"){ state.striker = rosterB[0].id; state.nonStriker = rosterB[1].id; state.bowler = rosterA[0].id; state.partnership.p1 = rosterB[0].id; state.partnership.p2 = rosterB[1].id; }
+  timelineHistory = []; pushSnapshot("Match Created"); startController();
+};
+
+window.renderSavedMatches = async function() {
+  const el = document.getElementById('savedMatchesList'); el.innerHTML = "Fetching from Cloud...";
+  const snap = await get(ref(db, 'mb_saved_matches_list'));
+  if(snap.exists()) {
+    const list = Object.values(snap.val()).sort((a,b) => b.id > a.id ? -1 : 1);
+    el.innerHTML = list.map(m => `
+      <div class="match-item"><span><b>${m.title}</b> (${m.meta.squadSize}P | Ov ${fmtOvers(m.legalBalls)})</span>
+        <div style="display:flex; gap:3px;">
+          <button class="btn-primary" style="padding:2px 6px; font-size:10px;" onclick="loadMatch('${m.id}')">LOAD</button>
+          <button class="btn-danger" style="padding:2px 6px; font-size:10px;" onclick="deleteMatch('${m.id}')"><i class="fas fa-trash"></i></button>
+        </div>
+      </div>
+    `).join('');
+  } else { el.innerHTML = "<div style='font-size:11px; color:var(--muted);'>No cloud matches found.</div>"; }
+};
+
+window.loadMatch = async function(id) {
+  const snap = await get(ref(db, `mb_match_data/${id}`));
+  if(snap.exists()) {
+    let loadedState = snap.val();
     
-    private var chatNextPageToken: String? = null
-    private var chatPollingActive = false
-    private val chatHandler = Handler(Looper.getMainLooper())
+    // NORMALIZE FIREBASE DATA
+    if(!loadedState.overBalls) loadedState.overBalls = []; if(!loadedState.overHistory) loadedState.overHistory = []; if(!loadedState.fow) loadedState.fow = [];
+    if(!loadedState.bowlerStats) loadedState.bowlerStats = {}; if(!loadedState.squads) loadedState.squads = {A:[], B:[]};
+    if(!loadedState.squads.A) loadedState.squads.A = []; if(!loadedState.squads.B) loadedState.squads.B = [];
+    if(!loadedState.partnership) loadedState.partnership = { runs: 0, balls: 0, p1: loadedState.striker, p2: loadedState.nonStriker, p1Runs: 0, p1Balls: 0, p2Runs: 0, p2Balls: 0 };
+    if(!loadedState.partnership.p1) loadedState.partnership.p1 = loadedState.striker;
+    if(!loadedState.partnership.p2) loadedState.partnership.p2 = loadedState.nonStriker;
+    if(!loadedState.pastPartnerships) loadedState.pastPartnerships = [];
+    if(typeof loadedState.currentOverRuns === 'undefined') loadedState.currentOverRuns = 0;
     
-    private val streamChatHistory = mutableListOf<String>()
-
-    private var dailyQuotaUsed = 0
-
-    private var liveStartTimeMillis: Long = 0L
-    private var timerRunning = false
-    private val timerHandler = Handler(Looper.getMainLooper())
-    private val timerRunnable = object : Runnable {
-        override fun run() {
-            if (!timerRunning) return
-            val elapsed = System.currentTimeMillis() - liveStartTimeMillis
-            val hours = elapsed / 3_600_000
-            val minutes = (elapsed / 60_000) % 60
-            val seconds = (elapsed / 1000) % 60
-            tvLiveTimer.text = String.format("%02d:%02d:%02d", hours, minutes, seconds)
-            timerHandler.postDelayed(this, 1000)
-        }
-    }
-
-    private val tickerHandler = Handler(Looper.getMainLooper())
-    private val tickerRunnable = object : Runnable {
-        override fun run() {
-            updateSnapshot(50) 
-            tickerHandler.postDelayed(this, 100)
-        }
-    }
-
-    private val webSyncHandler = Handler(Looper.getMainLooper())
-    private val webSyncRunnable = object : Runnable {
-        override fun run() {
-            updateSnapshot(100)
-            webSyncHandler.postDelayed(this, 1000)
-        }
-    }
-
-    override fun attachBaseContext(newBase: Context?) {
-        super.attachBaseContext(newBase)
-        System.setProperty("java.net.preferIPv4Stack", "true")
-        System.setProperty("java.net.preferIPv6Addresses", "false")
-    }
-
-    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
-        super.onConfigurationChanged(newConfig)
-        // Ensure that snapshot triggers correctly if screen resizes
-        updateSnapshot()
-    }
-
-    @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        
-        // FIX: Start firmly locked in Landscape mode, ignoring sensors
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        
-        setContentView(R.layout.activity_main)
-
-        openGlView = findViewById(R.id.surfaceView)
-        overlayContainer = findViewById(R.id.overlayContainer)
-        dragScoreboard = findViewById(R.id.dragScoreboard)
-        scoreMainText = findViewById(R.id.scoreMainText)
-        scoreSubText = findViewById(R.id.scoreSubText)
-
-        btnGoLive = findViewById(R.id.btnGoLive)
-        btnStreamsManager = findViewById(R.id.btnStreamsManager)
-        ivProfilePhoto = findViewById(R.id.ivProfilePhoto)
-        tvLiveTimer = findViewById(R.id.tvLiveTimer)
-        tvViewerCount = findViewById(R.id.tvViewerCount)
-        tvApiQuota = findViewById(R.id.tvApiQuota)
-        
-        loadQuota()
-
-        commentsPanel = findViewById(R.id.commentsPanel)
-        tvCommentsFeed = findViewById(R.id.tvCommentsFeed)
-        commentsScrollView = findViewById(R.id.commentsScrollView)
-        tvStreamChatOverlay = findViewById(R.id.tvStreamChatOverlay)
-        
-        val popupSettings: LinearLayout = findViewById(R.id.popupSettings)
-        val btnSettings: ImageButton = findViewById(R.id.btnSettings)
-        val btnCloseSettings: Button = findViewById(R.id.btnCloseSettings)
-        
-        btnSettings.setOnClickListener { popupSettings.visibility = View.VISIBLE }
-        btnCloseSettings.setOnClickListener { popupSettings.visibility = View.GONE }
-
-        switchChatSync = findViewById(R.id.switchChatSync)
-        switchViewerSync = findViewById(R.id.switchViewerSync)
-        switchShowQuota = findViewById(R.id.switchShowQuota)
-        switchShowViewers = findViewById(R.id.switchShowViewers)
-
-        switchShowQuota.setOnCheckedChangeListener { _, isChecked -> 
-            tvApiQuota.visibility = if (isChecked) View.VISIBLE else View.GONE 
-        }
-        
-        switchShowViewers.setOnCheckedChangeListener { _, isChecked -> 
-            if (chatPollingActive && isChecked) {
-                tvViewerCount.visibility = View.VISIBLE
-            } else {
-                tvViewerCount.visibility = View.GONE
-            }
-        }
-
-        btnOverlayMenu = findViewById(R.id.btnOverlayMenu)
-        btnOverlayDone = findViewById(R.id.btnOverlayDone)
-
-        btnOverlayMenu.setOnClickListener {
-            val target = selectedOverlay ?: return@setOnClickListener
-            val popup = PopupMenu(this, btnOverlayMenu)
-            popup.menu.add("Resize")
-            
-            if (target !is TextView && target.tag != "LOWER_THIRD") {
-                popup.menu.add("Crop")
-            }
-            
-            if (target is TextView || target is EditText || target.tag == "LOWER_THIRD") {
-                popup.menu.add("Change Color")
-            }
-            
-            popup.setOnMenuItemClickListener { item ->
-                when (item.title) {
-                    "Resize" -> enterResizeMode(target)
-                    "Crop" -> enterCropMode(target)
-                    "Change Color" -> showCustomColorPickerDialog()
-                }
-                true
-            }
-            popup.show()
-        }
-
-        btnOverlayDone.setOnClickListener {
-            currentMode = "DRAG"
-            btnOverlayDone.visibility = View.GONE
-            val root = findViewById<RelativeLayout>(R.id.rootLayout)
-            resizeHandles.forEach { root.removeView(it) }
-            resizeHandles.clear()
-            cropFrameViews.forEach { root.removeView(it) }
-            cropFrameViews.clear()
-            selectedOverlay?.let { 
-                if (it is EditText) it.clearFocus()
-                it.setOnTouchListener(null)
-                makeDraggableAndScalable(it) 
-            }
-            updateOverlayMenuButtonPosition()
-            updateSnapshot()
-        }
-
-        val btnSwitchCamera: ImageButton = findViewById(R.id.btnSwitchCamera)
-        val btnMicToggle: ImageButton = findViewById(R.id.btnMicToggle)
-        val btnBluetoothMic: ImageButton = findViewById(R.id.btnBluetoothMic)
-        val btnOrientation: ImageButton = findViewById(R.id.btnOrientation)
-
-        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        registerAudioDeviceMonitoring()
-        updateDetectedMicRoute(false)
-        
-        findViewById<Button>(R.id.btnToggleComments).setOnClickListener {
-            popupSettings.visibility = View.GONE
-            commentsPanel.visibility = if (commentsPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-        }
-
-        findViewById<Button>(R.id.btnToggleStreamChat).setOnClickListener {
-            popupSettings.visibility = View.GONE
-            if (tvStreamChatOverlay.visibility == View.VISIBLE) {
-                tvStreamChatOverlay.visibility = View.GONE
-                updateSnapshot()
-            } else {
-                tvStreamChatOverlay.visibility = View.VISIBLE
-                tvStreamChatOverlay.bringToFront()
-                refreshChatOverlayText()
-                updateSnapshot()
-            }
-        }
-
-        findViewById<Button>(R.id.btnAddText).setOnClickListener { popupSettings.visibility = View.GONE; showAddTextDialog() }
-        findViewById<Button>(R.id.btnAddWebOverlay).setOnClickListener { popupSettings.visibility = View.GONE; showAddWebDialog() }
-        findViewById<Button>(R.id.btnAddLogo).setOnClickListener { popupSettings.visibility = View.GONE; val intent = Intent(Intent.ACTION_GET_CONTENT); intent.type = "image/*"; startActivityForResult(intent, PICK_IMAGE_REQUEST) }
-        findViewById<Button>(R.id.btnToggleScore).setOnClickListener { popupSettings.visibility = View.GONE; if (dragScoreboard.visibility == View.VISIBLE) { dragScoreboard.visibility = View.GONE; updateSnapshot() } else { showScoreboardDialog() } }
-        findViewById<Button>(R.id.btnAddLowerThird).setOnClickListener { popupSettings.visibility = View.GONE; showAddLowerThirdDialog() }
-        
-        findViewById<ImageButton>(R.id.btnLayoutFull).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.FULL); popupSettings.visibility = View.GONE }
-        findViewById<ImageButton>(R.id.btnLayoutSplit).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.SPLIT_LEFT); popupSettings.visibility = View.GONE }
-        findViewById<ImageButton>(R.id.btnLayoutCornerTL).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.CORNER_TOP_LEFT); popupSettings.visibility = View.GONE }
-        findViewById<ImageButton>(R.id.btnLayoutCornerBR).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.CORNER_BOTTOM_RIGHT); popupSettings.visibility = View.GONE }
-
-        val btnLiveText: ImageButton = findViewById(R.id.btnLiveText)
-        btnLiveText.setOnClickListener { popupSettings.visibility = View.GONE; addLiveTextOverlay() }
-        
-        // FIX: Robust Delete logic to catch empty text boxes and hide keyboards
-        findViewById<ImageButton>(R.id.btnRemoveSelected).setOnClickListener { 
-            popupSettings.visibility = View.GONE
-            
-            var target = selectedOverlay
-            if (target == null) {
-                // In case user tapped keyboard without selecting overlay
-                val focusView = currentFocus
-                if (focusView is EditText && focusView.parent == overlayContainer) {
-                    target = focusView
-                }
-            }
-
-            target?.let { 
-                if (it != dragScoreboard) { 
-                    if (it.tag == "LOWER_THIRD") {
-                        tickerHandler.removeCallbacks(tickerRunnable)
-                    }
-                    if (it.tag == "WEB_OVERLAY") {
-                        webSyncHandler.removeCallbacks(webSyncRunnable)
-                    }
-                    
-                    // Force Hide Keyboard & Clear Focus
-                    if (it is EditText) {
-                        it.clearFocus()
-                        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                        imm.hideSoftInputFromWindow(it.windowToken, 0)
-                    }
-
-                    overlayContainer.removeView(it)
-                    if (selectedOverlay == it) selectedOverlay = null
-                    
-                    updateOverlayMenuButtonPosition()
-                    updateSnapshot() 
-                } 
-            } 
-        }
-
-        btnMicToggle.setColorFilter(Color.parseColor("#4CAF50"))
-        btnMicToggle.setOnClickListener {
-            if (isAudioMuted) {
-                rtmpCamera.enableAudio(); isAudioMuted = false
-                btnMicToggle.setImageResource(R.drawable.ic_mic_on)
-                btnMicToggle.setColorFilter(Color.parseColor("#4CAF50"))
-            } else {
-                rtmpCamera.disableAudio(); isAudioMuted = true
-                btnMicToggle.setImageResource(R.drawable.ic_mic_on) 
-                btnMicToggle.setColorFilter(Color.parseColor("#E53935"))
-            }
-        }
-
-        btnSwitchCamera.setOnClickListener {
-            try { rtmpCamera.switchCamera(); if (!rtmpCamera.isStreaming) { rtmpCamera.stopPreview(); tryStartCameraPreview() } } catch (e: Exception) {}
-        }
-
-        btnBluetoothMic.setOnClickListener {
-            if (rtmpCamera.isStreaming) { Toast.makeText(this, "Stop the stream before switching mic source.", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) { requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 2); return@setOnClickListener }
-            toggleBluetoothMic(btnBluetoothMic)
-        }
-
-        // FIX: Absolute Lock for Orientation Toggle
-        btnOrientation.setOnClickListener {
-            if (rtmpCamera.isStreaming) {
-                Toast.makeText(this, "Stop stream to change orientation", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            
-            // Swap stream dimensions
-            val temp = streamWidth
-            streamWidth = streamHeight
-            streamHeight = temp
-
-            // Stop preview safely before screen resize
-            if (rtmpCamera.isOnPreview) {
-                rtmpCamera.stopPreview()
-            }
-            surfaceReady = false
-
-            // Completely LOCK the screen to current selection
-            if (streamWidth > streamHeight) {
-                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                Toast.makeText(this, "Landscape Mode Locked", Toast.LENGTH_SHORT).show()
-            } else {
-                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                Toast.makeText(this, "Portrait Mode Locked", Toast.LENGTH_SHORT).show()
-            }
-            // The camera will naturally restart inside surfaceChanged() once Android rotates the UI
-        }
-
-        findViewById<Button>(R.id.btnZoomIn).setOnClickListener { performSmoothZoom(true) }
-        findViewById<Button>(R.id.btnZoomOut).setOnClickListener { performSmoothZoom(false) }
-
-        openGlView.setOnTouchListener { _, event ->
-            if (event.action == MotionEvent.ACTION_DOWN) {
-                currentFocus?.clearFocus()
-                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                imm.hideSoftInputFromWindow(openGlView.windowToken, 0)
-            }
-            
-            if (event.pointerCount > 1) {
-                try { rtmpCamera.setZoom(event) } catch (e: Exception) {}
-                true
-            } else {
-                false
-            }
-        }
-
-        rtmpCamera = RtmpCamera2(openGlView, this)
-        openGlView.holder.addCallback(this)
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !hasCameraPermissions()) requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
-        imageFilterRender = ImageObjectFilterRender()
-        overlayContainer.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
-
-        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).requestEmail().requestProfile().requestScopes(Scope("https://www.googleapis.com/auth/youtube")).build()
-        googleSignInClient = GoogleSignIn.getClient(this, gso)
-        val account = GoogleSignIn.getLastSignedInAccount(this)
-        if (account != null) { connectedAccountEmail = account.email; applyAccountToHeader(account) }
-
-        ivProfilePhoto.setOnClickListener { 
-            val acc = GoogleSignIn.getLastSignedInAccount(this)
-            if (acc == null) {
-                startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST) 
-            } else {
-                AlertDialog.Builder(this)
-                    .setTitle("Account Options")
-                    .setMessage("Logged in as: ${acc.email}")
-                    .setPositiveButton("Logout / Switch Channel") { _, _ ->
-                        googleSignInClient.signOut().addOnCompleteListener {
-                            connectedAccountEmail = null
-                            ivProfilePhoto.setImageResource(android.R.drawable.sym_def_app_icon)
-                            Toast.makeText(this, "Logged out. You can now login with another channel.", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                    .setNegativeButton("Cancel", null).show()
-            }
-        }
-
-        btnStreamsManager.setOnClickListener { showSavedStreamsManager() }
-
-        btnGoLive.setOnClickListener {
-            if (rtmpCamera.isStreaming) { AlertDialog.Builder(this).setTitle("Stop Live Stream?").setMessage("This will end your broadcast on YouTube.").setPositiveButton("End Stream") { _, _ -> stopLiveStream() }.setNegativeButton("Cancel", null).show(); return@setOnClickListener }
-            if (!rtmpCamera.isOnPreview) { tryStartCameraPreview(); Toast.makeText(this, "Camera starting, try LIVE again in a moment.", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
-            val currentAccount = GoogleSignIn.getLastSignedInAccount(this)
-            if (currentAccount == null) { Toast.makeText(this, "Please Sign In with YouTube first!", Toast.LENGTH_SHORT).show(); startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST); return@setOnClickListener }
-            if (!GoogleSignIn.hasPermissions(currentAccount, Scope("https://www.googleapis.com/auth/youtube"))) { GoogleSignIn.requestPermissions(this, REQUEST_AUTHORIZATION, currentAccount, Scope("https://www.googleapis.com/auth/youtube")); return@setOnClickListener }
-            showGoLiveDialog()
-        }
-
-        makeDraggableAndScalable(dragScoreboard)
-        makeStudioPanelDraggable(commentsPanel)
-    }
-
-    private fun loadQuota() {
-        val prefs = getSharedPreferences("MBLivePrefs", Context.MODE_PRIVATE)
-        val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
-        val savedDate = prefs.getString("QuotaDate", "")
-        if (savedDate != today) { dailyQuotaUsed = 0; prefs.edit().putString("QuotaDate", today).putInt("QuotaUsed", 0).apply() } else { dailyQuotaUsed = prefs.getInt("QuotaUsed", 0) }
-        updateQuotaUI()
-    }
-
-    private fun addQuota(amount: Int) {
-        dailyQuotaUsed += amount
-        getSharedPreferences("MBLivePrefs", Context.MODE_PRIVATE).edit().putInt("QuotaUsed", dailyQuotaUsed).apply()
-        runOnUiThread { updateQuotaUI() }
-    }
-
-    private fun updateQuotaUI() { tvApiQuota.text = "⚙️ $dailyQuotaUsed/10K" }
-
-    private var scoStateReceiver: android.content.BroadcastReceiver? = null
-    private val scoConnectTimeoutHandler = Handler(Looper.getMainLooper())
-
-    private fun registerAudioDeviceMonitoring() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
-        audioDeviceCallback = object : AudioDeviceCallback() {
-            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) { updateDetectedMicRoute(true) }
-            override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
-                if (removedDevices.any { isBluetoothInputType(it.type) } && isBluetoothMicActive) { isBluetoothMicActive = false; bluetoothCommunicationDevice = null; clearBluetoothRoute(); restartCameraForAudioChange(250) }
-                updateDetectedMicRoute(true)
-            }
-        }
-        audioManager.registerAudioDeviceCallback(audioDeviceCallback, null)
-    }
-
-    private fun isBluetoothInputType(type: Int): Boolean { return type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && type == AudioDeviceInfo.TYPE_BLE_HEADSET) }
-    private fun isWiredInputType(type: Int): Boolean { return type == AudioDeviceInfo.TYPE_WIRED_HEADSET || type == AudioDeviceInfo.TYPE_USB_DEVICE || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && type == AudioDeviceInfo.TYPE_USB_HEADSET) }
-    private fun getInputDevices(): List<AudioDeviceInfo> { if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return emptyList(); return try { audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS).toList() } catch (_: Exception) { emptyList() } }
-    private fun findBluetoothInput(): AudioDeviceInfo? { return getInputDevices().firstOrNull { isBluetoothInputType(it.type) } }
-    private fun findWiredInput(): AudioDeviceInfo? { return getInputDevices().firstOrNull { isWiredInputType(it.type) } }
-
-    private fun updateDetectedMicRoute(showToast: Boolean) {
-        val route = when { isBluetoothMicActive && findBluetoothInput() != null -> MicRoute.BLUETOOTH; findWiredInput() != null -> MicRoute.WIRED; else -> MicRoute.PHONE }
-        val changed = route != detectedMicRoute; detectedMicRoute = route
-        if (showToast && changed && !isFinishing) Toast.makeText(this, when(route){ MicRoute.BLUETOOTH->"Bluetooth mic detected"; MicRoute.WIRED->"Wired/USB mic detected"; MicRoute.PHONE->"Phone mic active" }, Toast.LENGTH_SHORT).show()
-    }
-
-    private fun toggleBluetoothMic(button: ImageButton) {
-        if (!isBluetoothMicActive) {
-            val btInput = findBluetoothInput()
-            if (btInput == null) { Toast.makeText(this, "Bluetooth mic not available. Connect it first.", Toast.LENGTH_LONG).show(); updateDetectedMicRoute(false); return }
-            if (routeBluetoothMic()) { isBluetoothMicActive = true; bluetoothCommunicationDevice = btInput; detectedMicRoute = MicRoute.BLUETOOTH; button.setColorFilter(Color.parseColor("#4CAF50")); Toast.makeText(this, "Bluetooth mic selected", Toast.LENGTH_SHORT).show(); restartCameraForAudioChange(300) } else { isBluetoothMicActive = false; bluetoothCommunicationDevice = null; button.clearColorFilter(); Toast.makeText(this, "Bluetooth mic failed.", Toast.LENGTH_LONG).show() }
-        } else {
-            clearBluetoothRoute(); isBluetoothMicActive = false; bluetoothCommunicationDevice = null; button.clearColorFilter(); updateDetectedMicRoute(false); Toast.makeText(this, "Bluetooth mic off", Toast.LENGTH_SHORT).show(); restartCameraForAudioChange(250)
-        }
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun routeBluetoothMic(): Boolean {
-        return try {
-            audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val commDevice = audioManager.availableCommunicationDevices.firstOrNull { isBluetoothInputType(it.type) } ?: return false
-                if (!audioManager.setCommunicationDevice(commDevice)) return false
-                Handler(Looper.getMainLooper()).postDelayed({ updateDetectedMicRoute(false) }, 150); true
-            } else {
-                if (!audioManager.isBluetoothScoAvailableOffCall) return false
-                val receiver = object : android.content.BroadcastReceiver() {
-                    override fun onReceive(context: Context?, intent: Intent?) {
-                        when (intent?.getIntExtra(AudioManager.EXTRA_SCO_AUDIO_STATE, -1)) {
-                            AudioManager.SCO_AUDIO_STATE_CONNECTED -> { scoConnectTimeoutHandler.removeCallbacksAndMessages(null); try { unregisterReceiver(this) } catch (_: Exception) {}; scoStateReceiver = null; restartCameraForAudioChange(150) }
-                            AudioManager.SCO_AUDIO_STATE_DISCONNECTED -> { scoConnectTimeoutHandler.removeCallbacksAndMessages(null); try { unregisterReceiver(this) } catch (_: Exception) {}; scoStateReceiver = null; isBluetoothMicActive = false; bluetoothCommunicationDevice = null; Toast.makeText(this@MainActivity, "Bluetooth mic disconnected.", Toast.LENGTH_SHORT).show(); updateDetectedMicRoute(false) }
-                        }
-                    }
-                }
-                scoStateReceiver = receiver; registerReceiver(receiver, android.content.IntentFilter(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED))
-                audioManager.startBluetoothSco(); audioManager.isBluetoothScoOn = true
-                scoConnectTimeoutHandler.postDelayed({ scoStateReceiver?.let { try { unregisterReceiver(it) } catch (_: Exception) {}; scoStateReceiver = null; isBluetoothMicActive = false; bluetoothCommunicationDevice = null; try { audioManager.stopBluetoothSco(); audioManager.isBluetoothScoOn = false; audioManager.mode = AudioManager.MODE_NORMAL } catch (_: Exception) {}; updateDetectedMicRoute(false); Toast.makeText(this, "Bluetooth timeout.", Toast.LENGTH_LONG).show() } }, 8000); true
-            }
-        } catch (e: Exception) { false }
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun clearBluetoothRoute() {
-        scoStateReceiver?.let { try { unregisterReceiver(it) } catch (_: Exception) {} }; scoStateReceiver = null; scoConnectTimeoutHandler.removeCallbacksAndMessages(null)
-        try { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) { audioManager.clearCommunicationDevice() } else { audioManager.stopBluetoothSco(); audioManager.isBluetoothScoOn = false }; audioManager.mode = AudioManager.MODE_NORMAL } catch (_: Exception) {}
-    }
-
-    private fun restartCameraForAudioChange(delayMs: Long) {
-        if (!rtmpCamera.isOnPreview || rtmpCamera.isStreaming) return
-        try { rtmpCamera.stopPreview() } catch (_: Exception) {}
-        Handler(Looper.getMainLooper()).postDelayed({ tryStartCameraPreview() }, delayMs)
-    }
-
-    private fun refreshChatOverlayText() {
-        if (tvStreamChatOverlay.visibility != View.VISIBLE) return
-        val maxLines = if (tvStreamChatOverlay.height > 0 && tvStreamChatOverlay.lineHeight > 0) tvStreamChatOverlay.height / tvStreamChatOverlay.lineHeight else 8
-        tvStreamChatOverlay.text = streamChatHistory.takeLast(maxLines.coerceAtLeast(1)).joinToString("\n")
-    }
-
-    private fun updateOverlayMenuButtonPosition() {
-        val target = selectedOverlay
-        if (target == null || currentMode != "DRAG") { btnOverlayMenu.visibility = View.GONE; return }
-        btnOverlayMenu.visibility = View.VISIBLE
-        btnOverlayMenu.x = target.x + (target.width * target.scaleX) - (32 * resources.displayMetrics.density)
-        btnOverlayMenu.y = target.y - (16 * resources.displayMetrics.density)
-    }
-
-    private fun positionDoneButton(target: View) { btnOverlayDone.x = target.x; btnOverlayDone.y = target.y - (40 * resources.displayMetrics.density) }
-
-    private fun addResizeHandle(target: View, xAlign: Float, yAlign: Float, wMult: Int, hMult: Int, isEdge: Boolean) {
-        val size = ((if (isEdge) 12 else 24) * resources.displayMetrics.density).toInt()
-        val handle = View(this).apply { layoutParams = RelativeLayout.LayoutParams(size, size); setBackgroundColor(if (isEdge) Color.parseColor("#8800BCD4") else Color.parseColor("#00BCD4")) }
-        val root = findViewById<RelativeLayout>(R.id.rootLayout); root.addView(handle); resizeHandles.add(handle)
-        val updateHandlePos = { handle.x = target.x + (target.width * target.scaleX * xAlign) - size / 2; handle.y = target.y + (target.height * target.scaleY * yAlign) - size / 2 }
-        updateHandlePos()
-        var dX = 0f; var dY = 0f; var startW = 0; var startH = 0; var startX = 0f; var startY = 0f
-        handle.setOnTouchListener { _, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { dX = event.rawX; dY = event.rawY; startW = target.width; startH = target.height; startX = target.x; startY = target.y }
-                MotionEvent.ACTION_MOVE -> {
-                    var newW = startW + ((event.rawX - dX).toInt() * wMult); var newH = startH + ((event.rawY - dY).toInt() * hMult)
-                    if (newW < 100) newW = 100; if (newH < 100) newH = 100
-                    target.layoutParams.width = newW; target.layoutParams.height = newH; target.requestLayout()
-                    if (wMult < 0) target.x = startX + (startW - newW); if (hMult < 0) target.y = startY + (startH - newH)
-                    updateHandlePos(); if (target == tvStreamChatOverlay) refreshChatOverlayText()
-                    root.post { resizeHandles.forEach { (it.tag as? ()->Unit)?.invoke() } }; updateSnapshot()
-                }
-                MotionEvent.ACTION_UP -> updateSnapshot()
-            }
-            true
-        }
-        handle.tag = updateHandlePos
-    }
-
-    private fun showCropFrame(target: View) {
-        val root = findViewById<RelativeLayout>(R.id.rootLayout); val density = resources.displayMetrics.density
-        val border = View(this).apply { layoutParams = RelativeLayout.LayoutParams(target.width, target.height); background = android.graphics.drawable.GradientDrawable().apply { setStroke((2 * density).toInt(), Color.parseColor("#00BCD4")); setColor(Color.TRANSPARENT) }; x = target.x; y = target.y; isClickable = false }
-        root.addView(border); cropFrameViews.add(border)
-        listOf(0f to 0f, 1f to 0f, 0f to 1f, 1f to 1f).forEach { (xAlign, yAlign) ->
-            val dot = View(this).apply { layoutParams = RelativeLayout.LayoutParams((16 * density).toInt(), (16 * density).toInt()); setBackgroundColor(Color.parseColor("#00BCD4")); x = target.x + (target.width * xAlign) - (8 * density); y = target.y + (target.height * yAlign) - (8 * density); isClickable = false }
-            root.addView(dot); cropFrameViews.add(dot)
-        }
-    }
-
-    private fun enterResizeMode(target: View) {
-        currentMode = "RESIZE"; btnOverlayMenu.visibility = View.GONE; btnOverlayDone.visibility = View.VISIBLE; positionDoneButton(target); target.setOnTouchListener(null)
-        if (target is ImageView) target.scaleType = ImageView.ScaleType.FIT_XY
-        addResizeHandle(target, 0f, 0f, -1, -1, false); addResizeHandle(target, 1f, 0f, 1, -1, false); addResizeHandle(target, 0f, 1f, -1, 1, false); addResizeHandle(target, 1f, 1f, 1, 1, false)
-        addResizeHandle(target, 0.5f, 0f, 0, -1, true); addResizeHandle(target, 0.5f, 1f, 0, 1, true); addResizeHandle(target, 0f, 0.5f, -1, 0, true); addResizeHandle(target, 1f, 0.5f, 1, 0, true)
-    }
-
-    private fun enterCropMode(target: View) {
-        currentMode = "CROP"; btnOverlayMenu.visibility = View.GONE; btnOverlayDone.visibility = View.VISIBLE; positionDoneButton(target); showCropFrame(target)
-        if (target is ImageView) {
-            val bmpW = target.drawable?.intrinsicWidth?.toFloat() ?: target.width.toFloat(); val bmpH = target.drawable?.intrinsicHeight?.toFloat() ?: target.height.toFloat()
-            val fillScale = maxOf(target.width.toFloat() / bmpW, target.height.toFloat() / bmpH)
-            target.scaleType = ImageView.ScaleType.MATRIX
-            var scale = fillScale; var transX = (target.width - bmpW * scale) / 2f; var transY = (target.height - bmpH * scale) / 2f
-            fun clampAndApply() { transX = transX.coerceIn(target.width - bmpW * scale, 0f); transY = transY.coerceIn(target.height - bmpH * scale, 0f); val matrix = android.graphics.Matrix(); matrix.postScale(scale, scale); matrix.postTranslate(transX, transY); target.imageMatrix = matrix; updateSnapshot() }
-            clampAndApply()
-            val scaleDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() { override fun onScale(d: ScaleGestureDetector): Boolean { scale = (scale * d.scaleFactor).coerceIn(fillScale, fillScale * 4f); clampAndApply(); return true } })
-            var dX = 0f; var dY = 0f
-            target.setOnTouchListener { _, event ->
-                if (currentMode != "CROP") return@setOnTouchListener false
-                scaleDetector.onTouchEvent(event)
-                if (!scaleDetector.isInProgress) {
-                    when (event.actionMasked) {
-                        MotionEvent.ACTION_DOWN -> { dX = transX - event.rawX; dY = transY - event.rawY }
-                        MotionEvent.ACTION_MOVE -> { transX = event.rawX + dX; transY = event.rawY + dY; clampAndApply() }
-                        MotionEvent.ACTION_UP -> updateSnapshot()
-                    }
-                }
-                true
-            }
-        } else if (target is WebView) { target.settings.builtInZoomControls = true; target.settings.displayZoomControls = false; target.setOnTouchListener(null) }
-    }
-
-    private fun showAddTextDialog() {
-        val input = EditText(this).apply { hint = "Enter text..."; inputType = InputType.TYPE_CLASS_TEXT }
-        AlertDialog.Builder(this).setTitle("Add Text Overlay").setView(input).setPositiveButton("Add") { _, _ -> 
-            if (input.text.toString().trim().isNotEmpty()) {
-                val textView = TextView(this).apply { text = input.text.toString().trim(); setTextColor(Color.YELLOW); textSize = 30f; setTypeface(null, Typeface.BOLD); layoutParams = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) } }
-                overlayContainer.addView(textView); makeDraggableAndScalable(textView); selectedOverlay = textView; updateOverlayMenuButtonPosition(); updateSnapshot()
-            }
-        }.setNegativeButton("Cancel", null).show()
-    }
-
-    private fun showAddLowerThirdDialog() {
-        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(40,20,40,20) }
-        val titleInput = EditText(this).apply { hint = "Title (e.g. BREAKING NEWS)" }
-        val msgInput = EditText(this).apply { hint = "Running Text (e.g. Subscribe to channel...)" }
-        container.addView(titleInput); container.addView(msgInput)
-        
-        AlertDialog.Builder(this).setTitle("Add Lower Third Ticker").setView(container)
-            .setPositiveButton("Add") { _, _ -> 
-                val wrapper = LinearLayout(this).apply {
-                    tag = "LOWER_THIRD"
-                    orientation = LinearLayout.HORIZONTAL
-                    layoutParams = RelativeLayout.LayoutParams(1200, RelativeLayout.LayoutParams.WRAP_CONTENT).apply { addRule(RelativeLayout.ALIGN_PARENT_BOTTOM, RelativeLayout.TRUE); bottomMargin = 100; leftMargin = 50 }
-                }
-                val tvTitle = TextView(this).apply {
-                    text = titleInput.text.toString()
-                    setBackgroundColor(Color.parseColor("#1565C0"))
-                    setTextColor(Color.WHITE)
-                    textSize = 24f
-                    setTypeface(null, Typeface.BOLD)
-                    setPadding(30, 20, 30, 20)
-                }
-                val tvMsg = TextView(this).apply {
-                    text = msgInput.text.toString()
-                    setBackgroundColor(Color.parseColor("#C62828"))
-                    setTextColor(Color.WHITE)
-                    textSize = 24f
-                    setPadding(30, 20, 30, 20)
-                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT)
-                    ellipsize = TextUtils.TruncateAt.MARQUEE
-                    marqueeRepeatLimit = -1
-                    isSingleLine = true
-                    isSelected = true
-                }
-                wrapper.addView(tvTitle); wrapper.addView(tvMsg)
-                overlayContainer.addView(wrapper)
-                makeDraggableAndScalable(wrapper)
-                selectedOverlay = wrapper
-                
-                tickerHandler.post(tickerRunnable)
-                
-                updateOverlayMenuButtonPosition()
-                updateSnapshot()
-            }.setNegativeButton("Cancel", null).show()
-    }
-
-    private fun showCustomColorPickerDialog() {
-        val target = selectedOverlay ?: run { Toast.makeText(this, "Select a text/overlay first.", Toast.LENGTH_SHORT).show(); return }
-        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(40,20,40,20) }
-        val previewBox = View(this).apply { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 150); setBackgroundColor(Color.WHITE) }
-        
-        var r = 255; var g = 255; var b = 255
-        val rSeek = SeekBar(this).apply { max = 255; progress = 255 }
-        val gSeek = SeekBar(this).apply { max = 255; progress = 255 }
-        val bSeek = SeekBar(this).apply { max = 255; progress = 255 }
-
-        val updateColor = { 
-            r = rSeek.progress; g = gSeek.progress; b = bSeek.progress
-            previewBox.setBackgroundColor(Color.rgb(r, g, b)) 
-        }
-        val listener = object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) { updateColor() }
-            override fun onStartTrackingTouch(s: SeekBar?) {}
-            override fun onStopTrackingTouch(s: SeekBar?) {}
-        }
-        rSeek.setOnSeekBarChangeListener(listener); gSeek.setOnSeekBarChangeListener(listener); bSeek.setOnSeekBarChangeListener(listener)
-        
-        container.addView(previewBox)
-        container.addView(TextView(this).apply { text = "Red"; setPadding(0,20,0,0) }); container.addView(rSeek)
-        container.addView(TextView(this).apply { text = "Green"; setPadding(0,20,0,0) }); container.addView(gSeek)
-        container.addView(TextView(this).apply { text = "Blue"; setPadding(0,20,0,0) }); container.addView(bSeek)
-        
-        val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0,30,0,0) }
-        val dialog = AlertDialog.Builder(this).setTitle("Custom Color Picker").setView(container).setNegativeButton("Close", null).create()
-
-        if (target.tag == "LOWER_THIRD" && target is LinearLayout) {
-            val btnTitleBg = Button(this).apply { text = "Title BG"; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
-            val btnTickerBg = Button(this).apply { text = "Ticker BG"; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
-            val btnTextColor = Button(this).apply { text = "Text Color"; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
-            
-            btnTitleBg.setOnClickListener { (target.getChildAt(0) as? TextView)?.setBackgroundColor(Color.rgb(r, g, b)); updateSnapshot(); dialog.dismiss() }
-            btnTickerBg.setOnClickListener { (target.getChildAt(1) as? TextView)?.setBackgroundColor(Color.rgb(r, g, b)); updateSnapshot(); dialog.dismiss() }
-            btnTextColor.setOnClickListener { 
-                (target.getChildAt(0) as? TextView)?.setTextColor(Color.rgb(r, g, b))
-                (target.getChildAt(1) as? TextView)?.setTextColor(Color.rgb(r, g, b))
-                updateSnapshot(); dialog.dismiss() 
-            }
-            btnRow.addView(btnTitleBg); btnRow.addView(btnTickerBg); btnRow.addView(btnTextColor)
-        } else {
-            val btnTextColor = Button(this).apply { text = "Apply to Text"; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
-            val btnBgColor = Button(this).apply { text = "Apply to Background"; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
-            btnTextColor.setOnClickListener { (target as? TextView)?.setTextColor(Color.rgb(r, g, b)); updateSnapshot(); dialog.dismiss() }
-            btnBgColor.setOnClickListener { (target as? TextView)?.setBackgroundColor(Color.rgb(r, g, b)); updateSnapshot(); dialog.dismiss() }
-            btnRow.addView(btnTextColor); btnRow.addView(btnBgColor)
-        }
-        
-        container.addView(btnRow)
-        dialog.show()
-    }
-
-    private fun addLiveTextOverlay() {
-        val liveEditText = EditText(this).apply {
-            hint = "Start typing..."
-            setHintTextColor(Color.argb(128, 255, 255, 255))
-            setTextColor(Color.YELLOW)
-            textSize = 30f
-            setTypeface(null, Typeface.BOLD)
-            background = null
-            setShadowLayer(5f, 2f, 2f, Color.BLACK)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            layoutParams = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT).apply { 
-                addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) 
-            }
-            
-            setOnFocusChangeListener { _, hasFocus ->
-                if (!hasFocus && text.toString().trim().isEmpty()) {
-                    overlayContainer.removeView(this)
-                    if (selectedOverlay == this) {
-                        selectedOverlay = null
-                        updateOverlayMenuButtonPosition()
-                    }
-                    updateSnapshot()
-                }
-            }
-
-            addTextChangedListener(object : TextWatcher { 
-                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { updateSnapshot() }
-                override fun afterTextChanged(s: Editable?) {} 
-            })
-        }
-        overlayContainer.addView(liveEditText)
-        makeDraggableAndScalable(liveEditText)
-        selectedOverlay = liveEditText
-        updateOverlayMenuButtonPosition()
-        updateSnapshot()
-        liveEditText.requestFocus()
-        (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(liveEditText, InputMethodManager.SHOW_IMPLICIT)
-    }
-
-    private fun showScoreboardDialog() {
-        val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(40, 20, 40, 20) }
-        val mainInput = EditText(this).apply { hint = "Main Score (IND 245/3)" }
-        val subInput = EditText(this).apply { hint = "Sub Score (Target: 312)" }
-        layout.addView(mainInput); layout.addView(subInput)
-        AlertDialog.Builder(this).setTitle("Update Scoreboard").setView(layout).setPositiveButton("Show") { _, _ -> scoreMainText.text = mainInput.text.toString(); scoreSubText.text = subInput.text.toString(); dragScoreboard.visibility = View.VISIBLE; updateSnapshot() }.setNegativeButton("Cancel", null).show()
-    }
-
-    @SuppressLint("SetJavaScriptEnabled")
-    private fun showAddWebDialog() {
-        val input = EditText(this).apply { hint = "https://..." }
-        AlertDialog.Builder(this).setTitle("Add Web Overlay").setView(input).setPositiveButton("Add") { _, _ ->
-            val url = input.text.toString().trim()
-            if (url.isNotEmpty()) {
-                val finalUrl = if (!url.startsWith("http")) "https://$url" else url
-                val displayMetrics = resources.displayMetrics; val boxWidth = (displayMetrics.widthPixels * 0.85).toInt(); val boxHeight = (displayMetrics.heightPixels * 0.85).toInt()
-                val webView = WebView(this).apply {
-                    tag = "WEB_OVERLAY"
-                    layoutParams = RelativeLayout.LayoutParams(boxWidth, boxHeight).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) }
-                    setBackgroundColor(Color.TRANSPARENT); setLayerType(View.LAYER_TYPE_SOFTWARE, null); settings.javaScriptEnabled = true; settings.domStorageEnabled = true; settings.useWideViewPort = true; settings.loadWithOverviewMode = true; webViewClient = WebViewClient(); webChromeClient = WebChromeClient(); loadUrl(finalUrl)
-                }
-                overlayContainer.addView(webView); makeDraggableAndScalable(webView); selectedOverlay = webView; updateOverlayMenuButtonPosition(); 
-                
-                webSyncHandler.post(webSyncRunnable)
-                
-                overlayHandler.postDelayed({ updateSnapshot() }, 2000)
-            }
-        }.setNegativeButton("Cancel", null).show()
-    }
-
-    private fun applyAccountToHeader(account: com.google.android.gms.auth.api.signin.GoogleSignInAccount) {
-        account.photoUrl?.let { url -> Thread { try { val input = URL(url.toString()).openStream(); val bmp = BitmapFactory.decodeStream(input); input.close(); val circular = cropToCircle(bmp); runOnUiThread { findViewById<ImageView>(R.id.ivProfilePhoto).setImageBitmap(circular) } } catch (e: Exception) { e.printStackTrace() } }.start() }
-    }
-
-    private fun cropToCircle(bitmap: Bitmap): Bitmap {
-        val size = minOf(bitmap.width, bitmap.height); val output = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(output); val paint = Paint(Paint.ANTI_ALIAS_FLAG); paint.shader = BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
-        canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint); return output
-    }
-
-    private fun saveStreamLocally(title: String, broadcastId: String, chatId: String, rtmpUrl: String) {
-        val prefs = getSharedPreferences("MBLiveStreams", Context.MODE_PRIVATE)
-        val arr = org.json.JSONArray(prefs.getString("streams", "[]"))
-        val obj = org.json.JSONObject().apply { put("title", title); put("broadcastId", broadcastId); put("chatId", chatId); put("rtmpUrl", rtmpUrl); put("time", System.currentTimeMillis()) }
-        arr.put(obj); prefs.edit().putString("streams", arr.toString()).apply()
-    }
+    if(!loadedState.meta.tossWinner) loadedState.meta.tossWinner = "A";
+    if(!loadedState.meta.tossDecision) loadedState.meta.tossDecision = "BAT";
     
-    private fun removeSavedStream(broadcastId: String) {
-        val prefs = getSharedPreferences("MBLiveStreams", Context.MODE_PRIVATE)
-        val arr = org.json.JSONArray(prefs.getString("streams", "[]")); val newArr = org.json.JSONArray()
-        for (i in 0 until arr.length()) { val obj = arr.getJSONObject(i); if (obj.getString("broadcastId") != broadcastId) newArr.put(obj) }
-        prefs.edit().putString("streams", newArr.toString()).apply()
-    }
-
-    private fun showSavedStreamsManager() {
-        val prefs = getSharedPreferences("MBLiveStreams", Context.MODE_PRIVATE)
-        val arr = org.json.JSONArray(prefs.getString("streams", "[]"))
-        if (arr.length() == 0) { Toast.makeText(this, "No saved streams. Click GO LIVE to create one.", Toast.LENGTH_SHORT).show(); return }
-        
-        val items = Array(arr.length()) { i -> arr.getJSONObject(i).getString("title") }
-        AlertDialog.Builder(this).setTitle("Your Streams").setItems(items) { _, which ->
-            val obj = arr.getJSONObject(which)
-            val title = obj.getString("title")
-            val bId = obj.getString("broadcastId")
-            val link = "https://youtu.be/$bId"
-            showStreamReadyDialog(title, link, obj.getString("rtmpUrl"), bId, obj.getString("chatId"))
-        }.setNegativeButton("Close", null).show()
-    }
-
-    private fun showStreamReadyDialog(title: String, link: String, rtmpUrl: String, broadcastId: String, chatId: String) {
-        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(40,40,40,40) }
-        container.addView(TextView(this).apply { text = "Stream Created Successfully!\n\nShare this link with your viewers:"; textSize = 16f; setPadding(0,0,0,20) })
-        container.addView(TextView(this).apply { text = link; textSize = 18f; setTextColor(Color.parseColor("#2196F3")); setTypeface(null, Typeface.BOLD); setPadding(0,0,0,40) })
-        
-        val btnCopy = Button(this).apply { text = "COPY LINK"; layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT) }
-        val btnShare = Button(this).apply { text = "SHARE LINK"; layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT) }
-        val btnStart = Button(this).apply { text = "▶ START CAMERA"; setBackgroundColor(Color.parseColor("#4CAF50")); setTextColor(Color.WHITE); layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin=40 } }
-        container.addView(btnCopy); container.addView(btnShare); container.addView(btnStart)
-
-        val scrollContainer = ScrollView(this).apply { addView(container) }
-        val dialog = AlertDialog.Builder(this).setTitle(title).setView(scrollContainer).setNegativeButton("SAVE FOR LATER", null).create()
-        
-        btnCopy.setOnClickListener { val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager; clipboard.setPrimaryClip(ClipData.newPlainText("Live Stream Link", link)); Toast.makeText(this, "Copied!", Toast.LENGTH_SHORT).show() }
-        btnShare.setOnClickListener { val intent = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_SUBJECT, title); putExtra(Intent.EXTRA_TEXT, "Join my live stream: $link") }; startActivity(Intent.createChooser(intent, "Share via")) }
-        btnStart.setOnClickListener {
-            dialog.dismiss()
-            currentBroadcastId = broadcastId
-            generatedRtmpUrl = rtmpUrl
-            btnGoLive.text = "CONNECTING..."
-            try { rtmpCamera.startStream(rtmpUrl); startChatPolling(chatId) } catch (e: Exception) { Toast.makeText(this, "Stream Error", Toast.LENGTH_LONG).show(); btnGoLive.text = "GO LIVE" }
-        }
-        dialog.show()
-    }
-
-    private fun showGoLiveDialog() {
-        pendingScheduleTimeMs = 0L 
-        val padding = (16 * resources.displayMetrics.density).toInt()
-        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(padding, padding, padding, padding) }
-        val etTitle = EditText(this).apply { hint = "Broadcast Title"; setText(pendingTitle) }
-        val etDesc = EditText(this).apply { hint = "Description"; setText(pendingDesc) }
-        val privacyOptions = arrayOf("Public", "Unlisted", "Private")
-        val spinner = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, privacyOptions); setSelection(privacyOptions.indexOfFirst { it.equals(pendingPrivacy, ignoreCase = true) }.coerceAtLeast(1)) }
-        
-        val btnTime = Button(this).apply { text = "SCHEDULE (OPTIONAL)" }
-        val thumbPreview = ImageView(this).apply { layoutParams = LinearLayout.LayoutParams((140 * resources.displayMetrics.density).toInt(), (90 * resources.displayMetrics.density).toInt()).apply { gravity = android.view.Gravity.CENTER_HORIZONTAL }; scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(Color.parseColor("#333333")); pendingThumbnailUri?.let { setImageURI(it) } }
-        thumbnailPreviewImageView = thumbPreview
-        val thumbWrapper = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER; addView(thumbPreview) }
-        val btnThumbnail = Button(this).apply { text = "CHOOSE THUMBNAIL" }
-        val btnConfirmLive = Button(this).apply { text = "CREATE STREAM"; setBackgroundColor(Color.parseColor("#D32F2F")); setTextColor(Color.WHITE) }
-
-        btnTime.setOnClickListener {
-            val c = Calendar.getInstance()
-            DatePickerDialog(this, { _, y, m, d ->
-                TimePickerDialog(this, { _, h, min ->
-                    val sel = Calendar.getInstance().apply { set(y, m, d, h, min, 0) }
-                    pendingScheduleTimeMs = sel.timeInMillis
-                    btnTime.text = "Scheduled: ${java.text.SimpleDateFormat("dd MMM, HH:mm", java.util.Locale.US).format(sel.time)}"
-                }, c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), false).show()
-            }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
-        }
-
-        listOf(etTitle, etDesc, spinner, btnTime, thumbWrapper, btnThumbnail, btnConfirmLive).forEach { val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT); lp.bottomMargin = (8 * resources.displayMetrics.density).toInt(); it.layoutParams = lp; container.addView(it) }
-        val dialog = AlertDialog.Builder(this).setTitle("Setup Broadcast").setView(ScrollView(this).apply { addView(container) }).setNegativeButton("Cancel", null).create()
-
-        btnThumbnail.setOnClickListener { val intent = Intent(Intent.ACTION_GET_CONTENT); intent.type = "image/*"; startActivityForResult(intent, PICK_THUMBNAIL_REQUEST) }
-        btnConfirmLive.setOnClickListener {
-            pendingTitle = etTitle.text.toString(); pendingDesc = etDesc.text.toString(); pendingPrivacy = spinner.selectedItem.toString().lowercase()
-            dialog.dismiss(); retryCount = 0; createYouTubeBroadcast()
-        }
-        dialog.show()
-    }
-
-    private fun startChatPolling(liveChatId: String) { currentLiveChatId = liveChatId; chatNextPageToken = null; chatPollingActive = true; pollChatOnce(); pollViewersOnce() }
-    private fun stopChatPolling() { chatPollingActive = false; chatHandler.removeCallbacksAndMessages(null); currentLiveChatId = null; runOnUiThread { tvViewerCount.visibility = View.GONE } }
-
-    private fun pollViewersOnce() {
-        if (!chatPollingActive || currentBroadcastId == null) return
-        
-        if (!switchViewerSync.isChecked) {
-            chatHandler.postDelayed({ pollViewersOnce() }, 5000L)
-            return
-        }
-
-        val youtube = youtubeClient ?: return
-        Thread {
-            addQuota(1)
-            try {
-                val response = youtube.videos().list("liveStreamingDetails").setId(currentBroadcastId).execute()
-                val details = response.items?.firstOrNull()?.liveStreamingDetails
-                val viewers = details?.concurrentViewers?.toString() ?: "0"
-                runOnUiThread { 
-                    tvViewerCount.text = "👁️ $viewers"
-                    if (switchShowViewers.isChecked) tvViewerCount.visibility = View.VISIBLE 
-                }
-            } catch (e: Exception) { e.printStackTrace() }
-            if (chatPollingActive) chatHandler.postDelayed({ pollViewersOnce() }, 5000L)
-        }.start()
-    }
-
-    private fun pollChatOnce() {
-        if (!chatPollingActive) return
-        
-        if (!switchChatSync.isChecked) {
-            chatHandler.postDelayed({ pollChatOnce() }, 5000L)
-            return
-        }
-
-        val chatId = currentLiveChatId ?: return
-        val youtube = youtubeClient ?: return
-        Thread {
-            addQuota(1)
-            try {
-                val request = youtube.liveChatMessages().list(chatId, "snippet,authorDetails")
-                chatNextPageToken?.let { request.pageToken = it }
-                val response = request.execute()
-                chatNextPageToken = response.nextPageToken
-                val newLines = response.items.orEmpty().mapNotNull { msg -> val author = msg.authorDetails?.displayName ?: "Viewer"; val text = msg.snippet?.displayMessage ?: return@mapNotNull null; "$author: $text" }
-                if (newLines.isNotEmpty()) {
-                    runOnUiThread {
-                        tvCommentsFeed.text = (tvCommentsFeed.text.toString().lines() + newLines).takeLast(30).joinToString("\n")
-                        commentsScrollView.post { commentsScrollView.fullScroll(View.FOCUS_DOWN) }
-                        streamChatHistory.addAll(newLines); if (streamChatHistory.size > 50) streamChatHistory.subList(0, streamChatHistory.size - 50).clear()
-                        refreshChatOverlayText(); updateSnapshot()
-                    }
-                }
-                val youtubeDelay = response.pollingIntervalMillis ?: 5000L
-                val finalDelay = if (youtubeDelay > 5000L) youtubeDelay else 5000L
-                if (chatPollingActive) chatHandler.postDelayed({ pollChatOnce() }, finalDelay)
-            } catch (e: Exception) {
-                e.printStackTrace()
-                if (chatPollingActive) chatHandler.postDelayed({ pollChatOnce() }, 10000L)
-            }
-        }.start()
-    }
-
-    private fun startStudioTimer() { liveStartTimeMillis = System.currentTimeMillis(); timerRunning = true; tvLiveTimer.visibility = View.VISIBLE; timerHandler.post(timerRunnable) }
-    private fun stopStudioTimer() { timerRunning = false; timerHandler.removeCallbacksAndMessages(null); tvLiveTimer.visibility = View.GONE; tvLiveTimer.text = "00:00:00" }
-
-    private fun updateSnapshot(delay: Long = 200) {
-        if (!rtmpCamera.isOnPreview || overlayContainer.width == 0 || overlayContainer.height == 0 || pendingRefresh) return
-        pendingRefresh = true
-        overlayHandler.postDelayed({
-            try {
-                val newBitmap = Bitmap.createBitmap(overlayContainer.width, overlayContainer.height, Bitmap.Config.ARGB_8888)
-                val canvas = Canvas(newBitmap); overlayContainer.draw(canvas)
-                imageFilterRender.setImage(newBitmap); imageFilterRender.setScale(100f, 100f); imageFilterRender.setPosition(0f, 0f)
-                lastOverlayBitmap?.let { old -> if (!old.isRecycled) old.recycle() }
-                lastOverlayBitmap = newBitmap
-            } catch (e: Exception) { e.printStackTrace() }
-            pendingRefresh = false
-        }, delay)
-    }
-
-    private fun stopLiveStream() {
-        btnGoLive.isEnabled = false; btnGoLive.text = "STOPPING..."
-        Thread {
-            currentBroadcastId?.let { broadcastId -> 
-                try { youtubeClient?.liveBroadcasts()?.transition("complete", broadcastId, "status")?.execute() } catch (e: Exception) { e.printStackTrace() }
-                removeSavedStream(broadcastId)
-                currentBroadcastId = null 
-            }
-            try { rtmpCamera.stopStream() } catch (e: Exception) {}
-            runOnUiThread {
-                btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
-                Toast.makeText(this@MainActivity, "Stream Ended Permanently.", Toast.LENGTH_SHORT).show()
-                generatedRtmpUrl = null; stopChatPolling(); stopStudioTimer()
-            }
-        }.start()
-    }
-
-    private fun createYouTubeBroadcast() {
-        btnGoLive.text = "1/3: API..."; btnGoLive.isEnabled = false
-        val finalTitle = pendingTitle.trim().ifEmpty { "Live from M.B. Live Studio" }
-        val finalDesc = pendingDesc.trim().ifEmpty { "Streaming via Android App" }
-        val privacyInput = pendingPrivacy
-        Thread {
-            addQuota(150)
-            try {
-                val credential = GoogleAccountCredential.usingOAuth2(this@MainActivity, listOf("https://www.googleapis.com/auth/youtube"))
-                val signInAccount = GoogleSignIn.getLastSignedInAccount(this@MainActivity)
-                if (signInAccount?.account != null) credential.selectedAccount = signInAccount.account else credential.selectedAccountName = connectedAccountEmail
-                val youtube = YouTube.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), HttpRequestInitializer { request -> credential.initialize(request); request.connectTimeout = 10000; request.readTimeout = 10000; request.numberOfRetries = 0 }).setApplicationName("MBLiveStudio").build()
-                youtubeClient = youtube
-                runOnUiThread { btnGoLive.text = "2/3: ROOM..." }
-
-                val scheduleTime = if (pendingScheduleTimeMs > 0) DateTime(pendingScheduleTimeMs) else DateTime(System.currentTimeMillis())
-                val broadcastSnippet = LiveBroadcastSnippet().apply { title = finalTitle; description = finalDesc; scheduledStartTime = scheduleTime }
-                val broadcastStatus = LiveBroadcastStatus().apply { privacyStatus = privacyInput; selfDeclaredMadeForKids = false }
-                val broadcastContentDetails = LiveBroadcastContentDetails().apply { enableAutoStart = true; latencyPreference = "ultraLow" }
-                val broadcast = youtube.liveBroadcasts().insert("snippet,status,contentDetails", LiveBroadcast().apply { snippet = broadcastSnippet; status = broadcastStatus; contentDetails = broadcastContentDetails }).execute()
-
-                val bId = broadcast.id
-                val liveChatId = broadcast.snippet?.liveChatId ?: ""
-                pendingThumbnailUri?.let { uri -> try { val stream = contentResolver.openInputStream(uri); if (stream != null) { youtube.thumbnails().set(bId, InputStreamContent("image/jpeg", stream)).execute() } } catch (e: Exception) { e.printStackTrace() } }
-                runOnUiThread { btnGoLive.text = "3/3: KEY..." }
-
-                val stream2 = youtube.liveStreams().insert("snippet,cdn", LiveStream().apply { snippet = LiveStreamSnippet().apply { title = "$finalTitle - Key" }; cdn = CdnSettings().apply { ingestionType = "rtmp"; resolution = "variable"; frameRate = "variable" } }).execute()
-                youtube.liveBroadcasts().bind(bId, "id,contentDetails").apply { streamId = stream2.id }.execute()
-
-                val ingestionUrl = stream2.cdn.ingestionInfo.ingestionAddress
-                var resolvedIp: String? = null
-                try { val host = if (ingestionUrl.contains("b.rtmp")) "b.rtmp.youtube.com" else "a.rtmp.youtube.com"; resolvedIp = InetAddress.getAllByName(host).firstOrNull { it is Inet4Address }?.hostAddress } catch (e: Exception) { e.printStackTrace() }
-                val finalUrl = if (resolvedIp != null && ingestionUrl.contains("a.rtmp.youtube.com")) ingestionUrl.replace("a.rtmp.youtube.com", resolvedIp) + "/" + stream2.cdn.ingestionInfo.streamName else ingestionUrl.replace("a.rtmp", "b.rtmp") + "/" + stream2.cdn.ingestionInfo.streamName
-                
-                val shareLink = "https://youtu.be/$bId"
-                saveStreamLocally(finalTitle, bId, liveChatId, finalUrl)
-
-                runOnUiThread {
-                    btnGoLive.text = "GO LIVE"
-                    btnGoLive.isEnabled = true
-                    showStreamReadyDialog(finalTitle, shareLink, finalUrl, bId, liveChatId)
-                }
-            } catch (e: Exception) { e.printStackTrace(); runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; Toast.makeText(this@MainActivity, "Timeout/API Error: ${e.message}", Toast.LENGTH_LONG).show() } }
-        }.start()
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQUEST_AUTHORIZATION && GoogleSignIn.hasPermissions(GoogleSignIn.getLastSignedInAccount(this), Scope("https://www.googleapis.com/auth/youtube"))) Toast.makeText(this, "Permission Granted! Tap LIVE again.", Toast.LENGTH_LONG).show()
-        if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK && data != null) data.data?.let { uri -> addImageOverlayToScreen(MediaStore.Images.Media.getBitmap(contentResolver, uri)) }
-        if (requestCode == PICK_THUMBNAIL_REQUEST && resultCode == RESULT_OK && data != null) data.data?.let { uri -> pendingThumbnailUri = uri; thumbnailPreviewImageView?.setImageURI(uri) }
-        if (requestCode == SIGN_IN_REQUEST) try { val account = GoogleSignIn.getSignedInAccountFromIntent(data).getResult(ApiException::class.java); connectedAccountEmail = account?.email; if (account != null) applyAccountToHeader(account) } catch (e: ApiException) { }
-    }
-
-    private fun addImageOverlayToScreen(bitmap: Bitmap) {
-        val imageView = ImageView(this).apply { setImageBitmap(bitmap); layoutParams = RelativeLayout.LayoutParams(300, 300).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) } }
-        overlayContainer.addView(imageView); makeDraggableAndScalable(imageView); selectedOverlay = imageView; updateOverlayMenuButtonPosition(); updateSnapshot()
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun makeDraggableAndScalable(view: View) {
-        val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() { override fun onScale(detector: ScaleGestureDetector): Boolean { if (view is WebView) return false; view.scaleX *= detector.scaleFactor; view.scaleY *= detector.scaleFactor; return true } })
-        var localDX = 0f; var localDY = 0f
-        view.setOnTouchListener { v, event ->
-            if (currentMode != "DRAG") return@setOnTouchListener false
-            scaleGestureDetector.onTouchEvent(event)
-            if (!scaleGestureDetector.isInProgress) {
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { 
-                        localDX = v.x - event.rawX; localDY = v.y - event.rawY
-                        selectedOverlay = v
-                        updateOverlayMenuButtonPosition() 
-                    }
-                    MotionEvent.ACTION_MOVE -> { v.x = event.rawX + localDX; v.y = event.rawY + localDY; updateOverlayMenuButtonPosition() }
-                    MotionEvent.ACTION_UP -> { updateSnapshot() }
-                }
-            }
-            if (v is EditText) v.onTouchEvent(event)
-            true
-        }
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun makeStudioPanelDraggable(view: View) {
-        var dX = 0f; var dY = 0f
-        view.setOnTouchListener { v, event -> when (event.actionMasked) { MotionEvent.ACTION_DOWN -> { dX = v.x - event.rawX; dY = v.y - event.rawY }; MotionEvent.ACTION_MOVE -> { v.x = event.rawX + dX; v.y = event.rawY + dY } }; true }
-    }
-
-    private fun hasCameraPermissions(): Boolean = checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-    private fun tryStartCameraPreview() { if (surfaceReady && hasCameraPermissions()) startCameraPreview() }
+    if(loadedState.graphics) { loadedState.graphics.activeEvent = null; }
     
-    private fun startCameraPreview() {
-        if (!hasCameraPermissions() || rtmpCamera.isOnPreview) return
-        var isSuccess = false
-        val fallback = if (streamWidth >= streamHeight) listOf(Triple(streamWidth, streamHeight, streamBitrate), Triple(1280, 720, 3_000_000), Triple(854, 480, 1_500_000), Triple(640, 480, 1_000_000)) else listOf(Triple(streamWidth, streamHeight, streamBitrate), Triple(720, 1280, 3_000_000), Triple(480, 854, 1_500_000), Triple(480, 640, 1_000_000))
-        for (res in fallback) { try { if (rtmpCamera.prepareVideo(res.first, res.second, 30, res.third, 2, 0)) { isSuccess = true; break } } catch (e: Exception) {} }
-        if (!isSuccess) try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) {}
-        
-        var aReady = false
-        if (isBluetoothMicActive) {
-            try { aReady = rtmpCamera.prepareAudio(32 * 1024, 16000, false, false, false) } catch (e: Exception) {}
-            if (!aReady) try { aReady = rtmpCamera.prepareAudio(16 * 1024, 8000, false, false, false) } catch (e: Exception) {}
-        } else {
-            val useEchoCanceler = detectedMicRoute == MicRoute.PHONE
-            try { aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, true, useEchoCanceler, true) } catch (e: Exception) {}
-            if (!aReady) try { aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, false, useEchoCanceler, true) } catch (e: Exception) {}
-        }
-        if (!aReady) try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { }
+    state = loadedState;
+    const tlSnap = await get(ref(db, `mb_match_timeline/${id}`)); timelineHistory = tlSnap.exists() ? tlSnap.val() : [];
+    startController();
+  }
+};
 
-        if (isSuccess && aReady) { 
-            rtmpCamera.glInterface.setFilter(cameraLayoutFilter)
-            rtmpCamera.glInterface.addFilter(imageFilterRender)
-            rtmpCamera.startPreview()
-            overlayHandler.postDelayed({ updateSnapshot() }, 1000) 
-        } else { runOnUiThread { Toast.makeText(this, "CAMERA ERROR: Device encoder not supported.", Toast.LENGTH_LONG).show() } }
-    }
+window.deleteMatch = async function(id) {
+  if(confirm("Are you sure you want to delete this match permanently?")) {
+    await remove(ref(db, `mb_saved_matches_list/${id}`)); await remove(ref(db, `mb_match_data/${id}`)); await remove(ref(db, `mb_match_timeline/${id}`)); renderSavedMatches();
+  }
+};
 
-    override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "🔥 YOU ARE LIVE!", Toast.LENGTH_LONG).show(); startStudioTimer() } }
-    override fun onConnectionFailed(reason: String) {
-        if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { retryCount++; runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }; Thread { Thread.sleep(2000); try { rtmpCamera.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} }.start() } else { runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show(); stopChatPolling(); stopStudioTimer() } }
-    }
-    override fun onDisconnect() { runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F")); try { rtmpCamera.stopPreview() } catch (e: Exception) {}; tryStartCameraPreview(); stopChatPolling(); stopStudioTimer() } }
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) { super.onRequestPermissionsResult(requestCode, permissions, grantResults); tryStartCameraPreview() }
-    override fun surfaceCreated(holder: SurfaceHolder) {}
-    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) { surfaceReady = true; tryStartCameraPreview() }
-    
-    override fun surfaceDestroyed(holder: SurfaceHolder) { 
-        surfaceReady = false
-        if (rtmpCamera.isStreaming) rtmpCamera.stopStream()
-        if (rtmpCamera.isOnPreview) rtmpCamera.stopPreview() 
-    }
-    
-    override fun onDestroy() {
-        super.onDestroy()
-        overlayHandler.removeCallbacksAndMessages(null); chatHandler.removeCallbacksAndMessages(null); timerHandler.removeCallbacksAndMessages(null); scoConnectTimeoutHandler.removeCallbacksAndMessages(null)
-        tickerHandler.removeCallbacksAndMessages(null)
-        webSyncHandler.removeCallbacksAndMessages(null)
-        scoStateReceiver?.let { try { unregisterReceiver(it) } catch (e: Exception) {} }; scoStateReceiver = null
-        try { clearBluetoothRoute() } catch (_: Exception) {}
-        try { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) { audioDeviceCallback?.let { audioManager.unregisterAudioDeviceCallback(it) } } } catch (_: Exception) {}
-        audioDeviceCallback = null; isBluetoothMicActive = false
-        try { if (rtmpCamera.isStreaming) rtmpCamera.stopStream() } catch (e: Exception) {}
-        try { if (rtmpCamera.isOnPreview) rtmpCamera.stopPreview() } catch (e: Exception) {}
-        lastOverlayBitmap?.let { if (!it.isRecycled) it.recycle() }; lastOverlayBitmap = null
-    }
-    
-    override fun onAuthError() {}
-    override fun onAuthSuccess() {}
-    override fun onConnectionStarted(url: String) {}
-    override fun onNewBitrate(bitrate: Long) {}
-    private fun applyCameraLayout(rect: FloatArray) { cameraLayoutFilter.setRect(rect[0], rect[1], rect[2], rect[3]); cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f) }
+window.exitToHome = function() { document.getElementById('screen-live').classList.remove('active'); document.getElementById('screen-home').classList.add('active'); set(liveRef, null); renderSavedMatches(); };
 
-    private var currentZoomDistance = 100f
+function startController() { document.getElementById('screen-home').classList.remove('active'); document.getElementById('screen-live').classList.add('active'); syncLiveAndSave(); }
 
-    private fun performSmoothZoom(zoomIn: Boolean) {
-        val now = android.os.SystemClock.uptimeMillis()
-        val props = arrayOf(MotionEvent.PointerProperties(), MotionEvent.PointerProperties())
-        props[0].id = 0; props[1].id = 1
-        val coords = arrayOf(MotionEvent.PointerCoords(), MotionEvent.PointerCoords())
-        coords[0].x = 0f; coords[0].y = 0f
-        
-        coords[1].x = currentZoomDistance; coords[1].y = 0f
-        var event = MotionEvent.obtain(now, now, MotionEvent.ACTION_MOVE, 2, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
-        try { rtmpCamera.setZoom(event) } catch (e: Exception) {}
-        event.recycle()
-
-        if (zoomIn) currentZoomDistance += 15f else currentZoomDistance -= 15f
-        if (currentZoomDistance < 100f) currentZoomDistance = 100f
-
-        coords[1].x = currentZoomDistance
-        event = MotionEvent.obtain(now, now, MotionEvent.ACTION_MOVE, 2, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
-        try { rtmpCamera.setZoom(event) } catch (e: Exception) {}
-        event.recycle()
-    }
+let heavySaveTimer = null;
+function syncLiveAndSave() {
+  if(!state) return; set(liveRef, state); updateUI();
+  clearTimeout(heavySaveTimer);
+  heavySaveTimer = setTimeout(() => {
+      const summary = { id: state.id, title: state.title, meta: state.meta, legalBalls: state.legalBalls, innings: state.innings, score: state.score };
+      set(ref(db, `mb_saved_matches_list/${state.id}`), summary); set(ref(db, `mb_match_data/${state.id}`), state); set(ref(db, `mb_match_timeline/${state.id}`), timelineHistory.slice(0, 15));
+  }, 800);
 }
+
+function pushSnapshot(desc) { timelineHistory.unshift({ id: Date.now(), desc, snapshot: JSON.stringify(state) }); if(timelineHistory.length > 15) timelineHistory.pop(); }
+window.undoToSnapshot = function(id) { const idx = timelineHistory.findIndex(x => x.id === id); if(idx > -1) { state = JSON.parse(timelineHistory[idx].snapshot); timelineHistory.splice(0, idx + 1); syncLiveAndSave(); } };
+
+window.openEditPlayers = function() {
+  let html = `<div style="margin-bottom:10px;"><span class="small-label">Team A Name</span><input type="text" id="edit_tA_name" value="${state.meta.tA}" style="width:100%; margin-bottom:5px; font-weight:bold; color:var(--gold);"></div>`;
+  state.squads.A.forEach((p, i) => { html += `<input type="text" id="edit_A_${i}" value="${p.name}" style="width:100%; margin-bottom:2px;">`; });
+  html += `<div style="margin:15px 0 10px;"><span class="small-label">Team B Name</span><input type="text" id="edit_tB_name" value="${state.meta.tB}" style="width:100%; margin-bottom:5px; font-weight:bold; color:var(--gold);"></div>`;
+  state.squads.B.forEach((p, i) => { html += `<input type="text" id="edit_B_${i}" value="${p.name}" style="width:100%; margin-bottom:2px;">`; });
+  document.getElementById('editPlayersList').innerHTML = html; document.getElementById('editPlayersModal').classList.add('active');
+};
+window.saveEditPlayers = function() {
+  state.meta.tA = document.getElementById('edit_tA_name').value.trim() || "Team A"; state.meta.tB = document.getElementById('edit_tB_name').value.trim() || "Team B"; state.title = `${state.meta.tA} vs ${state.meta.tB}`;
+  state.squads.A.forEach((p, i) => { p.name = document.getElementById(`edit_A_${i}`).value; }); state.squads.B.forEach((p, i) => { p.name = document.getElementById(`edit_B_${i}`).value; });
+  closeModal('editPlayersModal'); pushSnapshot("Edited Teams & Players"); syncLiveAndSave();
+};
+
+window.openMatchSettings = function() {
+  document.getElementById('editMaxOvers').value = state.meta.maxOvers;
+  document.getElementById('editMaxOvers').disabled = (state.innings > 1);
+  const tossDiv = document.getElementById('tossEditDiv');
+  if(state.innings === 1 && state.legalBalls < 6) {
+      tossDiv.style.display = 'block';
+      document.getElementById('editTossWinner').innerHTML = `<option value="A">${state.meta.tA}</option><option value="B">${state.meta.tB}</option>`;
+      document.getElementById('editTossWinner').value = state.meta.tossWinner || "A";
+      document.getElementById('editTossDecision').value = state.meta.tossDecision || "BAT";
+  } else { tossDiv.style.display = 'none'; }
+  document.getElementById('matchSettingsModal').classList.add('active');
+};
+
+window.saveMatchSettings = function() {
+  if(state.innings === 1) { state.meta.maxOvers = parseInt(document.getElementById('editMaxOvers').value) || state.meta.maxOvers; }
+  if(state.innings === 1 && state.legalBalls < 6) {
+      let tw = document.getElementById('editTossWinner').value; let td = document.getElementById('editTossDecision').value;
+      state.meta.tossWinner = tw; state.meta.tossDecision = td;
+      let newBat = (tw === "A" && td === "BAT") || (tw === "B" && td === "BOWL") ? "A" : "B"; let newBowl = newBat === "A" ? "B" : "A";
+      if(state.meta.batTeam !== newBat) {
+          state.meta.batTeam = newBat; state.meta.bowlTeam = newBowl;
+          state.striker = state.squads[newBat][0].id; state.nonStriker = state.squads[newBat][1].id; state.bowler = state.squads[newBowl][0].id;
+          state.partnership = { runs: 0, balls: 0, p1: state.striker, p2: state.nonStriker, p1Runs: 0, p1Balls: 0, p2Runs: 0, p2Balls: 0 };
+      }
+  }
+  closeModal('matchSettingsModal'); pushSnapshot("Match Settings Updated"); syncLiveAndSave();
+};
+
+function getBowlerStats(id) { if(!state.bowlerStats[id]) state.bowlerStats[id] = { balls: 0, runs: 0, wickets: 0, maidens: 0, dots: 0, ovRunsTracker: 0 }; return state.bowlerStats[id]; }
+
+window.processBall = function(runs) {
+  if(state.inningsOver) return; pushSnapshot(`${runs} runs scored`);
+  state.graphics.activeEvent = null; 
+
+  const tBat = state.meta.batTeam; const striker = state.squads[tBat].find(p => p.id === state.striker);
+  state.score += runs; state.currentOverRuns += runs; state.legalBalls += 1; state.overBalls.push(runs); 
+  state.partnership.runs += runs; state.partnership.balls += 1; 
+  if(striker.id === state.partnership.p1) { state.partnership.p1Runs += runs; state.partnership.p1Balls += 1; } else { state.partnership.p2Runs += runs; state.partnership.p2Balls += 1; }
+  striker.runs += runs; striker.balls += 1; if(runs === 4) striker.fours += 1; if(runs === 6) striker.sixes += 1;
+  const bs = getBowlerStats(state.bowler); bs.balls += 1; bs.runs += runs; bs.ovRunsTracker += runs; if(runs === 0) bs.dots += 1;
+  
+  if(runs % 2 !== 0) swapStrikeInternal(); checkOverEnd(); triggerAutoGraphic(runs === 4 ? "FOUR" : (runs === 6 ? "SIX" : null)); checkInningsEnd(); syncLiveAndSave();
+};
+
+window.openExtraModal = function(t) { 
+  tempExtraType = t; document.getElementById('extraTitle').innerText = t === 'WD' ? 'Wide Ball' : t === 'NB' ? 'No Ball' : t === 'B' ? 'Byes' : 'Leg Byes'; 
+  document.getElementById('extraRunsInput').value = 0; document.getElementById('nbTypeDiv').style.display = t === 'NB' ? 'block' : 'none';
+  document.getElementById('extraModal').classList.add('active'); 
+};
+window.submitExtra = function() {
+  closeModal('extraModal'); if(state.inningsOver) return; 
+  state.graphics.activeEvent = null; 
+  const extraRuns = parseInt(document.getElementById('extraRunsInput').value) || 0; pushSnapshot(`Extra: ${tempExtraType} + ${extraRuns}`);
+  const tBat = state.meta.batTeam; const striker = state.squads[tBat].find(p => p.id === state.striker); const bs = getBowlerStats(state.bowler);
+  
+  let isLegal = false; let penalty = 0; let batRuns = 0; let extraAdd = 0; let bowlRuns = 0;
+  if(tempExtraType === 'B' || tempExtraType === 'LB') { isLegal = true; extraAdd = extraRuns; bowlRuns = 0; } 
+  else if(tempExtraType === 'WD') { isLegal = false; penalty = 1; extraAdd = extraRuns + 1; bowlRuns = extraRuns + 1; } 
+  else if(tempExtraType === 'NB') { isLegal = false; penalty = 1; let nbType = document.getElementById('nbRunType').value; if(nbType === 'BAT') { batRuns = extraRuns; extraAdd = 1; bowlRuns = extraRuns + 1; } else { extraAdd = extraRuns + 1; bowlRuns = 1; } }
+
+  const total = batRuns + extraAdd; state.score += total; state.currentOverRuns += total; state.extras += extraAdd; state.partnership.runs += total; state.overBalls.push(`${tempExtraType}${extraRuns > 0 ? '+' + extraRuns : ''}`);
+  
+  if(tempExtraType === 'NB') { striker.balls += 1; if(striker.id === state.partnership.p1) { state.partnership.p1Balls += 1; if(batRuns > 0) { striker.runs += batRuns; state.partnership.p1Runs += batRuns; } } else { state.partnership.p2Balls += 1; if(batRuns > 0) { striker.runs += batRuns; state.partnership.p2Runs += batRuns; } } }
+  if(tempExtraType === 'WD' || tempExtraType === 'NB') { bs.runs += bowlRuns; bs.ovRunsTracker += bowlRuns; }
+  if(isLegal) { state.legalBalls += 1; state.partnership.balls += 1; striker.balls += 1; bs.balls += 1; if(extraRuns === 0) bs.dots += 1; if(striker.id === state.partnership.p1) state.partnership.p1Balls += 1; else state.partnership.p2Balls += 1; }
+  
+  if(extraRuns % 2 !== 0) swapStrikeInternal(); if(isLegal) checkOverEnd(); checkInningsEnd(); syncLiveAndSave();
+};
+
+window.openWicketModal = function(type) {
+  tempWicketType = type; document.getElementById('wicketTitle').innerText = type.replace('_', ' '); 
+  if(type === 'RUN_OUT') { document.getElementById('runOutExtrasDiv').style.display = 'block'; document.getElementById('roRuns').value = 0; } else { document.getElementById('runOutExtrasDiv').style.display = 'none'; }
+  const batterDiv = document.getElementById('outBatterDiv'); if(type === 'CAUGHT' || type === 'STUMPED') { batterDiv.style.display = 'none'; document.getElementById('outBatterSelect').value = 'STRIKER'; } else { batterDiv.style.display = 'block'; }
+  document.getElementById('fielderLabel').innerText = type === 'STUMPED' ? 'Select Keeper' : type === 'RUN_OUT' ? 'Select Fielder' : 'Select Catcher';
+  const select = document.getElementById('fielderSelect'); select.innerHTML = '<option value="">-- None / Direct --</option>'; state.squads[state.meta.bowlTeam].forEach(p => { select.innerHTML += `<option value="${p.id}">${p.name}</option>`; });
+  document.getElementById('wicketModal').classList.add('active');
+};
+
+window.submitWicket = function() { 
+  const who = document.getElementById('outBatterSelect').value; const fielderId = document.getElementById('fielderSelect').value; closeModal('wicketModal'); 
+  if(tempWicketType === 'RUN_OUT') { const delType = document.getElementById('roDelivery').value; const rRuns = parseInt(document.getElementById('roRuns').value) || 0; processRunOut(delType, rRuns, who, fielderId); } 
+  else { processWicket(tempWicketType, who, fielderId); }
+};
+
+window.processRunOut = function(delivery, runs, who, fielderId) {
+    if(state.inningsOver) return; pushSnapshot(`Run Out (${delivery}): +${runs}`); state.graphics.activeEvent = null;
+    const tBat = state.meta.batTeam; const striker = state.squads[tBat].find(p => p.id === state.striker); const bs = getBowlerStats(state.bowler); const outId = who === "STRIKER" ? state.striker : state.nonStriker;
+    
+    let isLegal = false; let batRuns = 0; let extraAdd = 0; let bowlRuns = 0; let ballLabel = '';
+    if(delivery === 'LEGAL') { isLegal = true; batRuns = runs; bowlRuns = runs; ballLabel = runs+'W'; }
+    else if(delivery === 'WD') { extraAdd = runs + 1; bowlRuns = runs + 1; ballLabel = 'WD+'+runs+'W'; }
+    else if(delivery === 'NB_BAT') { batRuns = runs; extraAdd = 1; bowlRuns = runs + 1; ballLabel = 'NB+'+runs+'W'; }
+    else if(delivery === 'NB_B' || delivery === 'NB_LB') { extraAdd = runs + 1; bowlRuns = 1; ballLabel = 'NB+'+runs+'W'; }
+    else if(delivery === 'B' || delivery === 'LB') { isLegal = true; extraAdd = runs; ballLabel = (delivery==='B'?'B':'LB')+runs+'W'; }
+
+    const total = batRuns + extraAdd; state.score += total; state.currentOverRuns += total; state.extras += extraAdd; state.partnership.runs += total; state.overBalls.push(ballLabel); bs.runs += bowlRuns; bs.ovRunsTracker += bowlRuns;
+
+    if(delivery.includes('NB') || isLegal) {
+        striker.balls += 1;
+        if(striker.id === state.partnership.p1) { state.partnership.p1Balls += 1; if(batRuns > 0) { striker.runs += batRuns; state.partnership.p1Runs += batRuns; } }
+        else { state.partnership.p2Balls += 1; if(batRuns > 0) { striker.runs += batRuns; state.partnership.p2Runs += batRuns; } }
+    }
+    
+    if(isLegal) { state.legalBalls += 1; state.partnership.balls += 1; bs.balls += 1; if(runs === 0) bs.dots += 1; }
+    if(runs % 2 !== 0) swapStrikeInternal();
+
+    const outBatter = state.squads[tBat].find(p => p.id === outId); outBatter.isOut = true;
+    const fielder = state.squads[state.meta.bowlTeam].find(p => p.id === fielderId); outBatter.dismissalInfo = `run out (${fielder ? fielder.name : ''})`; state.wickets += 1; 
+    state.fow.push({ wktNo: state.wickets, score: state.score, overs: fmtOvers(state.legalBalls), batterName: outBatter.name }); 
+    
+    let p1B = state.squads[tBat].find(p => p.id === state.partnership.p1); let p2B = state.squads[tBat].find(p => p.id === state.partnership.p2);
+    state.pastPartnerships.push({ wktNo: state.wickets, p1Name: p1B ? p1B.name : '', p1Runs: state.partnership.p1Runs, p1Balls: state.partnership.p1Balls, p2Name: p2B ? p2B.name : '', p2Runs: state.partnership.p2Runs, p2Balls: state.partnership.p2Balls, runs: state.partnership.runs, balls: state.partnership.balls });
+    
+    const nextBatter = state.squads[tBat].find(p => !p.isOut && !p.isAbsent && !p.isRetired && p.id !== state.striker && p.id !== state.nonStriker);
+    let nextId = nextBatter ? nextBatter.id : null; let nP1 = state.partnership.p1; let nP2 = state.partnership.p2;
+    if(nP1 === outId) nP1 = nextId; else nP2 = nextId; state.partnership = { runs: 0, balls: 0, p1: nP1, p2: nP2, p1Runs: 0, p1Balls: 0, p2Runs: 0, p2Balls: 0 };
+    
+    if(state.striker === outId) { if(nextBatter) state.striker = nextBatter.id; } 
+    else if(state.nonStriker === outId) { if(nextBatter) state.nonStriker = nextBatter.id; }
+
+    if(isLegal) checkOverEnd(); triggerAutoGraphic("WICKET"); checkInningsEnd(); syncLiveAndSave();
+};
+
+window.processWicket = function(type, who = "STRIKER", fielderId = null) {
+  if(state.inningsOver) return; pushSnapshot(`Wicket: ${type}`); if(type === 'CAUGHT' && !fielderId) openWicketModal('CAUGHT'); if(type === 'CAUGHT' && !fielderId) return; 
+  state.graphics.activeEvent = null; state.wickets += 1; state.legalBalls += 1; state.overBalls.push('W');
+
+  const batTeam = state.meta.batTeam; const outId = who === "STRIKER" ? state.striker : state.nonStriker; const outBatter = state.squads[batTeam].find(p => p.id === outId); outBatter.isOut = true; outBatter.balls += 1;
+  const bowler = state.squads[state.meta.bowlTeam].find(p => p.id === state.bowler); const fielder = state.squads[state.meta.bowlTeam].find(p => p.id === fielderId);
+
+  if(type === 'BOWLED') outBatter.dismissalInfo = `b ${bowler ? bowler.name : ''}`; else if(type === 'LBW') outBatter.dismissalInfo = `lbw b ${bowler ? bowler.name : ''}`; else if(type === 'CAUGHT') outBatter.dismissalInfo = `c ${fielder ? fielder.name : 'Sub'} b ${bowler ? bowler.name : ''}`; else if(type === 'STUMPED') outBatter.dismissalInfo = `st ${fielder ? fielder.name : 'Keeper'} b ${bowler ? bowler.name : ''}`; else if(type === 'HIT_WICKET') outBatter.dismissalInfo = `hit wkt b ${bowler ? bowler.name : ''}`;
+  const bs = getBowlerStats(state.bowler); bs.balls += 1; bs.wickets += 1; bs.dots += 1;
+  state.fow.push({ wktNo: state.wickets, score: state.score, overs: fmtOvers(state.legalBalls), batterName: outBatter.name }); 
+  
+  let p1B = state.squads[batTeam].find(p => p.id === state.partnership.p1); let p2B = state.squads[batTeam].find(p => p.id === state.partnership.p2);
+  state.pastPartnerships.push({ wktNo: state.wickets, p1Name: p1B ? p1B.name : '', p1Runs: state.partnership.p1Runs, p1Balls: state.partnership.p1Balls, p2Name: p2B ? p2B.name : '', p2Runs: state.partnership.p2Runs, p2Balls: state.partnership.p2Balls, runs: state.partnership.runs, balls: state.partnership.balls });
+  
+  const nextBatter = state.squads[batTeam].find(p => !p.isOut && !p.isAbsent && !p.isRetired && p.id !== state.striker && p.id !== state.nonStriker);
+  let nextId = nextBatter ? nextBatter.id : null; let nP1 = state.partnership.p1; let nP2 = state.partnership.p2;
+  if(nP1 === outId) nP1 = nextId; else nP2 = nextId; state.partnership = { runs: 0, balls: 0, p1: nP1, p2: nP2, p1Runs: 0, p1Balls: 0, p2Runs: 0, p2Balls: 0 };
+
+  if(who === "STRIKER" && nextBatter) state.striker = nextBatter.id; else if(nextBatter) state.nonStriker = nextBatter.id;
+  checkOverEnd(); triggerAutoGraphic("WICKET"); checkInningsEnd(); syncLiveAndSave();
+};
+
+window.markRetiredHurt = function() {
+  if(state.inningsOver) return; const batTeam = state.meta.batTeam; const p = state.squads[batTeam].find(x => x.id === state.striker); if(!confirm(`Mark ${p.name} as Retired Hurt?`)) return; pushSnapshot("Retired Hurt"); p.isRetired = true; p.dismissalInfo = "retired hurt";
+  
+  let p1B = state.squads[batTeam].find(b => b.id === state.partnership.p1); let p2B = state.squads[batTeam].find(b => b.id === state.partnership.p2);
+  state.pastPartnerships.push({ wktNo: state.wickets, p1Name: p1B ? p1B.name : '', p1Runs: state.partnership.p1Runs, p1Balls: state.partnership.p1Balls, p2Name: p2B ? p2B.name : '', p2Runs: state.partnership.p2Runs, p2Balls: state.partnership.p2Balls, runs: state.partnership.runs, balls: state.partnership.balls });
+  
+  const next = state.squads[batTeam].find(x => !x.isOut && !x.isAbsent && !x.isRetired && x.id !== state.striker && x.id !== state.nonStriker); 
+  let nextId = next ? next.id : null; let nP1 = state.partnership.p1; let nP2 = state.partnership.p2;
+  if(nP1 === state.striker) nP1 = nextId; else nP2 = nextId; state.partnership = { runs: 0, balls: 0, p1: nP1, p2: nP2, p1Runs: 0, p1Balls: 0, p2Runs: 0, p2Balls: 0 };
+  if(next) state.striker = next.id; syncLiveAndSave();
+};
+
+window.openAbsentModal = function() {
+  const batTeam = state.meta.batTeam; const sel = document.getElementById('absentSelect'); sel.innerHTML = '<option value="">-- Select Player --</option>';
+  state.squads[batTeam].forEach(p => { if(!p.isOut && !p.isAbsent && p.id !== state.striker && p.id !== state.nonStriker) { sel.innerHTML += `<option value="${p.id}">${p.name}</option>`; } }); document.getElementById('absentModal').classList.add('active');
+};
+window.submitAbsent = function() {
+  const id = document.getElementById('absentSelect').value; if(!id) return; closeModal('absentModal'); pushSnapshot("Batter Absent");
+  const p = state.squads[state.meta.batTeam].find(x => x.id === id); p.isOut = true; p.isAbsent = true; p.dismissalInfo = "absent hurt"; state.wickets += 1;
+  state.fow.push({ wktNo: state.wickets, score: state.score, overs: fmtOvers(state.legalBalls), batterName: p.name }); checkInningsEnd(); syncLiveAndSave();
+};
+
+function swapStrikeInternal() { const temp = state.striker; state.striker = state.nonStriker; state.nonStriker = temp; }
+window.swapStrike = function() { pushSnapshot("Swap Strike"); swapStrikeInternal(); syncLiveAndSave(); };
+
+function checkOverEnd() {
+  if(state.legalBalls % 6 === 0 && state.legalBalls > 0 && !state.inningsOver) {
+    let prevB = state.lastBowler; const bs = getBowlerStats(state.bowler); if(bs.ovRunsTracker === 0) bs.maidens += 1; bs.ovRunsTracker = 0; state.overHistory.push(state.currentOverRuns); state.currentOverRuns = 0;
+    swapStrikeInternal(); state.lastBowler = state.bowler; const bowlTeam = state.meta.bowlTeam; 
+    let nextB = state.squads[bowlTeam].find(p => p.id === prevB);
+    if(!nextB || nextB.id === state.lastBowler) nextB = state.squads[bowlTeam].find(p => p.id !== state.lastBowler);
+    if(nextB) state.bowler = nextB.id; state.overBalls = []; state.graphics.dynamicText = `END OF OVER ${state.legalBalls / 6}`;
+  }
+}
+
+function checkInningsEnd() {
+  const allOut = state.wickets >= (state.meta.squadSize - 1); const oversDone = state.legalBalls >= (state.meta.maxOvers * 6); const chased = (state.innings === 2 && state.target != null && state.score >= state.target);
+  if(allOut || oversDone || chased) state.inningsOver = true;
+}
+
+window.startSecondInnings = function() {
+  pushSnapshot("Start 2nd Innings"); let finalOverHistory = [...state.overHistory]; if (state.legalBalls % 6 !== 0) finalOverHistory.push(state.currentOverRuns);
+  state.graphics.activeEvent = null; 
+  state.firstInnings = { team: state.meta.batTeam, score: state.score, wickets: state.wickets, legalBalls: state.legalBalls, overHistory: finalOverHistory, fow: [...state.fow], batters: JSON.parse(JSON.stringify(state.squads[state.meta.batTeam])), bowlers: JSON.parse(JSON.stringify(state.squads[state.meta.bowlTeam])), bowlerStats: JSON.parse(JSON.stringify(state.bowlerStats)), extras: state.extras, pastPartnerships: [...state.pastPartnerships] };
+  const newBat = state.meta.bowlTeam; const newBowl = state.meta.batTeam; state.meta.batTeam = newBat; state.meta.bowlTeam = newBowl;
+  state.target = state.firstInnings.score + 1; state.innings = 2; state.score = 0; state.wickets = 0; state.legalBalls = 0; state.extras = 0; state.overBalls = []; state.currentOverRuns = 0; state.overHistory = []; state.fow = []; state.pastPartnerships = []; state.inningsOver = false; state.lastBowler = null; state.striker = state.squads[newBat][0].id; state.nonStriker = state.squads[newBat][1].id; state.bowler = state.squads[newBowl][0].id;
+  state.partnership = { runs: 0, balls: 0, p1: state.striker, p2: state.nonStriker, p1Runs: 0, p1Balls: 0, p2Runs: 0, p2Balls: 0 };
+  state.graphics.dynamicText = `${newBat === 'A' ? state.meta.tA : state.meta.tB} NEED ${state.target} TO WIN`; syncLiveAndSave();
+};
+
+function computeResult() {
+  const inn1 = state.firstInnings; if(!inn1) return "Innings Ended";
+  const batName = state.meta.batTeam === 'A' ? state.meta.tA : state.meta.tB; const bowlName = inn1.team === 'A' ? state.meta.tA : state.meta.tB;
+  if(state.score >= state.target) { const wktsLeft = (state.meta.squadSize - 1) - state.wickets; return `${batName} WON BY ${wktsLeft} WICKETS`; } 
+  else if(state.score === state.target - 1) return "MATCH TIED"; else return `${bowlName} WON BY ${state.target - 1 - state.score} RUNS`;
+}
+
+window.toggleGraphic = function(key) { state.graphics[key] = !state.graphics[key]; syncLiveAndSave(); };
+window.setGraphicInnings = function(mode) { if(mode === 'prev' && (!state || !state.firstInnings)) return; graphicInningsMode = mode; updateUI(); };
+
+window.handleGraphicClick = function(baseTarget) {
+    if(baseTarget === null) { state.graphics.centerGraphic = null; syncLiveAndSave(); return; }
+    let finalTarget = baseTarget; if(graphicInningsMode === 'prev' && baseTarget !== 'result' && baseTarget !== 'singlePlayer' && baseTarget !== 'squads') finalTarget += '1';
+    if(state.graphics.centerGraphic === finalTarget) state.graphics.centerGraphic = null; else state.graphics.centerGraphic = finalTarget; 
+    syncLiveAndSave();
+};
+
+window.toggleSinglePlayer = function() { if(state.graphics.centerGraphic === 'singlePlayer') { handleGraphicClick(null); } else { openSinglePlayerModal(); } };
+window.openSinglePlayerModal = function() {
+    let sel = document.getElementById('spPlayerSelect');
+    sel.innerHTML = `<optgroup label="${state.meta.tA}">` + state.squads.A.map(p => `<option value="${p.id}">${p.name}</option>`).join('') + `</optgroup>` +
+                    `<optgroup label="${state.meta.tB}">` + state.squads.B.map(p => `<option value="${p.id}">${p.name}</option>`).join('') + `</optgroup>`;
+    document.getElementById('singlePlayerModal').classList.add('active');
+};
+window.showSinglePlayerGraphic = function() {
+    let pId = document.getElementById('spPlayerSelect').value; let pType = document.getElementById('spStatType').value;
+    state.graphics.singlePlayer = { id: pId, type: pType }; state.graphics.centerGraphic = 'singlePlayer'; closeModal('singlePlayerModal'); syncLiveAndSave();
+};
+
+window.setCustomStrip = function() { const val = document.getElementById('customStripInput').value; if(val) { state.graphics.dynamicText = val; state.graphics.bottomStrip = true; syncLiveAndSave(); } };
+window.setStripQuick = function(type) {
+  let txt = ""; const batTeamName = state.meta.batTeam === 'A' ? state.meta.tA : state.meta.tB;
+  if(type === 'part') txt = `${getOrdinal(state.wickets + 1).toUpperCase()} WKT PARTNERSHIP: ${state.partnership.runs} RUNS (${state.partnership.balls} BALLS)`;
+  else if(type === 'fow') txt = "FALL OF WICKETS: " + (state.fow.length > 0 ? state.fow.map(f => `${f.wktNo}-${f.score}`).join(' | ') : "NONE");
+  else if(type === 'proj') {
+    if(state.innings === 2 && state.target != null) txt = `EQUATION: ${batTeamName} NEED ${Math.max(0, state.target - state.score)} RUNS FROM ${Math.max(0, (state.meta.maxOvers * 6) - state.legalBalls)} BALLS`;
+    else { const crr = state.legalBalls > 0 ? (state.score / state.legalBalls) * 6 : 0; const rem = state.meta.maxOvers - (state.legalBalls / 6); const pCrr = Math.round(state.score + crr * rem); let base = Math.max(6, Math.floor(crr)); if(base % 2 !== 0) base -= 1; txt = `PROJ: CRR(${crr.toFixed(1)}) ${pCrr} | @${base.toFixed(0)}: ${Math.round(state.score + base * rem)} | @${(base+2).toFixed(0)}: ${Math.round(state.score + (base + 2) * rem)}`; }
+  } else if(type === 'target') txt = state.target ? `TARGET: ${state.target} RUNS` : "1ST INNINGS IN PROGRESS";
+  else if(type === 'need') { if(state.innings === 2 && state.target != null) txt = `${batTeamName} NEED ${Math.max(0, state.target - state.score)} RUNS OFF ${Math.max(0, (state.meta.maxOvers * 6) - state.legalBalls)} BALLS`; else txt = `1ST INNINGS: ${batTeamName} ${state.score}/${state.wickets} (${fmtOvers(state.legalBalls)} OVS)`; }
+  state.graphics.dynamicText = txt; state.graphics.bottomStrip = true; syncLiveAndSave();
+};
+
+window.manualPlayerChange = function() { 
+  state.striker = document.getElementById('strikerSelect').value; state.nonStriker = document.getElementById('nonStrikerSelect').value; state.bowler = document.getElementById('bowlerSelect').value; 
+  if(state.partnership.p1 !== state.striker && state.partnership.p1 !== state.nonStriker) state.partnership.p1 = state.striker;
+  if(state.partnership.p2 !== state.striker && state.partnership.p2 !== state.nonStriker) state.partnership.p2 = state.nonStriker;
+  syncLiveAndSave(); 
+};
+
+let autoEventTimer = null;
+function triggerAutoGraphic(type) { 
+  if(!type) return; state.graphics.activeEvent = type; set(liveRef, state); 
+  clearTimeout(autoEventTimer);
+  autoEventTimer = setTimeout(() => { if(state && state.graphics) { state.graphics.activeEvent = null; set(liveRef, state); } }, 2500); 
+}
+window.closeModal = function(id) { document.getElementById(id).classList.remove('active'); };
+
+function updateUI() {
+  if(!state) return; const tBat = state.meta.batTeam; const tBowl = state.meta.bowlTeam;
+  document.getElementById('hudTeam').innerText = state.meta[tBat === 'A' ? 'tA' : 'tB']; document.getElementById('hudRuns').innerText = state.score; document.getElementById('hudWickets').innerText = state.wickets; document.getElementById('hudOvers').innerText = fmtOvers(state.legalBalls); document.getElementById('hudMaxOvers').innerText = state.meta.maxOvers; document.getElementById('hudCrr').innerText = state.legalBalls > 0 ? ((state.score / state.legalBalls) * 6).toFixed(2) : "0.00"; document.getElementById('hudTarget').innerText = state.target != null ? state.target : "—";
+  
+  const banner = document.getElementById('inningsOverBanner'); const bText = document.getElementById('inningsOverText'); const bBtn = document.getElementById('inningsOverBtn');
+  if(state.inningsOver) { banner.style.display = 'block'; if(state.innings === 1) { bText.innerText = `INNINGS 1 COMPLETE — ${state.meta[tBat === 'A' ? 'tA' : 'tB']} ${state.score}/${state.wickets}`; bBtn.style.display = 'block'; } else { bText.innerText = computeResult(); bBtn.style.display = 'none'; } } else { banner.style.display = 'none'; }
+
+  const btnCurr = document.getElementById('btnInnCurr'); const btnPrev = document.getElementById('btnInnPrev');
+  if(state.firstInnings) { btnPrev.style.opacity = '1'; btnPrev.style.pointerEvents = 'auto'; } else { btnPrev.style.opacity = '0.4'; btnPrev.style.pointerEvents = 'none'; graphicInningsMode = 'curr'; }
+  if(graphicInningsMode === 'curr') { btnCurr.classList.add('btn-active'); btnPrev.classList.remove('btn-active'); } else { btnPrev.classList.add('btn-active'); btnCurr.classList.remove('btn-active'); }
+
+  document.querySelectorAll('.btn-graphic').forEach(btn => {
+      let target = btn.dataset.graphic;
+      if(graphicInningsMode === 'prev' && target !== 'result' && target !== 'singlePlayer' && target !== 'squads') target += '1';
+      if(target === state.graphics.centerGraphic) btn.classList.add('btn-active'); else btn.classList.remove('btn-active');
+  });
+
+  const btnBug = document.getElementById('btnBugToggle'); const btnStrip = document.getElementById('btnStripToggle');
+  if(state.graphics.scorebug) btnBug.classList.add('btn-active'); else btnBug.classList.remove('btn-active');
+  if(state.graphics.bottomStrip) btnStrip.classList.add('btn-active'); else btnStrip.classList.remove('btn-active');
+
+  const availableBatters = state.squads[tBat].filter(p => !p.isOut && !p.isAbsent);
+  document.getElementById('strikerSelect').innerHTML = availableBatters.map(p => `<option value="${p.id}" ${state.striker===p.id?'selected':''}>${p.name} (${p.runs})</option>`).join('');
+  document.getElementById('nonStrikerSelect').innerHTML = availableBatters.map(p => `<option value="${p.id}" ${state.nonStriker===p.id?'selected':''}>${p.name} (${p.runs})</option>`).join('');
+  document.getElementById('bowlerSelect').innerHTML = state.squads[tBowl].map(p => { const bs = state.bowlerStats[p.id]; return `<option value="${p.id}" ${state.bowler===p.id?'selected':''}>${p.name} (${bs ? `${fmtOvers(bs.balls)}-${bs.runs}-${bs.wickets}` : "0.0-0-0"})</option>`; }).join('');
+  document.getElementById('timelineList').innerHTML = timelineHistory.map(t => `<div class="timeline-item"><span>${t.desc}</span><button onclick="undoToSnapshot(${t.id})">UNDO</button></div>`).join('');
+}
+renderSavedMatches();
+</script>
+</body>
+</html>
