@@ -89,7 +89,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private lateinit var tvCommentsFeed: TextView
     private lateinit var commentsScrollView: ScrollView
     private lateinit var tvStreamChatOverlay: TextView
+    
+    // API Toggles
     private lateinit var switchChatSync: Switch
+    private lateinit var switchViewerSync: Switch
+    private lateinit var switchShowQuota: Switch
+    private lateinit var switchShowViewers: Switch
 
     private lateinit var btnOverlayMenu: ImageButton
     private lateinit var btnOverlayDone: Button
@@ -210,8 +215,33 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         tvCommentsFeed = findViewById(R.id.tvCommentsFeed)
         commentsScrollView = findViewById(R.id.commentsScrollView)
         tvStreamChatOverlay = findViewById(R.id.tvStreamChatOverlay)
-        switchChatSync = findViewById(R.id.switchChatSync)
         
+        // Settings Popup initialization
+        val popupSettings: LinearLayout = findViewById(R.id.popupSettings)
+        val btnSettings: ImageButton = findViewById(R.id.btnSettings)
+        val btnCloseSettings: Button = findViewById(R.id.btnCloseSettings)
+        
+        btnSettings.setOnClickListener { popupSettings.visibility = View.VISIBLE }
+        btnCloseSettings.setOnClickListener { popupSettings.visibility = View.GONE }
+
+        // Toggles Initialization
+        switchChatSync = findViewById(R.id.switchChatSync)
+        switchViewerSync = findViewById(R.id.switchViewerSync)
+        switchShowQuota = findViewById(R.id.switchShowQuota)
+        switchShowViewers = findViewById(R.id.switchShowViewers)
+
+        switchShowQuota.setOnCheckedChangeListener { _, isChecked -> 
+            tvApiQuota.visibility = if (isChecked) View.VISIBLE else View.GONE 
+        }
+        
+        switchShowViewers.setOnCheckedChangeListener { _, isChecked -> 
+            if (chatPollingActive && isChecked) {
+                tvViewerCount.visibility = View.VISIBLE
+            } else {
+                tvViewerCount.visibility = View.GONE
+            }
+        }
+
         btnOverlayMenu = findViewById(R.id.btnOverlayMenu)
         btnOverlayDone = findViewById(R.id.btnOverlayDone)
 
@@ -265,27 +295,57 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         registerAudioDeviceMonitoring()
         updateDetectedMicRoute(false)
         
-        val btnToggleLayouts: ImageButton = findViewById(R.id.btnToggleLayouts)
-        val btnToggleOverlays: ImageButton = findViewById(R.id.btnToggleOverlays)
-        val btnToggleComments: ImageButton = findViewById(R.id.btnToggleComments)
-        val btnLiveText: ImageButton = findViewById(R.id.btnLiveText)
-
-        val popupLayouts: LinearLayout = findViewById(R.id.popupLayouts)
-        val popupOverlays: LinearLayout = findViewById(R.id.popupOverlays)
-        val btnCloseLayouts: Button = findViewById(R.id.btnCloseLayouts)
-        val btnCloseOverlays: Button = findViewById(R.id.btnCloseOverlays)
-
-        btnToggleLayouts.setOnClickListener { popupLayouts.visibility = View.VISIBLE; popupOverlays.visibility = View.GONE }
-        btnToggleOverlays.setOnClickListener { popupOverlays.visibility = View.VISIBLE; popupLayouts.visibility = View.GONE }
-        btnCloseLayouts.setOnClickListener { popupLayouts.visibility = View.GONE }
-        btnCloseOverlays.setOnClickListener { popupOverlays.visibility = View.GONE }
-
-        btnToggleComments.setOnClickListener {
+        // Buttons Inside Settings
+        findViewById<Button>(R.id.btnToggleComments).setOnClickListener {
+            popupSettings.visibility = View.GONE
             commentsPanel.visibility = if (commentsPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         }
 
-        btnLiveText.setOnClickListener { popupOverlays.visibility = View.GONE; addLiveTextOverlay() }
-        findViewById<ImageButton>(R.id.btnAddLowerThird).setOnClickListener { popupOverlays.visibility = View.GONE; showAddLowerThirdDialog() }
+        findViewById<Button>(R.id.btnToggleStreamChat).setOnClickListener {
+            popupSettings.visibility = View.GONE
+            if (tvStreamChatOverlay.visibility == View.VISIBLE) {
+                tvStreamChatOverlay.visibility = View.GONE
+                updateSnapshot()
+            } else {
+                tvStreamChatOverlay.visibility = View.VISIBLE
+                tvStreamChatOverlay.bringToFront()
+                refreshChatOverlayText()
+                updateSnapshot()
+            }
+        }
+
+        findViewById<Button>(R.id.btnAddText).setOnClickListener { popupSettings.visibility = View.GONE; showAddTextDialog() }
+        findViewById<Button>(R.id.btnAddWebOverlay).setOnClickListener { popupSettings.visibility = View.GONE; showAddWebDialog() }
+        findViewById<Button>(R.id.btnAddLogo).setOnClickListener { popupSettings.visibility = View.GONE; val intent = Intent(Intent.ACTION_GET_CONTENT); intent.type = "image/*"; startActivityForResult(intent, PICK_IMAGE_REQUEST) }
+        findViewById<Button>(R.id.btnToggleScore).setOnClickListener { popupSettings.visibility = View.GONE; if (dragScoreboard.visibility == View.VISIBLE) { dragScoreboard.visibility = View.GONE; updateSnapshot() } else { showScoreboardDialog() } }
+        findViewById<Button>(R.id.btnAddLowerThird).setOnClickListener { popupSettings.visibility = View.GONE; showAddLowerThirdDialog() }
+        
+        findViewById<ImageButton>(R.id.btnLayoutFull).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.FULL); popupSettings.visibility = View.GONE }
+        findViewById<ImageButton>(R.id.btnLayoutSplit).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.SPLIT_LEFT); popupSettings.visibility = View.GONE }
+        findViewById<ImageButton>(R.id.btnLayoutCornerTL).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.CORNER_TOP_LEFT); popupSettings.visibility = View.GONE }
+        findViewById<ImageButton>(R.id.btnLayoutCornerBR).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.CORNER_BOTTOM_RIGHT); popupSettings.visibility = View.GONE }
+
+        // Right side remaining buttons
+        val btnLiveText: ImageButton = findViewById(R.id.btnLiveText)
+        btnLiveText.setOnClickListener { popupSettings.visibility = View.GONE; addLiveTextOverlay() }
+        
+        findViewById<ImageButton>(R.id.btnRemoveSelected).setOnClickListener { 
+            popupSettings.visibility = View.GONE
+            selectedOverlay?.let { 
+                if (it != dragScoreboard) { 
+                    if (it.tag == "LOWER_THIRD") {
+                        tickerHandler.removeCallbacks(tickerRunnable)
+                    }
+                    if (it.tag == "WEB_OVERLAY") {
+                        webSyncHandler.removeCallbacks(webSyncRunnable)
+                    }
+                    overlayContainer.removeView(it)
+                    selectedOverlay = null
+                    updateOverlayMenuButtonPosition()
+                    updateSnapshot() 
+                } 
+            } 
+        }
 
         btnMicToggle.setColorFilter(Color.parseColor("#4CAF50"))
         btnMicToggle.setOnClickListener {
@@ -324,35 +384,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 tryStartCameraPreview()
             }
             Toast.makeText(this, if (streamWidth > streamHeight) "Landscape Mode" else "Portrait Mode", Toast.LENGTH_SHORT).show()
-        }
-
-        findViewById<ImageButton>(R.id.btnLayoutFull).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.FULL); popupLayouts.visibility = View.GONE }
-        findViewById<ImageButton>(R.id.btnLayoutSplit).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.SPLIT_LEFT); popupLayouts.visibility = View.GONE }
-        findViewById<ImageButton>(R.id.btnLayoutCornerTL).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.CORNER_TOP_LEFT); popupLayouts.visibility = View.GONE }
-        findViewById<ImageButton>(R.id.btnLayoutCornerBR).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.CORNER_BOTTOM_RIGHT); popupLayouts.visibility = View.GONE }
-
-        findViewById<ImageButton>(R.id.btnAddText).setOnClickListener { popupOverlays.visibility = View.GONE; showAddTextDialog() }
-        findViewById<ImageButton>(R.id.btnAddWebOverlay).setOnClickListener { popupOverlays.visibility = View.GONE; showAddWebDialog() }
-        findViewById<ImageButton>(R.id.btnAddLogo).setOnClickListener { popupOverlays.visibility = View.GONE; val intent = Intent(Intent.ACTION_GET_CONTENT); intent.type = "image/*"; startActivityForResult(intent, PICK_IMAGE_REQUEST) }
-        
-        findViewById<ImageButton>(R.id.btnToggleScore).setOnClickListener { popupOverlays.visibility = View.GONE; if (dragScoreboard.visibility == View.VISIBLE) { dragScoreboard.visibility = View.GONE; updateSnapshot() } else { showScoreboardDialog() } }
-        
-        findViewById<ImageButton>(R.id.btnRemoveSelected).setOnClickListener { 
-            popupOverlays.visibility = View.GONE
-            selectedOverlay?.let { 
-                if (it != dragScoreboard) { 
-                    if (it.tag == "LOWER_THIRD") {
-                        tickerHandler.removeCallbacks(tickerRunnable)
-                    }
-                    if (it.tag == "WEB_OVERLAY") {
-                        webSyncHandler.removeCallbacks(webSyncRunnable)
-                    }
-                    overlayContainer.removeView(it)
-                    selectedOverlay = null
-                    updateOverlayMenuButtonPosition()
-                    updateSnapshot() 
-                } 
-            } 
         }
 
         findViewById<Button>(R.id.btnZoomIn).setOnClickListener { performSmoothZoom(true) }
@@ -503,9 +534,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         Handler(Looper.getMainLooper()).postDelayed({ tryStartCameraPreview() }, delayMs)
     }
 
-    private fun refreshChatOverlayText(forcedHeight: Int? = null) {
+    private fun refreshChatOverlayText() {
         if (tvStreamChatOverlay.visibility != View.VISIBLE) return
-        val maxLines = if ((forcedHeight ?: tvStreamChatOverlay.height) > 0 && tvStreamChatOverlay.lineHeight > 0) (forcedHeight ?: tvStreamChatOverlay.height) / tvStreamChatOverlay.lineHeight else 8
+        val maxLines = if (tvStreamChatOverlay.height > 0 && tvStreamChatOverlay.lineHeight > 0) tvStreamChatOverlay.height / tvStreamChatOverlay.lineHeight else 8
         tvStreamChatOverlay.text = streamChatHistory.takeLast(maxLines.coerceAtLeast(1)).joinToString("\n")
     }
 
@@ -534,7 +565,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     if (newW < 100) newW = 100; if (newH < 100) newH = 100
                     target.layoutParams.width = newW; target.layoutParams.height = newH; target.requestLayout()
                     if (wMult < 0) target.x = startX + (startW - newW); if (hMult < 0) target.y = startY + (startH - newH)
-                    updateHandlePos(); if (target == tvStreamChatOverlay) refreshChatOverlayText(newH)
+                    updateHandlePos(); if (target == tvStreamChatOverlay) refreshChatOverlayText()
                     root.post { resizeHandles.forEach { (it.tag as? ()->Unit)?.invoke() } }; updateSnapshot()
                 }
                 MotionEvent.ACTION_UP -> updateSnapshot()
@@ -838,11 +869,24 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         dialog.show()
     }
 
-    private fun startChatPolling(liveChatId: String) { currentLiveChatId = liveChatId; chatNextPageToken = null; chatPollingActive = true; pollChatOnce(); pollViewersOnce() }
-    private fun stopChatPolling() { chatPollingActive = false; chatHandler.removeCallbacksAndMessages(null); currentLiveChatId = null; runOnUiThread { tvViewerCount.visibility = View.GONE } }
+    private fun startChatPolling(liveChatId: String) { 
+        currentLiveChatId = liveChatId; chatNextPageToken = null; chatPollingActive = true; 
+        pollChatOnce(); pollViewersOnce() 
+    }
+    
+    private fun stopChatPolling() { 
+        chatPollingActive = false; chatHandler.removeCallbacksAndMessages(null); currentLiveChatId = null
+        runOnUiThread { tvViewerCount.visibility = View.GONE } 
+    }
 
     private fun pollViewersOnce() {
         if (!chatPollingActive || currentBroadcastId == null) return
+        
+        if (!switchViewerSync.isChecked) {
+            chatHandler.postDelayed({ pollViewersOnce() }, 5000L)
+            return
+        }
+
         val youtube = youtubeClient ?: return
         Thread {
             addQuota(1)
@@ -850,7 +894,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 val response = youtube.videos().list("liveStreamingDetails").setId(currentBroadcastId).execute()
                 val details = response.items?.firstOrNull()?.liveStreamingDetails
                 val viewers = details?.concurrentViewers?.toString() ?: "0"
-                runOnUiThread { tvViewerCount.text = "👁️ $viewers"; tvViewerCount.visibility = View.VISIBLE }
+                runOnUiThread { 
+                    tvViewerCount.text = "👁️ $viewers"
+                    if (switchShowViewers.isChecked) tvViewerCount.visibility = View.VISIBLE 
+                }
             } catch (e: Exception) { e.printStackTrace() }
             if (chatPollingActive) chatHandler.postDelayed({ pollViewersOnce() }, 5000L)
         }.start()
