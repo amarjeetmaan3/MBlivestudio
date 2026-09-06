@@ -761,7 +761,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val btnStart = Button(this).apply { text = "▶ START CAMERA"; setBackgroundColor(Color.parseColor("#4CAF50")); setTextColor(Color.WHITE); layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin=40 } }
         container.addView(btnCopy); container.addView(btnShare); container.addView(btnStart)
 
-        val dialog = AlertDialog.Builder(this).setTitle(title).setView(container).setNegativeButton("SAVE FOR LATER", null).create()
+        // FIX: Added ScrollView here so the dialog can scroll on smaller screens
+        val scrollContainer = ScrollView(this).apply { addView(container) }
+        val dialog = AlertDialog.Builder(this).setTitle(title).setView(scrollContainer).setNegativeButton("SAVE FOR LATER", null).create()
         
         btnCopy.setOnClickListener { val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager; clipboard.setPrimaryClip(ClipData.newPlainText("Live Stream Link", link)); Toast.makeText(this, "Copied!", Toast.LENGTH_SHORT).show() }
         btnShare.setOnClickListener { val intent = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_SUBJECT, title); putExtra(Intent.EXTRA_TEXT, "Join my live stream: $link") }; startActivity(Intent.createChooser(intent, "Share via")) }
