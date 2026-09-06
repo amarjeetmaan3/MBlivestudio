@@ -99,7 +99,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     private var selectedOverlay: View? = null
     private var isAudioMuted = false
-    private var isMenuExpanded = false
     private var isBluetoothMicActive = false
     private lateinit var audioManager: AudioManager
 
@@ -257,24 +256,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             updateSnapshot()
         }
 
-        val btnToggleMenu: ImageButton = findViewById(R.id.btnToggleMenu)
-        val menuLabelsContainer: LinearLayout = findViewById(R.id.menuLabelsContainer)
-
-        btnToggleMenu.setOnClickListener {
-            if (isMenuExpanded) {
-                menuLabelsContainer.visibility = View.GONE
-                btnToggleMenu.setImageResource(R.drawable.ic_arrow_down)
-                isMenuExpanded = false
-            } else {
-                menuLabelsContainer.visibility = View.VISIBLE
-                btnToggleMenu.setImageResource(R.drawable.ic_arrow_up)
-                isMenuExpanded = true
-            }
-        }
-
         val btnSwitchCamera: ImageButton = findViewById(R.id.btnSwitchCamera)
         val btnMicToggle: ImageButton = findViewById(R.id.btnMicToggle)
         val btnBluetoothMic: ImageButton = findViewById(R.id.btnBluetoothMic)
+        val btnOrientation: ImageButton = findViewById(R.id.btnOrientation)
+
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         registerAudioDeviceMonitoring()
         updateDetectedMicRoute(false)
@@ -324,6 +310,22 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             toggleBluetoothMic(btnBluetoothMic)
         }
 
+        btnOrientation.setOnClickListener {
+            if (rtmpCamera.isStreaming) {
+                Toast.makeText(this, "Stop stream to change orientation", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val temp = streamWidth
+            streamWidth = streamHeight
+            streamHeight = temp
+
+            if (rtmpCamera.isOnPreview) {
+                rtmpCamera.stopPreview()
+                tryStartCameraPreview()
+            }
+            Toast.makeText(this, if (streamWidth > streamHeight) "Landscape Mode" else "Portrait Mode", Toast.LENGTH_SHORT).show()
+        }
+
         findViewById<ImageButton>(R.id.btnLayoutFull).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.FULL); popupLayouts.visibility = View.GONE }
         findViewById<ImageButton>(R.id.btnLayoutSplit).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.SPLIT_LEFT); popupLayouts.visibility = View.GONE }
         findViewById<ImageButton>(R.id.btnLayoutCornerTL).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.CORNER_TOP_LEFT); popupLayouts.visibility = View.GONE }
@@ -353,7 +355,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             } 
         }
 
-        // SMOOTH ZOOM IMPLEMENTATION
         findViewById<Button>(R.id.btnZoomIn).setOnClickListener { performSmoothZoom(true) }
         findViewById<Button>(R.id.btnZoomOut).setOnClickListener { performSmoothZoom(false) }
 
