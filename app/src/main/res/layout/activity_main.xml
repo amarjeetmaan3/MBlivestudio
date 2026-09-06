@@ -1,493 +1,314 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<!-- LOCKED VIEWPORT TO 1280px WIDTH TO FORCE 16:9 ON MOBILE BROADCAST APPS -->
-<meta name="viewport" content="width=1280, user-scalable=no">
-<title>M.B. Live Studio — Broadcast Overlay</title>
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@500;600;700&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
-<style>
-  :root{
-    --navy-deep:#050c18; --navy:#0a1628; --navy-2:#0f2140; --navy-3:#16304f;
-    --gold:#d4af37; --gold-2:#f2d878; --crimson:#b91c1c; --crimson-2:#e13939;
-    --ink:#f5f5f0; --muted:#8fa3bf; --line:rgba(212,175,55,0.35);
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  
-  /* FIXED 1280x720 CANVAS - WILL NEVER OVERLAP OR CHANGE ON PHONE ROTATION */
-  html,body { 
-      width: 1280px; 
-      height: 720px; 
-      position: relative; 
-      background: transparent; 
-      overflow: hidden; 
-      font-family: 'Rajdhani', sans-serif; 
-      color: var(--ink); 
-  }
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/rootLayout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
 
-  .num { font-family: 'Bebas Neue', sans-serif; letter-spacing: 0.5px; }
-  .mark { font-family: 'Orbitron', sans-serif; }
+    <!-- 100% Full Screen Camera -->
+    <com.pedro.library.view.OpenGlView
+        android:id="@+id/surfaceView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
 
-  /* ================= MAIN SCOREBUG ================= */
-  .scorebug {
-    position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
-    display: flex; flex-direction: column; align-items: stretch; 
-    width: 1150px; 
-    opacity: 0; transition: opacity .15s ease; filter: drop-shadow(0 14px 28px rgba(0,0,0,0.65)); z-index: 10;
-  }
-  .scorebug.show { opacity: 1; }
+    <RelativeLayout
+        android:id="@+id/overlayContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@android:color/transparent">
 
-  .brand-bar {
-    align-self: flex-start; margin-left: 22px; background: var(--gold); color: var(--navy-deep);
-    font-family: 'Orbitron', sans-serif; font-weight: 900; font-size: 13px; padding: 4px 18px; letter-spacing: 3px; border-radius: 5px 5px 0 0;
-  }
+        <!-- STREAM CHAT OVERLAY -->
+        <TextView
+            android:id="@+id/tvStreamChatOverlay"
+            android:layout_width="300dp"
+            android:layout_height="250dp"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:shadowColor="#000000"
+            android:shadowRadius="5"
+            android:shadowDx="2"
+            android:shadowDy="2"
+            android:layout_margin="20dp"
+            android:layout_alignParentLeft="true"
+            android:layout_centerVertical="true"
+            android:gravity="bottom"
+            android:visibility="gone" />
 
-  .main-strip {
-    display: flex; align-items: stretch; background: linear-gradient(180deg, var(--navy) 0%, var(--navy-deep) 100%);
-    border: 1px solid var(--line); border-bottom: none; overflow: hidden; height: 100px; border-radius: 8px 8px 0 0;
-  }
+        <LinearLayout
+            android:id="@+id/dragScoreboard"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#A6000000"
+            android:padding="15dp"
+            android:layout_alignParentBottom="true"
+            android:layout_alignParentRight="true"
+            android:layout_margin="20dp"
+            android:visibility="gone">
 
-  #bugNormal { display: flex; align-items: stretch; width: 100%; justify-content: space-between; }
-  #bugResult { display: none; justify-content: center; align-items: center; width: 100%; background: radial-gradient(ellipse at center, var(--navy-deep) 0%, #000 100%); font-family: 'Bebas Neue', sans-serif; font-size: 46px; color: var(--gold-2); letter-spacing: 2px; }
+            <TextView
+                android:id="@+id/scoreMainText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="IND 245/3 (40.2)"
+                android:textColor="#FFFFFF"
+                android:textSize="32sp"
+                android:textStyle="bold" />
+            <TextView
+                android:id="@+id/scoreSubText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Target: 312 | CRR: 6.08"
+                android:textColor="#FFFF00"
+                android:textSize="18sp" />
+        </LinearLayout>
+    </RelativeLayout>
 
-  .team-block { background: var(--gold); color: var(--navy-deep); font-family: 'Bebas Neue', sans-serif; letter-spacing: 1px; padding: 0 24px; display: flex; align-items: center; border-right: 3px solid var(--crimson); min-width: 150px; justify-content: center; text-align:center; white-space:nowrap; }
-  .score-block { display: flex; align-items: center; padding: 0 24px; border-right: 1px solid var(--line); }
-  .score-block .runs { font-family: 'Bebas Neue', sans-serif; font-size: 58px; line-height: 0.9; transform: translateY(4px); }
-  .score-block .overs { font-size: 20px; font-weight: 700; color: var(--muted); margin-left: 12px; align-self: center; }
-  .rate-block { display:flex; flex-direction:column; justify-content:center; padding: 0 20px; border-right: 1px solid var(--line); gap: 2px; }
-  .rate-block .label { font-size: 12px; letter-spacing: 1.5px; color: var(--gold); font-weight: 700; }
-  .rate-block .value { font-size: 22px; font-weight: 700; line-height: 1; }
-  .batters-block { display:flex; flex-direction:column; justify-content:center; padding: 0 22px; border-right: 1px solid var(--line); gap: 4px; min-width: 250px; flex:1; }
-  .batter-row { display:flex; justify-content: space-between; font-size: 18px; font-weight: 700; }
-  .batter-row.on-strike { color: var(--gold-2); }
-  .batter-row .fig { color: var(--muted); font-size: 16px; margin-left: 10px; }
-  .bowler-block { display:flex; flex-direction:column; justify-content:center; padding: 0 22px; min-width: 280px; }
-  .bowler-info { display:flex; align-items:baseline; gap: 8px; margin-bottom: 6px; }
-  .bowler-info .label { font-size: 12px; letter-spacing: 1.5px; color: var(--gold); font-weight: 700; }
-  .bowler-info .name { font-size: 18px; font-weight: 700; }
-  .bowler-info .fig { font-size: 16px; color: var(--muted); margin-left: auto; }
-  .over-track { display: flex; flex-wrap: wrap; gap: 5px; max-width: 260px; }
-  .ball-pill { min-width: 24px; height: 24px; padding: 0 4px; border-radius: 50%; background: var(--navy-3); color: var(--ink); font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line); }
+    <!-- Studio Only Overlay Controls -->
+    <ImageButton
+        android:id="@+id/btnOverlayMenu"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:background="#CC000000"
+        android:src="@android:drawable/ic_menu_more"
+        android:tint="#FFFFFF"
+        android:visibility="gone" />
 
-  .bottom-strip { background: linear-gradient(90deg, var(--crimson) 0%, var(--crimson-2) 100%); color: #fff; font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; padding: 8px 30px; text-align: center; opacity: 0; transition: opacity .15s; }
-  .bottom-strip.show { opacity: 1; }
+    <Button
+        android:id="@+id/btnOverlayDone"
+        android:layout_width="wrap_content"
+        android:layout_height="32dp"
+        android:backgroundTint="#4CAF50"
+        android:text="✓ DONE"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
+        android:visibility="gone" />
 
-  /* ================= CENTER GRAPHICS ================= */
-  .center-panel {
-    position: absolute; top: 35%; left: 50%; transform: translate(-50%, -50%);
-    background: radial-gradient(ellipse at center, var(--navy) 0%, var(--navy-deep) 100%);
-    border: 2px solid var(--gold); border-radius: 12px; filter: drop-shadow(0 20px 40px rgba(0,0,0,0.8));
-    opacity: 0; pointer-events: none; transition: all .15s ease; z-index: 5;
-    display: flex; flex-direction: column; overflow: hidden;
-  }
-  .center-panel.show { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
-  .center-title { background: var(--gold); color: var(--navy-deep); text-align: center; font-family: 'Orbitron', sans-serif; font-weight: 900; font-size: 18px; letter-spacing: 3px; padding: 6px; }
+    <!-- Top Bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="16dp">
 
-  #graphic-part { width: 650px; }
-  .part-flex { display: flex; align-items: center; justify-content: space-between; padding: 15px 35px; }
-  .part-player { text-align: center; flex: 1; }
-  .part-name { font-size: 22px; font-weight: 700; color: var(--ink); }
-  .part-contrib { font-family: 'Bebas Neue', sans-serif; font-size: 32px; color: var(--muted); margin-top: 2px; }
-  .part-center { text-align: center; flex: 1.5; border-left: 1px solid var(--line); border-right: 1px solid var(--line); display:flex; justify-content:center; align-items:baseline; gap:8px;}
-  .part-total { font-family: 'Bebas Neue', sans-serif; font-size: 72px; color: var(--gold-2); line-height: 1; }
-  .part-balls { font-size: 24px; font-weight: 700; color: var(--muted); font-family: 'Rajdhani', sans-serif; }
+        <ImageView
+            android:id="@+id/ivProfilePhoto"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:src="@android:drawable/sym_def_app_icon" />
 
-  #graphic-allpart { width: 950px; }
-  .allpart-list { padding: 10px 25px; max-height: 380px; overflow-y: auto; }
-  .allpart-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 15px; border-bottom: 1px dotted var(--line); font-size: 20px; font-weight: 600; }
-  .ap-p1 { flex: 1.2; text-align: left; }
-  .ap-mid { flex: 0.8; text-align: center; color: var(--gold-2); font-family: 'Bebas Neue', sans-serif; font-size: 38px; line-height: 1; display:flex; justify-content:center; align-items:baseline; gap:8px;}
-  .ap-p2 { flex: 1.2; text-align: right; }
+        <TextView
+            android:id="@+id/tvLiveTimer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="00:00:00"
+            android:textColor="#FF5252"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:background="#80000000"
+            android:paddingHorizontal="6dp"
+            android:paddingVertical="4dp"
+            android:visibility="gone" />
 
-  #graphic-bat { width: 800px; }
-  .sc-table { width: 100%; border-collapse: collapse; text-align: left; }
-  .sc-table th { background: var(--navy-3); color: var(--gold); font-size: 14px; padding: 6px 15px; letter-spacing: 1px; }
-  .sc-table td { padding: 3px 15px; border-bottom: 1px solid rgba(212,175,55,0.15); font-size: 17px; font-weight: 600; }
-  .sc-table tr:last-child td { border-bottom: none; }
-  .sc-status { font-size: 14px; color: var(--muted); font-weight: 500; }
-  .sc-notout { color: var(--gold-2); font-weight: 700; }
-  .sc-footer { background: var(--navy-3); display: flex; justify-content: space-between; padding: 8px 20px; font-weight: 700; font-size: 18px; border-top: 2px solid var(--gold); }
+        <TextView
+            android:id="@+id/tvViewerCount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="👁️ 0"
+            android:textColor="#FFEB3B"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:background="#80000000"
+            android:paddingHorizontal="6dp"
+            android:paddingVertical="4dp"
+            android:visibility="gone" />
 
-  #graphic-bowl { width: 800px; }
-  .sc-table.bowl th { text-align: center; }
-  .sc-table.bowl td { text-align: center; }
-  .sc-table.bowl td:first-child, .sc-table.bowl th:first-child { text-align: left; }
-  .fow-strip { background: var(--navy-deep); padding: 8px 15px; font-size: 15px; color: var(--muted); border-top: 1px solid var(--line); text-align: center; }
+        <TextView
+            android:id="@+id/tvApiQuota"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="⚙️ 0/10K"
+            android:textColor="#03A9F4"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:background="#80000000"
+            android:paddingHorizontal="6dp"
+            android:paddingVertical="4dp" />
 
-  #graphic-proj { width: 550px; text-align: center; padding-bottom: 15px; }
-  .proj-row { display: flex; justify-content: space-between; padding: 8px 45px; border-bottom: 1px solid var(--line); font-size: 20px; font-weight: 700; }
-  .proj-row.highlight { background: rgba(212,175,55,0.1); color: var(--gold-2); font-size: 26px; padding: 12px 45px; }
+        <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
 
-  #graphic-fow { width: 550px; }
-  .fow-list { padding: 10px 25px; max-height: 300px; overflow: hidden; }
-  .fow-item { display: flex; justify-content: space-between; padding: 6px 15px; border-bottom: 1px dotted var(--line); font-size: 18px; font-weight: 600; }
+        <Button
+            android:id="@+id/btnStreamsManager"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:text="📅 STREAMS"
+            android:backgroundTint="#4CAF50"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold" />
 
-  #graphic-chart { width: 750px; }
-  #graphic-worm { width: 750px; }
-  #graphic-result { width: 650px; }
-  
-  .popup-event {
-    position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%) scale(0.5);
-    background: radial-gradient(ellipse at center, var(--navy) 0%, var(--navy-deep) 100%);
-    padding: 22px 70px; border: 3px solid var(--gold); border-radius: 14px; text-align: center; opacity: 0; transition: all .15s; filter: drop-shadow(0 18px 34px rgba(0,0,0,0.7)); z-index: 20;
-  }
-  .popup-event.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-  .pop-title { font-family: 'Bebas Neue', sans-serif; font-size: 96px; line-height: 0.9; color: #fff; letter-spacing: 2px; }
-  .pop-sub { font-size: 13px; letter-spacing: 3px; color: var(--gold-2); margin-top: 6px; font-weight: 700; }
-</style>
-</head>
-<body>
+        <Button
+            android:id="@+id/btnGoLive"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="GO LIVE"
+            android:backgroundTint="#D32F2F"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold" />
+    </LinearLayout>
 
-<!-- OVERLAY RENDER AREA -->
-<div class="scorebug" id="scorebug">
-  <div class="brand-bar">M.B. LIVE STUDIO</div>
-  <div class="main-strip">
-      <div id="bugNormal">
-        <div class="team-block" id="ovTeam">IND</div>
-        <div class="score-block">
-          <div class="runs num" id="ovScore">0/0</div>
-          <div class="overs" id="ovOvers">(0.0)</div>
-        </div>
-        <div class="rate-block">
-          <div class="label">CRR</div>
-          <div class="value" id="ovCrr">0.00</div>
-          <div id="ovProjWrap" style="display:none; margin-top:4px;">
-            <div class="label">PROJ</div>
-            <div class="value" id="ovProj" style="color:var(--gold-2); font-size:16px;">0</div>
-          </div>
-          <div id="ovRrrWrap" style="display:none; margin-top:4px;">
-            <div class="label">REQ</div>
-            <div class="value" id="ovRrr" style="color:var(--crimson-2); font-size:16px;">0.00</div>
-          </div>
-        </div>
-        <div class="batters-block">
-          <div class="batter-row" id="ovStrikerRow"><span id="ovStrikerName">—</span><span class="fig" id="ovStrikerFig"></span></div>
-          <div class="batter-row" id="ovNonStrikerRow"><span id="ovNonStrikerName">—</span><span class="fig" id="ovNonStrikerFig"></span></div>
-        </div>
-        <div class="bowler-block">
-          <div class="bowler-info"><span class="label">BOWLER</span><span class="name" id="ovBowlerName">—</span><span class="fig" id="ovBowlerFig">0-0-0-0</span></div>
-          <div class="over-track" id="ovBalls"></div>
-        </div>
-      </div>
-      <div id="bugResult">
-          <span id="bugResultText"></span>
-      </div>
-  </div>
-  <div class="bottom-strip" id="bottomStrip"></div>
-</div>
+    <!-- LEFT SIDE QUICK ACTIONS (Camera, Mic, Bluetooth, Orientation) -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentLeft="true"
+        android:layout_centerVertical="true"
+        android:layout_marginStart="16dp"
+        android:orientation="vertical"
+        android:background="@drawable/bg_pill_menu"
+        android:paddingVertical="8dp">
 
-<div class="center-panel" id="graphic-part">
-  <div class="center-title" id="partTitle">PARTNERSHIP</div>
-  <div class="part-flex">
-    <div class="part-player"><div class="part-name" id="partP1Name">—</div><div class="part-contrib" id="partP1Score">0 (0)</div></div>
-    <div class="part-center"><div class="part-total" id="partTotalRuns">0</div><div class="part-balls" id="partTotalBalls">(0)</div></div>
-    <div class="part-player"><div class="part-name" id="partP2Name">—</div><div class="part-contrib" id="partP2Score">0 (0)</div></div>
-  </div>
-</div>
+        <ImageButton
+            android:id="@+id/btnSwitchCamera"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:background="@android:color/transparent"
+            android:src="@drawable/ic_camera_flip"
+            android:scaleType="centerInside"
+            android:padding="14dp" />
 
-<div class="center-panel" id="graphic-allpart">
-  <div class="center-title" id="allpartTitle">ALL PARTNERSHIPS</div>
-  <div class="allpart-list" id="allpartListBody"></div>
-</div>
+        <ImageButton
+            android:id="@+id/btnMicToggle"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:background="@android:color/transparent"
+            android:src="@drawable/ic_mic_on"
+            android:scaleType="centerInside"
+            android:padding="14dp" />
 
-<div class="center-panel" id="graphic-bat">
-  <div class="center-title" id="batTitle">BATTING SCORECARD</div>
-  <table class="sc-table"><thead><tr><th>BATTER</th><th></th><th>R</th><th>B</th><th>4s</th><th>6s</th></tr></thead><tbody id="batTableBody"></tbody></table>
-  <div class="sc-footer"><div id="batExtras">Extras: 0</div><div id="batTotal">Total: 0/0 (0.0 Overs)</div></div>
-</div>
+        <ImageButton
+            android:id="@+id/btnBluetoothMic"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:background="@android:color/transparent"
+            android:src="@drawable/ic_bluetooth"
+            android:scaleType="centerInside"
+            android:padding="14dp" />
+            
+        <ImageButton
+            android:id="@+id/btnOrientation"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:background="@android:color/transparent"
+            android:src="@android:drawable/ic_menu_always_landscape_portrait"
+            android:scaleType="centerInside"
+            android:padding="14dp" />
+    </LinearLayout>
 
-<div class="center-panel" id="graphic-bowl">
-  <div class="center-title" id="bowlTitle">BOWLING SCORECARD</div>
-  <table class="sc-table bowl"><thead><tr><th>BOWLER</th><th>O</th><th>M</th><th>R</th><th>W</th><th>DOTS</th><th>ECON</th></tr></thead><tbody id="bowlTableBody"></tbody></table>
-  <div class="fow-strip" id="bowlFowStrip">Fall of Wickets: —</div>
-</div>
+    <!-- RIGHT SIDE MENU (Live Text, Delete, Settings) -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentRight="true"
+        android:layout_centerVertical="true"
+        android:orientation="vertical"
+        android:background="@drawable/bg_pill_menu"
+        android:layout_marginEnd="16dp"
+        android:paddingVertical="8dp">
 
-<div class="center-panel" id="graphic-proj">
-  <div class="center-title" id="projTitle">PROJECTED SCORE</div>
-  <div id="projInns1">
-      <div class="proj-row highlight"><span>Current Run Rate (<span id="projCrrLabel">0.00</span>)</span><span id="projCrrTotal" class="num" style="font-size:32px;">0</span></div>
-      <div class="proj-row"><span>Run Rate <span id="projR1L">8.0</span></span><span id="projR1T" class="num">0</span></div>
-      <div class="proj-row"><span>Run Rate <span id="projR2L">10.0</span></span><span id="projR2T" class="num">0</span></div>
-      <div class="proj-row"><span>Run Rate <span id="projR3L">12.0</span></span><span id="projR3T" class="num">0</span></div>
-  </div>
-  <div id="projInns2" style="display:none; text-align:center; padding: 25px 20px;">
-      <div id="projNeed" style="font-size:42px; font-weight:900; font-family:'Bebas Neue',sans-serif; color:var(--gold-2); margin-bottom:15px; letter-spacing:1px; line-height:1;">NEED 0 RUNS FROM 0 BALLS</div>
-      <div style="display:flex; justify-content: space-around; font-size:22px; font-weight:700;">
-          <div>Target: <span id="projTargetVal" class="num" style="font-size:28px;">0</span></div>
-          <div>CRR: <span id="projCrrInns2" class="num" style="font-size:28px;">0.00</span></div>
-          <div>RRR: <span id="projRrrInns2" class="num" style="font-size:28px; color:var(--crimson-2);">0.00</span></div>
-      </div>
-  </div>
-</div>
+        <ImageButton android:id="@+id/btnLiveText" android:layout_width="52dp" android:layout_height="52dp" android:background="@android:color/transparent" android:src="@android:drawable/ic_menu_edit" android:scaleType="centerInside" android:padding="14dp" />
+        <ImageButton android:id="@+id/btnRemoveSelected" android:layout_width="52dp" android:layout_height="52dp" android:background="@android:color/transparent" android:src="@drawable/ic_remove" android:scaleType="centerInside" android:padding="14dp" />
+        <ImageButton android:id="@+id/btnSettings" android:layout_width="52dp" android:layout_height="52dp" android:background="@android:color/transparent" android:src="@android:drawable/ic_menu_preferences" android:scaleType="centerInside" android:padding="14dp" />
+    </LinearLayout>
 
-<div class="center-panel" id="graphic-fow">
-  <div class="center-title" id="fowTitle">FALL OF WICKETS</div>
-  <div class="fow-list" id="fowListBody"></div>
-</div>
+    <!-- Horizontal Zoom Pill -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentRight="true"
+        android:layout_alignParentBottom="true"
+        android:orientation="horizontal"
+        android:background="@drawable/bg_pill_menu"
+        android:layout_margin="16dp"
+        android:paddingHorizontal="4dp">
+        <Button android:id="@+id/btnZoomOut" android:layout_width="52dp" android:layout_height="52dp" android:background="@android:color/transparent" android:text="-" android:textSize="24sp" android:textColor="#FFF" />
+        <Button android:id="@+id/btnZoomIn" android:layout_width="52dp" android:layout_height="52dp" android:background="@android:color/transparent" android:text="+" android:textSize="24sp" android:textColor="#FFF" />
+    </LinearLayout>
 
-<div class="center-panel" id="graphic-chart">
-  <div class="center-title" id="chartTitle">RUNS PER OVER</div>
-  <div style="padding: 20px;"><svg id="chartSvg" width="700" height="230"></svg></div>
-</div>
+    <!-- NEW MASTER SETTINGS POPUP -->
+    <LinearLayout
+        android:id="@+id/popupSettings"
+        android:layout_width="wrap_content"
+        android:layout_height="500dp"
+        android:layout_centerInParent="true"
+        android:orientation="vertical"
+        android:background="@drawable/bg_pill_menu"
+        android:visibility="gone">
 
-<div class="center-panel" id="graphic-worm">
-  <div class="center-title" id="wormTitle">WORM GRAPH (CUMULATIVE SCORE)</div>
-  <div style="padding: 20px;"><svg id="wormSvg" width="700" height="230"></svg></div>
-  <div id="wormLegend" style="display:flex; justify-content:center; gap:30px; padding-bottom:15px; font-weight:700; font-size:16px;"></div>
-</div>
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="20dp">
+            
+            <LinearLayout
+                android:layout_width="280dp"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
 
-<div class="center-panel" id="graphic-result">
-  <div class="center-title">MATCH RESULT</div>
-  <div style="padding: 40px; text-align:center; font-family:'Bebas Neue', sans-serif; font-size: 54px; letter-spacing: 2px; color: var(--gold-2); line-height:1;">
-      <span id="resultText"></span>
-  </div>
-</div>
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="OVERLAYS" android:textColor="#03A9F4" android:textStyle="bold" android:layout_marginBottom="8dp"/>
+                <Button android:id="@+id/btnAddText" android:layout_width="match_parent" android:layout_height="wrap_content" android:backgroundTint="#444" android:text="Add Normal Text" android:textColor="#FFF" android:layout_marginBottom="4dp"/>
+                <Button android:id="@+id/btnAddLowerThird" android:layout_width="match_parent" android:layout_height="wrap_content" android:backgroundTint="#444" android:text="Add Lower Third Ticker" android:textColor="#FFF" android:layout_marginBottom="4dp"/>
+                <Button android:id="@+id/btnAddLogo" android:layout_width="match_parent" android:layout_height="wrap_content" android:backgroundTint="#444" android:text="Add Image / Logo" android:textColor="#FFF" android:layout_marginBottom="4dp"/>
+                <Button android:id="@+id/btnAddWebOverlay" android:layout_width="match_parent" android:layout_height="wrap_content" android:backgroundTint="#444" android:text="Add Web Overlay" android:textColor="#FFF" android:layout_marginBottom="4dp"/>
+                <Button android:id="@+id/btnToggleScore" android:layout_width="match_parent" android:layout_height="wrap_content" android:backgroundTint="#444" android:text="Show/Hide Scoreboard" android:textColor="#FFF" android:layout_marginBottom="16dp"/>
 
-<div class="popup-event" id="popupEvent">
-  <div class="pop-title num" id="popTitle">WICKET</div>
-  <div class="pop-sub" id="popSub"></div>
-</div>
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="CAMERA LAYOUTS" android:textColor="#03A9F4" android:textStyle="bold" android:layout_marginBottom="8dp"/>
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center" android:layout_marginBottom="16dp">
+                    <ImageButton android:id="@+id/btnLayoutFull" android:layout_width="50dp" android:layout_height="50dp" android:background="@android:color/transparent" android:src="@drawable/ic_layout_full" android:padding="8dp"/>
+                    <ImageButton android:id="@+id/btnLayoutSplit" android:layout_width="50dp" android:layout_height="50dp" android:background="@android:color/transparent" android:src="@drawable/ic_layout_split_l" android:padding="8dp"/>
+                    <ImageButton android:id="@+id/btnLayoutCornerTL" android:layout_width="50dp" android:layout_height="50dp" android:background="@android:color/transparent" android:src="@drawable/ic_layout_tl" android:padding="8dp"/>
+                    <ImageButton android:id="@+id/btnLayoutCornerBR" android:layout_width="50dp" android:layout_height="50dp" android:background="@android:color/transparent" android:src="@drawable/ic_layout_br" android:padding="8dp"/>
+                </LinearLayout>
 
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="CHAT &amp; COMMENTS" android:textColor="#03A9F4" android:textStyle="bold" android:layout_marginBottom="8dp"/>
+                <Button android:id="@+id/btnToggleComments" android:layout_width="match_parent" android:layout_height="wrap_content" android:backgroundTint="#444" android:text="Show Studio Chat Panel" android:textColor="#FFF" android:layout_marginBottom="4dp"/>
+                <Button android:id="@+id/btnToggleStreamChat" android:layout_width="match_parent" android:layout_height="wrap_content" android:backgroundTint="#444" android:text="Show Chat on Stream" android:textColor="#FFF" android:layout_marginBottom="16dp"/>
 
-const app = initializeApp({ apiKey: "AIzaSyCgAURksaOv2NtQ9LeVHVoLj4RFtDs7PVY", authDomain: "mb-live-score.firebaseapp.com", databaseURL: "https://mb-live-score-default-rtdb.firebaseio.com", projectId: "mb-live-score" });
-const db = getDatabase(app);
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="API &amp; UI TOGGLES" android:textColor="#03A9F4" android:textStyle="bold" android:layout_marginBottom="8dp"/>
+                <Switch android:id="@+id/switchChatSync" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Fetch Chat API" android:textColor="#FFF" android:checked="true" android:layout_marginBottom="8dp"/>
+                <Switch android:id="@+id/switchViewerSync" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Fetch Viewers API" android:textColor="#FFF" android:checked="true" android:layout_marginBottom="8dp"/>
+                <Switch android:id="@+id/switchShowQuota" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Show API Quota UI" android:textColor="#FFF" android:checked="true" android:layout_marginBottom="8dp"/>
+                <Switch android:id="@+id/switchShowViewers" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Show Viewer Count UI" android:textColor="#FFF" android:checked="true" android:layout_marginBottom="24dp"/>
 
-function fmtOvers(balls) { return `${Math.floor(balls/6)}.${balls%6}`; }
-function getOrdinal(n) { const s = ["th","st","nd","rd"], v = n % 100; return n + (s[(v-20)%10] || s[v] || s[0]); }
+                <Button android:id="@+id/btnCloseSettings" android:layout_width="match_parent" android:layout_height="wrap_content" android:backgroundTint="#E53935" android:text="CLOSE SETTINGS" android:textColor="#FFF"/>
+            </LinearLayout>
+        </ScrollView>
+    </LinearLayout>
 
-function getNiceMax(maxVal, ticks) {
-    if(maxVal <= 0) return 10; let unrounded = maxVal / ticks; let mag = Math.pow(10, Math.floor(Math.log10(unrounded)));
-    let norm = unrounded / mag; let step = (norm <= 1) ? 1 * mag : (norm <= 2) ? 2 * mag : (norm <= 5) ? 5 * mag : 10 * mag; return step * ticks;
-}
+    <!-- Studio-Only Comments Panel -->
+    <LinearLayout
+        android:id="@+id/commentsPanel"
+        android:layout_width="260dp"
+        android:layout_height="180dp"
+        android:layout_alignParentBottom="true"
+        android:layout_alignParentLeft="true"
+        android:orientation="vertical"
+        android:background="#A6000000"
+        android:padding="6dp"
+        android:layout_margin="16dp"
+        android:visibility="gone">
+        
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="LIVE CHAT" android:textColor="#03A9F4" android:textStyle="bold" android:textSize="12sp" android:layout_marginBottom="4dp"/>
+        
+        <ScrollView android:id="@+id/commentsScrollView" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
+            <TextView android:id="@+id/tvCommentsFeed" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="#FFFFFF" android:textSize="12sp" />
+        </ScrollView>
+    </LinearLayout>
 
-function getMatchResultText(st) {
-    if(!st.firstInnings) return "INNINGS COMPLETE";
-    const batName = st.meta.batTeam === 'A' ? st.meta.tA : st.meta.tB; const bowlName = st.firstInnings.team === 'A' ? st.meta.tA : st.meta.tB;
-    if(st.score >= st.target) return `${batName} WON BY ${(st.meta.squadSize - 1) - st.wickets} WICKETS`;
-    if(st.score === st.target - 1) return "MATCH TIED"; return `${bowlName} WON BY ${st.target - 1 - st.score} RUNS`;
-}
-
-onValue(ref(db, "current_match"), snap => {
-  const state = snap.val();
-  if(!state) { document.querySelectorAll('.scorebug, .center-panel').forEach(el => el.classList.remove('show')); return; }
-
-  const g = state.graphics || {};
-  const tBat = state.meta.batTeam; const tBowl = state.meta.bowlTeam;
-  const batTeamName = tBat === 'A' ? state.meta.tA : state.meta.tB;
-
-  const bug = document.getElementById('scorebug');
-  if(g.scorebug) bug.classList.add('show'); else bug.classList.remove('show');
-  
-  if(state.innings === 2 && state.inningsOver) {
-      document.getElementById('bugNormal').style.display = 'none'; document.getElementById('bugResult').style.display = 'flex';
-      document.getElementById('bugResultText').innerText = getMatchResultText(state);
-  } else {
-      document.getElementById('bugNormal').style.display = 'flex'; document.getElementById('bugResult').style.display = 'none';
-  }
-  
-  // DYNAMIC TEAM FONT SIZING
-  const teamEl = document.getElementById('ovTeam');
-  teamEl.innerText = batTeamName;
-  if(batTeamName.length > 9) teamEl.style.fontSize = '26px';
-  else if(batTeamName.length > 5) teamEl.style.fontSize = '32px';
-  else teamEl.style.fontSize = '40px';
-
-  document.getElementById('ovScore').innerText = `${state.score}/${state.wickets}`;
-  document.getElementById('ovOvers').innerText = `(${fmtOvers(state.legalBalls)})`;
-  
-  const crr = state.legalBalls > 0 ? ((state.score / state.legalBalls) * 6).toFixed(2) : "0.00";
-  document.getElementById('ovCrr').innerText = crr;
-
-  const projWrap = document.getElementById('ovProjWrap'); const rrrWrap = document.getElementById('ovRrrWrap');
-  if(state.innings === 1) {
-      projWrap.style.display = 'block'; rrrWrap.style.display = 'none';
-      const oversLeft = state.meta.maxOvers - (state.legalBalls / 6); document.getElementById('ovProj').innerText = Math.round(state.score + (crr * oversLeft));
-  } else {
-      projWrap.style.display = 'none'; rrrWrap.style.display = 'block';
-      const ballsLeft = (state.meta.maxOvers * 6) - state.legalBalls; document.getElementById('ovRrr').innerText = ballsLeft > 0 ? Math.max(0, ((state.target - state.score) / ballsLeft) * 6).toFixed(2) : "—";
-  }
-
-  const striker = (state.squads[tBat] || []).find(p => p.id === state.striker); const nonStriker = (state.squads[tBat] || []).find(p => p.id === state.nonStriker);
-  if(striker) { document.getElementById('ovStrikerName').innerText = `${striker.name}*`; document.getElementById('ovStrikerFig').innerText = `${striker.runs}(${striker.balls})`; }
-  if(nonStriker) { document.getElementById('ovNonStrikerName').innerText = nonStriker.name; document.getElementById('ovNonStrikerFig').innerText = `${nonStriker.runs}(${nonStriker.balls})`; }
-
-  const bowler = (state.squads[tBowl] || []).find(p => p.id === state.bowler); const bs = (state.bowlerStats || {})[state.bowler] || {balls:0, runs:0, wickets:0};
-  document.getElementById('ovBowlerName').innerText = bowler ? bowler.name : "—"; document.getElementById('ovBowlerFig').innerText = `${fmtOvers(bs.balls)}-${bs.runs}-${bs.wickets}`;
-
-  const recent10 = (state.overBalls || []).slice(-10);
-  document.getElementById('ovBalls').innerHTML = recent10.map(b => {
-    let color = "var(--navy-3)", text = b;
-    if(b === 4 || b === '4') color = "var(--gold)"; else if(b === 6 || b === '6') color = "var(--crimson)"; else if(typeof b === 'string' && b.includes('W')) color = "var(--crimson-2)"; else if(typeof b === 'string') { color = "#5b4413"; text = b.replace('+0',''); }
-    return `<div class="ball-pill" style="background:${color}">${text}</div>`;
-  }).join('');
-
-  const bStrip = document.getElementById('bottomStrip');
-  if(g.bottomStrip && g.dynamicText) { bStrip.classList.add('show'); bStrip.innerText = g.dynamicText; } else bStrip.classList.remove('show');
-
-  const panels = ['part', 'allpart', 'bat', 'bowl', 'proj', 'fow', 'chart', 'worm', 'result'];
-  panels.forEach(p => { document.getElementById(`graphic-${p}`).classList.remove('show'); });
-
-  let renderTarget = g.centerGraphic; let isRecall = false;
-  if(renderTarget && renderTarget.endsWith('1')) { isRecall = true; renderTarget = renderTarget.replace('1', ''); }
-  if(renderTarget) { document.getElementById(`graphic-${renderTarget}`).classList.add('show'); }
-
-  let actBatTeamName = batTeamName, actSquads = state.squads, actScore = state.score, actWickets = state.wickets, actBalls = state.legalBalls, actExtras = state.extras, actBStats = state.bowlerStats, actFow = state.fow || [];
-  let actBowlTeam = tBowl, actBatTeam = tBat;
-
-  if(isRecall && state.firstInnings) {
-      actBatTeamName = state.firstInnings.team === 'A' ? state.meta.tA : state.meta.tB; actBatTeam = state.firstInnings.team; actBowlTeam = state.firstInnings.team === 'A' ? 'B' : 'A';
-      actSquads = { [actBatTeam]: state.firstInnings.batters, [actBowlTeam]: state.firstInnings.bowlers };
-      actScore = state.firstInnings.score; actWickets = state.firstInnings.wickets; actBalls = state.firstInnings.legalBalls; actExtras = state.firstInnings.extras; actBStats = state.firstInnings.bowlerStats; actFow = state.firstInnings.fow || [];
-  }
-
-  if(g.centerGraphic === 'result' && state.inningsOver) { document.getElementById('resultText').innerText = getMatchResultText(state); }
-
-  if(g.centerGraphic === 'part' && state.partnership) {
-    document.getElementById('partTitle').innerText = `${getOrdinal(state.pastPartnerships ? state.pastPartnerships.length + 1 : state.wickets + 1).toUpperCase()} WICKET PARTNERSHIP`;
-    document.getElementById('partTotalRuns').innerText = state.partnership.runs; document.getElementById('partTotalBalls').innerText = `(${state.partnership.balls})`;
-    let p1Obj = (actSquads[actBatTeam]||[]).find(p => p.id === state.partnership.p1); let p2Obj = (actSquads[actBatTeam]||[]).find(p => p.id === state.partnership.p2);
-    document.getElementById('partP1Name').innerText = p1Obj ? p1Obj.name + (p1Obj.id===state.striker?'*':'') : '—'; document.getElementById('partP1Score').innerText = `${state.partnership.p1Runs || 0} (${state.partnership.p1Balls || 0})`; 
-    document.getElementById('partP2Name').innerText = p2Obj ? p2Obj.name + (p2Obj.id===state.striker?'*':'') : '—'; document.getElementById('partP2Score').innerText = `${state.partnership.p2Runs || 0} (${state.partnership.p2Balls || 0})`; 
-  }
-
-  // ALL PARTNERSHIPS
-  if(renderTarget === 'allpart') {
-      document.getElementById('allpartTitle').innerText = `ALL PARTNERSHIPS${isRecall?' (1ST INN)':''}`;
-      let pastParts = isRecall ? (state.firstInnings.pastPartnerships || []) : (state.pastPartnerships || []);
-      let currPart = isRecall ? null : state.partnership;
-      let html = '';
-      
-      pastParts.forEach((pt, idx) => {
-         html += `<div class="allpart-item">
-            <div class="ap-p1"><span style="color:var(--muted); font-size:14px; margin-right:4px;">${getOrdinal(idx+1)}</span> ${pt.p1Name} <span style="color:var(--gold-2)">${pt.p1Runs}(${pt.p1Balls})</span></div>
-            <div class="ap-mid">${pt.runs} <span style="font-size:20px; color:var(--muted); font-family:'Rajdhani',sans-serif;">(${pt.balls})</span></div>
-            <div class="ap-p2"><span style="color:var(--gold-2)">${pt.p2Runs}(${pt.p2Balls})</span> ${pt.p2Name}</div>
-         </div>`;
-      });
-      
-      if(currPart && !isRecall && (currPart.runs > 0 || currPart.balls > 0) && !state.inningsOver) {
-          let p1Obj = (actSquads[actBatTeam]||[]).find(p => p.id === currPart.p1); let p2Obj = (actSquads[actBatTeam]||[]).find(p => p.id === currPart.p2);
-          let p1N = p1Obj ? p1Obj.name + (p1Obj.id===state.striker?'*':'') : ''; let p2N = p2Obj ? p2Obj.name + (p2Obj.id===state.striker?'*':'') : '';
-          html += `<div class="allpart-item" style="background:rgba(212,175,55,0.15)">
-            <div class="ap-p1"><span style="color:var(--muted); font-size:14px; margin-right:4px;">${getOrdinal(pastParts.length + 1)}*</span> ${p1N} <span style="color:var(--gold-2)">${currPart.p1Runs}(${currPart.p1Balls})</span></div>
-            <div class="ap-mid">${currPart.runs} <span style="font-size:20px; color:var(--muted); font-family:'Rajdhani',sans-serif;">(${currPart.balls})</span></div>
-            <div class="ap-p2"><span style="color:var(--gold-2)">${currPart.p2Runs}(${currPart.p2Balls})</span> ${p2N}</div>
-         </div>`;
-      }
-      if(html === '') html = `<div style="text-align:center; padding:20px; color:var(--muted);">No partnerships yet.</div>`;
-      document.getElementById('allpartListBody').innerHTML = html;
-  }
-
-  if(renderTarget === 'bat') {
-    document.getElementById('batTitle').innerText = `${actBatTeamName} BATTING${isRecall?' (1ST INN)':''}`;
-    document.getElementById('batTableBody').innerHTML = (actSquads[actBatTeam]||[]).map(p => {
-      let status = '<span class="sc-status">Yet to bat</span>', style="";
-      if(!isRecall && (p.id === state.striker || p.id === state.nonStriker)) { status = '<span class="sc-notout">Not Out</span>'; style="background:rgba(255,255,255,0.05);"; }
-      else if(p.isOut) status = `<span class="sc-status">${p.dismissalInfo || 'Out'}</span>`;
-      else if(p.balls > 0 || p.runs > 0) status = '<span class="sc-status">Retired</span>';
-      return `<tr style="${style}"><td>${p.name}</td><td>${status}</td><td>${p.runs}</td><td>${p.balls}</td><td>${p.fours}</td><td>${p.sixes}</td></tr>`;
-    }).join('');
-    document.getElementById('batTotal').innerText = `Total: ${actScore}/${actWickets} (${fmtOvers(actBalls)} Ov)`; document.getElementById('batExtras').innerText = `Extras: ${actExtras || 0}`;
-  }
-
-  if(renderTarget === 'bowl') {
-    document.getElementById('bowlTitle').innerText = `${actBowlTeam === 'A' ? state.meta.tA : state.meta.tB} BOWLING${isRecall?' (1ST INN)':''}`;
-    document.getElementById('bowlTableBody').innerHTML = (actSquads[actBowlTeam]||[]).filter(p => actBStats[p.id]).map(p => {
-      const s = actBStats[p.id]; const econ = s.balls > 0 ? ((s.runs / s.balls) * 6).toFixed(1) : "0.0";
-      return `<tr><td>${p.name}</td><td>${fmtOvers(s.balls)}</td><td>${s.maidens||0}</td><td>${s.runs}</td><td style="color:var(--gold-2); font-weight:700;">${s.wickets}</td><td>${s.dots||0}</td><td>${econ}</td></tr>`;
-    }).join('');
-    const fowText = (actFow||[]).map(f => `${f.wktNo}-${f.score}`).join(', '); document.getElementById('bowlFowStrip').innerText = `Fall of Wickets: ${fowText || 'None'}`;
-  }
-
-  if(g.centerGraphic === 'proj') {
-      if (state.innings === 1) {
-          document.getElementById('projInns1').style.display = 'block'; document.getElementById('projInns2').style.display = 'none'; document.getElementById('projTitle').innerText = 'PROJECTED SCORE';
-          const oversLeft = state.meta.maxOvers - (state.legalBalls / 6); let crrNum = state.legalBalls > 0 ? (state.score / state.legalBalls) * 6 : 0;
-          document.getElementById('projCrrLabel').innerText = crrNum.toFixed(2); document.getElementById('projCrrTotal').innerText = Math.round(state.score + (crrNum * oversLeft));
-          let base = Math.max(6, Math.floor(crrNum)); if(base % 2 !== 0) base -= 1; 
-          [1,2,3].forEach(i => { let r = base + (i-1)*2; document.getElementById(`projR${i}L`).innerText = r.toFixed(1); document.getElementById(`projR${i}T`).innerText = Math.round(state.score + (r * oversLeft)); });
-      } else {
-          document.getElementById('projInns1').style.display = 'none'; document.getElementById('projInns2').style.display = 'block'; document.getElementById('projTitle').innerText = 'MATCH EQUATION';
-          const needed = Math.max(0, state.target - state.score); const ballsLeft = Math.max(0, (state.meta.maxOvers * 6) - state.legalBalls); const rrr = ballsLeft > 0 ? (needed / ballsLeft) * 6 : 0;
-          document.getElementById('projNeed').innerText = `${batTeamName} NEED ${needed} RUNS FROM ${ballsLeft} BALLS`;
-          document.getElementById('projTargetVal').innerText = state.target || 0; document.getElementById('projCrrInns2').innerText = crr; document.getElementById('projRrrInns2').innerText = rrr.toFixed(2);
-      }
-  }
-
-  // FALL OF WICKETS (With Overs added)
-  if(renderTarget === 'fow') {
-    document.getElementById('fowTitle').innerText = `FALL OF WICKETS${isRecall?' (1ST INN)':''}`;
-    document.getElementById('fowListBody').innerHTML = (actFow||[]).map(f => `<div class="fow-item"><span>${f.wktNo}. ${f.batterName}</span><span style="color:var(--gold-2)">${f.score} <span style="color:var(--muted); font-size:15px; margin-left:6px;">(${f.overs} Ov)</span></span></div>`).join('');
-  }
-
-  if(renderTarget === 'chart') {
-      document.getElementById('chartTitle').innerText = `RUNS PER OVER${isRecall?' (1ST INN)':''}`;
-      let hist = isRecall ? state.firstInnings.overHistory : (state.overHistory || []); let oversData = [...hist];
-      if(!isRecall && state.legalBalls % 6 !== 0) { oversData.push(state.currentOverRuns || 0); }
-      let wktsPerOver = {}; (actFow || []).forEach(f => { let ovIndex = Math.floor(parseFloat(f.overs)); wktsPerOver[ovIndex] = (wktsPerOver[ovIndex] || 0) + 1; });
-      let displayOvers = oversData.slice(-20); let rawMax = Math.max(10, ...displayOvers); let maxVal = getNiceMax(rawMax, 4);
-      let w = 700, h = 230, padX = 40, padY = 30; let graphW = w - padX - 10; let graphH = h - padY - 20; let svgHtml = '';
-      svgHtml += `<line x1="${padX}" y1="20" x2="${padX}" y2="${20+graphH}" stroke="var(--muted)" stroke-width="2"/>`;
-      svgHtml += `<line x1="${padX}" y1="${20+graphH}" x2="${w-10}" y2="${20+graphH}" stroke="var(--muted)" stroke-width="2"/>`;
-      svgHtml += `<text x="5" y="15" fill="var(--gold)" font-size="12" font-weight="bold">RUNS</text>`;
-      svgHtml += `<text x="${w-40}" y="${h-2}" fill="var(--gold)" font-size="12" font-weight="bold">OVERS</text>`;
-      for(let i=0; i<=4; i++) {
-         let val = Math.round((maxVal / 4) * i); let y = 20 + graphH - (val/maxVal * graphH);
-         svgHtml += `<text x="${padX-5}" y="${y+4}" fill="var(--muted)" font-size="12" text-anchor="end">${val}</text>`;
-         svgHtml += `<line x1="${padX}" y1="${y}" x2="${w-10}" y2="${y}" stroke="rgba(255,255,255,0.1)"/>`;
-      }
-      let barStep = graphW / Math.max(5, displayOvers.length); let barW = Math.min(24, barStep * 0.6);
-      displayOvers.forEach((val, idx) => {
-         let actualOvIndex = (hist.length - displayOvers.length) + idx + (!isRecall && state.legalBalls % 6 !== 0 && idx === displayOvers.length - 1 ? 0 : 0);
-         let x = padX + (idx + 0.5) * barStep - barW/2; let barH = (val / maxVal) * graphH; let y = 20 + graphH - barH;
-         let isCurrent = (!isRecall && idx === displayOvers.length - 1 && state.legalBalls % 6 !== 0);
-         svgHtml += `<rect x="${x}" y="${y}" width="${barW}" height="${barH}" fill="${isCurrent ? 'var(--crimson-2)' : 'var(--gold)'}" rx="3" ry="3"/>`;
-         svgHtml += `<text x="${x + barW/2}" y="${y - 5}" fill="var(--ink)" font-size="14" font-weight="bold" text-anchor="middle">${val}</text>`;
-         let wCount = wktsPerOver[actualOvIndex] || 0;
-         for(let wc=0; wc<wCount; wc++) { svgHtml += `<text x="${x + barW/2}" y="${y - 20 - (wc*15)}" fill="var(--crimson-2)" font-size="16" font-weight="900" text-anchor="middle">W</text>`; }
-         if ((actualOvIndex + 1) % 2 === 0) { svgHtml += `<text x="${x + barW/2}" y="${20+graphH+16}" fill="var(--muted)" font-size="12" font-weight="bold" text-anchor="middle">${actualOvIndex + 1}</text>`; }
-      });
-      document.getElementById('chartSvg').innerHTML = svgHtml;
-  }
-
-  if(renderTarget === 'worm') {
-      document.getElementById('wormTitle').innerText = `WORM GRAPH (CUMULATIVE SCORE)${isRecall?' (1ST INN)':''}`;
-      let maxOvers = state.meta.maxOvers; let w = 700, h = 230, padX = 40, padY = 30; let graphW = w - padX - 20; let graphH = h - padY - 20;
-      let cRuns1 = [0]; let sum1 = 0; let targetHist = isRecall ? state.firstInnings.overHistory : (state.overHistory || []);
-      targetHist.forEach(r => { sum1 += r; cRuns1.push(sum1); }); if(!isRecall && state.legalBalls % 6 !== 0) { cRuns1.push(sum1 + (state.currentOverRuns||0)); }
-      let cRuns2 = [];
-      if(!isRecall && state.innings === 2 && state.firstInnings) { let sum2 = 0; cRuns2.push(0); (state.firstInnings.overHistory || []).forEach(r => { sum2 += r; cRuns2.push(sum2); }); }
-      let rawTotal = Math.max(state.score, state.target || 0, 50); if(isRecall) rawTotal = Math.max(state.firstInnings.score, 50);
-      let maxTotal = getNiceMax(rawTotal, 5);
-      let svgHtml = '';
-      svgHtml += `<line x1="${padX}" y1="20" x2="${padX}" y2="${20+graphH}" stroke="var(--muted)" stroke-width="2"/>`;
-      svgHtml += `<line x1="${padX}" y1="${20+graphH}" x2="${padX+graphW}" y2="${20+graphH}" stroke="var(--muted)" stroke-width="2"/>`;
-      svgHtml += `<text x="5" y="15" fill="var(--gold)" font-size="12" font-weight="bold">RUNS</text>`;
-      svgHtml += `<text x="${padX+graphW-20}" y="${h-2}" fill="var(--gold)" font-size="12" font-weight="bold">OVERS</text>`;
-      for(let i=0; i<=5; i++) { let val = Math.round((maxTotal / 5) * i); let y = 20 + graphH - (val/maxTotal * graphH); svgHtml += `<text x="${padX-5}" y="${y+4}" fill="var(--muted)" font-size="12" text-anchor="end">${val}</text>`; svgHtml += `<line x1="${padX}" y1="${y}" x2="${padX+graphW}" y2="${y}" stroke="rgba(255,255,255,0.1)"/>`; }
-      for(let i=2; i<=maxOvers; i+=2) { let x = padX + (i/maxOvers * graphW); svgHtml += `<text x="${x}" y="${20+graphH+16}" fill="var(--muted)" font-size="12" text-anchor="middle">${i}</text>`; svgHtml += `<line x1="${x}" y1="${20+graphH}" x2="${x}" y2="${20+graphH+5}" stroke="var(--muted)"/>`; }
-      function buildPath(dataArr, currentBalls, isComplete) { let d = `M ${padX} ${20+graphH}`; dataArr.forEach((val, idx) => { let x = 0; if(idx === dataArr.length - 1 && !isComplete && currentBalls % 6 !== 0) { x = padX + (((idx - 1) + (currentBalls % 6)/6) / maxOvers * graphW); } else { x = padX + (idx / maxOvers) * graphW; } let y = 20 + graphH - (val / maxTotal * graphH); d += ` L ${x} ${y}`; }); return d; }
-      function drawWickets(fowArray, color) { let html = ''; (fowArray || []).forEach(f => { let ovrParts = String(f.overs).split('.'); let balls = parseInt(ovrParts[0]) * 6 + (parseInt(ovrParts[1]) || 0); let x = padX + (balls / (maxOvers * 6)) * graphW; let y = 20 + graphH - (f.score / maxTotal * graphH); html += `<circle cx="${x}" cy="${y}" r="4" fill="${color}" stroke="var(--navy-deep)" stroke-width="2"/>`; html += `<text x="${x}" y="${y - 8}" fill="${color}" font-family="sans-serif" font-size="12" font-weight="900" text-anchor="middle">W</text>`; }); return html; }
-
-      if(!isRecall && state.innings === 2) {
-          let path1 = buildPath(cRuns2, state.firstInnings.legalBalls, true); svgHtml += `<path d="${path1}" fill="none" stroke="var(--muted)" stroke-width="3" />`; svgHtml += drawWickets(state.firstInnings.fow, "var(--muted)");
-          let path2 = buildPath(cRuns1, state.legalBalls, state.inningsOver); svgHtml += `<path d="${path2}" fill="none" stroke="var(--gold-2)" stroke-width="4" />`; svgHtml += drawWickets(state.fow, "var(--crimson-2)");
-          document.getElementById('wormLegend').innerHTML = `<span style="color:var(--muted)">${state.firstInnings.team === 'A'?state.meta.tA:state.meta.tB} (1st Inn)</span> <span style="color:var(--gold-2)">${batTeamName} (Chasing)</span>`;
-      } else {
-          let actBalls = isRecall ? state.firstInnings.legalBalls : state.legalBalls; let path1 = buildPath(cRuns1, actBalls, isRecall ? true : state.inningsOver); svgHtml += `<path d="${path1}" fill="none" stroke="var(--gold-2)" stroke-width="4" />`; svgHtml += drawWickets(isRecall ? state.firstInnings.fow : state.fow, "var(--crimson-2)");
-          document.getElementById('wormLegend').innerHTML = `<span style="color:var(--gold-2)">${actBatTeamName}</span>`;
-      }
-      document.getElementById('wormSvg').innerHTML = svgHtml;
-  }
-
-  const pop = document.getElementById('popupEvent');
-  if(g.activeEvent) {
-    document.getElementById('popTitle').innerText = g.activeEvent === "WICKET" ? "OUT!" : g.activeEvent; document.getElementById('popSub').innerText = g.activeEvent === "WICKET" ? (striker ? striker.name : "") : batTeamName; pop.style.borderColor = g.activeEvent === "WICKET" ? "var(--crimson)" : "var(--gold)"; pop.classList.add('show');
-  } else pop.classList.remove('show');
-});
-</script>
-</body>
-</html>
+</RelativeLayout>
