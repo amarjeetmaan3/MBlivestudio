@@ -10,6 +10,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -90,7 +91,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private lateinit var commentsScrollView: ScrollView
     private lateinit var tvStreamChatOverlay: TextView
     
-    // API Toggles
     private lateinit var switchChatSync: Switch
     private lateinit var switchViewerSync: Switch
     private lateinit var switchShowQuota: Switch
@@ -194,6 +194,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        
+        // Force Landscape by default to prevent rotation bugs on startup
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE
+        
         setContentView(R.layout.activity_main)
 
         openGlView = findViewById(R.id.surfaceView)
@@ -216,7 +220,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         commentsScrollView = findViewById(R.id.commentsScrollView)
         tvStreamChatOverlay = findViewById(R.id.tvStreamChatOverlay)
         
-        // Settings Popup initialization
         val popupSettings: LinearLayout = findViewById(R.id.popupSettings)
         val btnSettings: ImageButton = findViewById(R.id.btnSettings)
         val btnCloseSettings: Button = findViewById(R.id.btnCloseSettings)
@@ -224,7 +227,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnSettings.setOnClickListener { popupSettings.visibility = View.VISIBLE }
         btnCloseSettings.setOnClickListener { popupSettings.visibility = View.GONE }
 
-        // Toggles Initialization
         switchChatSync = findViewById(R.id.switchChatSync)
         switchViewerSync = findViewById(R.id.switchViewerSync)
         switchShowQuota = findViewById(R.id.switchShowQuota)
@@ -295,7 +297,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         registerAudioDeviceMonitoring()
         updateDetectedMicRoute(false)
         
-        // Buttons Inside Settings
         findViewById<Button>(R.id.btnToggleComments).setOnClickListener {
             popupSettings.visibility = View.GONE
             commentsPanel.visibility = if (commentsPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
@@ -325,7 +326,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         findViewById<ImageButton>(R.id.btnLayoutCornerTL).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.CORNER_TOP_LEFT); popupSettings.visibility = View.GONE }
         findViewById<ImageButton>(R.id.btnLayoutCornerBR).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.CORNER_BOTTOM_RIGHT); popupSettings.visibility = View.GONE }
 
-        // Right side remaining buttons
         val btnLiveText: ImageButton = findViewById(R.id.btnLiveText)
         btnLiveText.setOnClickListener { popupSettings.visibility = View.GONE; addLiveTextOverlay() }
         
@@ -370,6 +370,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             toggleBluetoothMic(btnBluetoothMic)
         }
 
+        // FIX 1: ORIENTATION BUG (FORCE LOCK SCREEN ORIENTATION)
         btnOrientation.setOnClickListener {
             if (rtmpCamera.isStreaming) {
                 Toast.makeText(this, "Stop stream to change orientation", Toast.LENGTH_SHORT).show()
@@ -379,17 +380,31 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             streamWidth = streamHeight
             streamHeight = temp
 
+            if (streamWidth > streamHeight) {
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE
+                Toast.makeText(this, "Landscape Mode Forced", Toast.LENGTH_SHORT).show()
+            } else {
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT
+                Toast.makeText(this, "Portrait Mode Forced", Toast.LENGTH_SHORT).show()
+            }
+
             if (rtmpCamera.isOnPreview) {
                 rtmpCamera.stopPreview()
                 tryStartCameraPreview()
             }
-            Toast.makeText(this, if (streamWidth > streamHeight) "Landscape Mode" else "Portrait Mode", Toast.LENGTH_SHORT).show()
         }
 
         findViewById<Button>(R.id.btnZoomIn).setOnClickListener { performSmoothZoom(true) }
         findViewById<Button>(R.id.btnZoomOut).setOnClickListener { performSmoothZoom(false) }
 
+        // CAMERA VIEW TOUCH LISTENER (Handles Zoom & FIX 2: Live Text Focus Clearing)
         openGlView.setOnTouchListener { _, event ->
+            if (event.action == MotionEvent.ACTION_DOWN) {
+                currentFocus?.clearFocus()
+                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                imm.hideSoftInputFromWindow(openGlView.windowToken, 0)
+            }
+            
             if (event.pointerCount > 1) {
                 try { rtmpCamera.setZoom(event) } catch (e: Exception) {}
                 true
@@ -727,14 +742,48 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         dialog.show()
     }
 
+    // FIX 2: LIVE TEXT AUTO-DESTROY ON FOCUS LOST IF EMPTY
     private fun addLiveTextOverlay() {
         val liveEditText = EditText(this).apply {
-            hint = "Start typing..."; setHintTextColor(Color.argb(128, 255, 255, 255)); setTextColor(Color.YELLOW); textSize = 30f; setTypeface(null, Typeface.BOLD); background = null; setShadowLayer(5f, 2f, 2f, Color.BLACK); inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            layoutParams = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) }
-            addTextChangedListener(object : TextWatcher { override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}; override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { updateSnapshot() }; override fun afterTextChanged(s: Editable?) {} })
+            hint = "Start typing..."
+            setHintTextColor(Color.argb(128, 255, 255, 255))
+            setTextColor(Color.YELLOW)
+            textSize = 30f
+            setTypeface(null, Typeface.BOLD)
+            background = null
+            setShadowLayer(5f, 2f, 2f, Color.BLACK)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            layoutParams = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT).apply { 
+                addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) 
+            }
+            
+            // Clean up when clicked away
+            setOnFocusChangeListener { _, hasFocus ->
+                if (!hasFocus && text.toString().trim().isEmpty()) {
+                    overlayContainer.removeView(this)
+                    if (selectedOverlay == this) {
+                        selectedOverlay = null
+                        updateOverlayMenuButtonPosition()
+                    }
+                    updateSnapshot()
+                }
+            }
+
+            addTextChangedListener(object : TextWatcher { 
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { updateSnapshot() }
+                override fun afterTextChanged(s: Editable?) {} 
+            })
         }
-        overlayContainer.addView(liveEditText); makeDraggableAndScalable(liveEditText); selectedOverlay = liveEditText; updateOverlayMenuButtonPosition(); updateSnapshot()
-        liveEditText.requestFocus(); (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(liveEditText, InputMethodManager.SHOW_IMPLICIT)
+        
+        overlayContainer.addView(liveEditText)
+        makeDraggableAndScalable(liveEditText)
+        selectedOverlay = liveEditText
+        updateOverlayMenuButtonPosition()
+        updateSnapshot()
+        
+        liveEditText.requestFocus()
+        (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(liveEditText, InputMethodManager.SHOW_IMPLICIT)
     }
 
     private fun showScoreboardDialog() {
@@ -869,15 +918,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         dialog.show()
     }
 
-    private fun startChatPolling(liveChatId: String) { 
-        currentLiveChatId = liveChatId; chatNextPageToken = null; chatPollingActive = true; 
-        pollChatOnce(); pollViewersOnce() 
-    }
-    
-    private fun stopChatPolling() { 
-        chatPollingActive = false; chatHandler.removeCallbacksAndMessages(null); currentLiveChatId = null
-        runOnUiThread { tvViewerCount.visibility = View.GONE } 
-    }
+    private fun startChatPolling(liveChatId: String) { currentLiveChatId = liveChatId; chatNextPageToken = null; chatPollingActive = true; pollChatOnce(); pollViewersOnce() }
+    private fun stopChatPolling() { chatPollingActive = false; chatHandler.removeCallbacksAndMessages(null); currentLiveChatId = null; runOnUiThread { tvViewerCount.visibility = View.GONE } }
 
     private fun pollViewersOnce() {
         if (!chatPollingActive || currentBroadcastId == null) return
@@ -1042,7 +1084,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             scaleGestureDetector.onTouchEvent(event)
             if (!scaleGestureDetector.isInProgress) {
                 when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { localDX = v.x - event.rawX; localDY = v.y - event.rawY; selectedOverlay = v; updateOverlayMenuButtonPosition() }
+                    MotionEvent.ACTION_DOWN -> { 
+                        localDX = v.x - event.rawX; localDY = v.y - event.rawY
+                        selectedOverlay = v
+                        updateOverlayMenuButtonPosition() 
+                    }
                     MotionEvent.ACTION_MOVE -> { v.x = event.rawX + localDX; v.y = event.rawY + localDY; updateOverlayMenuButtonPosition() }
                     MotionEvent.ACTION_UP -> { updateSnapshot() }
                 }
