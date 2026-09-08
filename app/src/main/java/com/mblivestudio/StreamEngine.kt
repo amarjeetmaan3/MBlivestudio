@@ -1,209 +1,182 @@
 package com.mblivestudio
 
-import android.Manifest
-import android.annotation.SuppressLint
 import android.content.Context
-import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.media.AudioDeviceCallback
-import android.media.AudioDeviceInfo
-import android.media.AudioManager
-import android.os.Build
-import android.os.Handler
-import android.os.Looper
-import android.view.MotionEvent
-import android.view.SurfaceHolder
-import androidx.core.content.ContextCompat
-import com.pedro.common.ConnectChecker
-import com.pedro.library.rtmp.RtmpCamera2
-import com.pedro.library.view.OpenGlView
-import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
+import android.media.AudioFormat
+import android.view.Surface
+import io.github.thibaultbee.streampack.core.elements.sources.video.camera.ICameraSource
+import io.github.thibaultbee.streampack.core.interfaces.setCameraId
+import io.github.thibaultbee.streampack.core.interfaces.startPreview
+import io.github.thibaultbee.streampack.core.interfaces.startStream
+import io.github.thibaultbee.streampack.core.interfaces.stopPreview
+import io.github.thibaultbee.streampack.core.streamers.single.AudioConfig
+import io.github.thibaultbee.streampack.core.streamers.single.SingleStreamer
+import io.github.thibaultbee.streampack.core.streamers.single.VideoConfig
+import io.github.thibaultbee.streampack.core.streamers.single.cameraSingleStreamer
+import io.github.thibaultbee.streampack.core.streamers.single.setConfig
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 
-interface EngineCallback {
-    fun onConnectionSuccess()
-    fun onConnectionFailed(reason: String)
-    fun onDisconnect()
-    fun onMicStatusChanged(message: String, isSuccess: Boolean)
-}
+class StreamEngine(private val context: Context) {
 
-class StreamEngine(
-    private val context: Context,
-    private val openGlView: OpenGlView,
-    private var callback: EngineCallback?
-) : ConnectChecker, SurfaceHolder.Callback {
+    var streamer: SingleStreamer? = null
+        private set
 
-    val rtmpCamera: RtmpCamera2 = RtmpCamera2(openGlView, this)
-    private val imageFilterRender = ImageObjectFilterRender()
-    private val cameraLayoutFilter = com.mblivestudio.filters.CameraLayoutFilterRender()
+    // जादुई EGL फैक्ट्री यहाँ जुड़ गई है
+    val overlayFactory = OverlayCompositor.Factory()
 
-    private var audioManager: AudioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    private var audioDeviceCallback: AudioDeviceCallback? = null
-    var isBluetoothMicActive = false
-    private var scoStateReceiver: android.content.BroadcastReceiver? = null
-    private val scoConnectTimeoutHandler = Handler(Looper.getMainLooper())
-    var surfaceReady = false
+    private var currentCameraId: String = ""
+    private var isFront: Boolean = false
 
-    init {
-        openGlView.holder.addCallback(this)
-        registerAudioDeviceMonitoring()
-    }
+    suspend fun initializeCamera(
+        videoConfig: EngineVideoConfig,
+        targetRotation: Int? = null
+    ) {
+        closeCurrentStreamer()
 
-    // --- SAFETY PATCH: Prevent Memory Leaks on App Switch ---
-    fun detachCallback() {
-        callback = null
-    }
+        val cameraId = defaultBackCameraId()
+            ?: throw IllegalStateException("No back camera found")
 
-    fun hasCameraPermissions(): Boolean {
-        return ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED &&
-               ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-    }
+        currentCameraId = cameraId
+        isFront = false
 
-    fun tryStartCameraPreview(width: Int = 1280, height: Int = 720, bitrate: Int = 3_000_000) {
-        if (!surfaceReady || !hasCameraPermissions() || rtmpCamera.isOnPreview) return
+        // StreamPack को तुम्हारी कस्टम EGL सरफेस फैक्ट्री दे दी गई है
+        val newStreamer = cameraSingleStreamer(
+            context = context,
+            cameraId = cameraId,
+            surfaceProcessorFactory = overlayFactory
+        )
 
-        var isSuccess = false
-        try {
-            if (rtmpCamera.prepareVideo(width, height, 30, bitrate, 2, 0)) isSuccess = true
-        } catch (e: Exception) {}
-
-        if (!isSuccess) try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) {}
-
-        var aReady = false
-        try {
-            val useEchoCanceler = !isBluetoothMicActive
-            aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, true, useEchoCanceler, true)
-        } catch (e: Exception) {}
-
-        if (!aReady) try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) {}
-
-        if (isSuccess && aReady) {
-            rtmpCamera.glInterface.setFilter(cameraLayoutFilter)
-            rtmpCamera.glInterface.addFilter(imageFilterRender)
-            rtmpCamera.startPreview()
-        } else {
-            callback?.onMicStatusChanged("CAMERA ERROR: Encoder failed.", false)
+        targetRotation?.let {
+            newStreamer.setTargetRotation(it)
         }
+
+        val audioConfig = AudioConfig(
+            startBitrate = 128_000,
+            sampleRate = 44_100,
+            channelConfig = AudioFormat.CHANNEL_IN_STEREO
+        )
+
+        val videoStreamConfig = VideoConfig(
+            startBitrate = videoConfig.bitrateBps,
+            resolution = android.util.Size(
+                videoConfig.width,
+                videoConfig.height
+            ),
+            fps = videoConfig.fps
+        )
+
+        newStreamer.setConfig(
+            audioConfig,
+            videoStreamConfig
+        )
+
+        streamer = newStreamer
+        awaitCameraSource()
     }
 
-    fun setOverlayBitmap(bitmap: Bitmap) {
-        if (!rtmpCamera.isOnPreview) return
-        imageFilterRender.setImage(bitmap)
-        imageFilterRender.setScale(100f, 100f)
-        imageFilterRender.setPosition(0f, 0f)
+    fun updateOverlay(bitmap: Bitmap?) {
+        overlayFactory.setOverlayBitmap(bitmap)
     }
 
-    fun applyCameraLayout(rect: FloatArray) {
-        cameraLayoutFilter.setRect(rect[0], rect[1], rect[2], rect[3])
-        cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f)
+    suspend fun startCameraPreview(surface: Surface) {
+        val s = streamer ?: throw IllegalStateException("Streamer is not initialized")
+        s.startPreview(surface)
+        awaitCameraSource()
     }
 
-    fun setZoom(event: MotionEvent) {
-        try { rtmpCamera.setZoom(event) } catch (e: Exception) {}
+    suspend fun stopCameraPreview() {
+        runCatching { streamer?.stopPreview() }
     }
 
-    fun switchCamera() {
-        try { rtmpCamera.switchCamera() } catch (e: Exception) {}
+    suspend fun goLive(rtmpUrl: String) {
+        val s = streamer ?: throw IllegalStateException("Streamer is not initialized")
+        if (rtmpUrl.isBlank()) throw IllegalArgumentException("RTMP URL is empty")
+        s.startStream(rtmpUrl)
     }
 
-    fun startStream(url: String) {
-        rtmpCamera.startStream(url)
+    suspend fun stopLive() {
+        runCatching { streamer?.stopStream() }
     }
 
-    fun stopStream() {
-        if (rtmpCamera.isStreaming) rtmpCamera.stopStream()
-    }
+    suspend fun flipCamera(): Boolean {
+        val s = streamer ?: return isFront
+        val nextId = if (isFront) defaultBackCameraId() else defaultFrontCameraId()
+        if (nextId == null) return isFront
 
-    fun stopPreview() {
-        if (rtmpCamera.isOnPreview) rtmpCamera.stopPreview()
-    }
-
-    fun setVideoBitrateOnFly(bitrate: Int) {
-        if (rtmpCamera.isStreaming) try { rtmpCamera.setVideoBitrateOnFly(bitrate) } catch (e: Exception) {}
-    }
-
-    // --- BLUETOOTH AUDIO ENGINE ---
-    private fun registerAudioDeviceMonitoring() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
-        audioDeviceCallback = object : AudioDeviceCallback() {
-            override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
-                if (removedDevices.any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO } && isBluetoothMicActive) {
-                    isBluetoothMicActive = false
-                    clearBluetoothRoute()
-                    restartCameraForAudioChange(250)
-                }
-            }
-        }
-        audioManager.registerAudioDeviceCallback(audioDeviceCallback, null)
-    }
-
-    fun toggleBluetoothMic() {
-        if (!isBluetoothMicActive) {
-            if (routeBluetoothMic()) {
-                isBluetoothMicActive = true
-                callback?.onMicStatusChanged("Bluetooth mic selected", true)
-                restartCameraForAudioChange(300)
-            } else {
-                callback?.onMicStatusChanged("Bluetooth mic failed", false)
-            }
-        } else {
-            clearBluetoothRoute()
-            isBluetoothMicActive = false
-            callback?.onMicStatusChanged("Bluetooth mic off", true)
-            restartCameraForAudioChange(250)
-        }
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun routeBluetoothMic(): Boolean {
         return try {
-            audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-            audioManager.startBluetoothSco()
-            audioManager.isBluetoothScoOn = true
-            true
-        } catch (e: Exception) { false }
-    }
-
-    private fun clearBluetoothRoute() {
-        try {
-            audioManager.stopBluetoothSco()
-            audioManager.isBluetoothScoOn = false
-            audioManager.mode = AudioManager.MODE_NORMAL
-        } catch (e: Exception) {}
-    }
-
-    private fun restartCameraForAudioChange(delayMs: Long) {
-        if (!rtmpCamera.isOnPreview || rtmpCamera.isStreaming) return
-        try { rtmpCamera.stopPreview() } catch (e: Exception) {}
-        Handler(Looper.getMainLooper()).postDelayed({ tryStartCameraPreview() }, delayMs)
-    }
-
-    fun release() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            audioDeviceCallback?.let { audioManager.unregisterAudioDeviceCallback(it) }
+            s.setCameraId(nextId)
+            currentCameraId = nextId
+            isFront = !isFront
+            awaitCameraSource()
+            isFront
+        } catch (_: Exception) {
+            isFront
         }
-        clearBluetoothRoute()
-        stopStream()
-        stopPreview()
     }
 
-    // --- SURFACE CALLBACKS ---
-    override fun surfaceCreated(holder: SurfaceHolder) {}
-    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-        surfaceReady = true
-        tryStartCameraPreview()
-    }
-    override fun surfaceDestroyed(holder: SurfaceHolder) {
-        surfaceReady = false
-        stopStream()
-        stopPreview()
+    fun muteAudio(muted: Boolean) {
+        try {
+            val audioSettings = streamer?.javaClass?.getMethod("getAudioSettings")?.invoke(streamer)
+            audioSettings?.javaClass?.getMethod("setMuted", Boolean::class.javaPrimitiveType)?.invoke(audioSettings, muted)
+        } catch (_: Exception) {}
     }
 
-    // --- RTMP CALLBACKS ---
-    override fun onConnectionSuccess() { callback?.onConnectionSuccess() }
-    override fun onConnectionFailed(reason: String) { callback?.onConnectionFailed(reason) }
-    override fun onDisconnect() { callback?.onDisconnect() }
-    override fun onAuthError() {}
-    override fun onAuthSuccess() {}
-    override fun onConnectionStarted(url: String) {}
-    override fun onNewBitrate(bitrate: Long) { setVideoBitrateOnFly(bitrate.toInt()) }
+    suspend fun awaitCameraSource(timeoutMs: Long = 5_000): ICameraSource? {
+        val s = streamer ?: return null
+        return withTimeoutOrNull(timeoutMs) {
+            s.videoInput.sourceFlow.filterNotNull().filterIsInstance<ICameraSource>().first()
+        }
+    }
+
+    suspend fun isTorchAvailableAsync(): Boolean {
+        val source = awaitCameraSource() ?: return false
+        return source.settings.flash.isAvailable
+    }
+
+    suspend fun setTorch(enabled: Boolean) {
+        val source = awaitCameraSource() ?: throw IllegalStateException("Camera source is not ready")
+        if (!source.settings.flash.isAvailable) throw IllegalStateException("Flashlight is not available on this camera")
+        source.settings.flash.setIsEnable(enabled)
+    }
+
+    fun isFrontCamera(): Boolean = isFront
+
+    private suspend fun closeCurrentStreamer() {
+        runCatching { streamer?.stopPreview() }
+        runCatching { streamer?.stopStream() }
+        runCatching { streamer?.release() }
+        streamer = null
+    }
+
+    suspend fun release() {
+        closeCurrentStreamer()
+    }
+
+    fun close() {
+        runBlocking(Dispatchers.Default) { release() }
+    }
+
+    private fun defaultBackCameraId(): String? = findCameraId(CameraCharacteristics.LENS_FACING_BACK)
+    private fun defaultFrontCameraId(): String? = findCameraId(CameraCharacteristics.LENS_FACING_FRONT)
+
+    private fun findCameraId(facing: Int): String? {
+        val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        return manager.cameraIdList.firstOrNull { id ->
+            manager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING) == facing
+        }
+    }
 }
+
+data class EngineVideoConfig(
+    val width: Int,
+    val height: Int,
+    val fps: Int,
+    val bitrateBps: Int
+)
