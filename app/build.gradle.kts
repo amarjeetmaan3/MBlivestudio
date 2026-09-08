@@ -51,11 +51,23 @@ android {
     }
 }
 
+// यह ब्लॉक तुम्हारी पुरानी फाइल से लिया गया है जो बैकग्राउंड वर्ज़न्स को क्रैश होने से रोकेगा
+configurations.all {
+    resolutionStrategy {
+        force("androidx.core:core:1.13.1")
+        force("androidx.core:core-ktx:1.13.1")
+        force("androidx.activity:activity:1.9.1")
+        force("androidx.activity:activity-ktx:1.9.1")
+    }
+}
+
 dependencies {
     implementation("com.github.pedroSG94.RootEncoder:library:2.5.1")
-    implementation("androidx.core:core-ktx:1.12.0")
+    
+    // सुरक्षित वर्ज़न्स
+    implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.6.1")
-    implementation("androidx.activity:activity-ktx:1.8.2")
+    implementation("androidx.activity:activity-ktx:1.9.1")
     
     // StreamPack 3.2.0
     implementation("io.github.thibaultbee.streampack:streampack-core:3.2.0")
