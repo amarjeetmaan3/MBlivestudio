@@ -53,8 +53,8 @@ class StreamEngine(
     var isStreamingActive = false
     var isPreviewActive = false
 
-    // --- BRIDGES FOR MAINACTIVITY (Eliminates Compiler Errors) ---
-    val rtmpCamera = object {
+    // --- BRIDGES FOR MAINACTIVITY ---
+    inner class RtmpCameraBridge {
         val isStreaming: Boolean get() = isStreamingActive
         val isOnPreview: Boolean get() = isPreviewActive
         
@@ -82,6 +82,8 @@ class StreamEngine(
         }
     }
 
+    val rtmpCamera = RtmpCameraBridge()
+
     fun hasCameraPermissions(): Boolean {
         return ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED &&
                ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -92,7 +94,6 @@ class StreamEngine(
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 initializeCamera(EngineVideoConfig(1280, 720, 30, 3000000))
-                // Dummy surface forces the camera to run off-screen independent of UI
                 val dummySurface = ImageReader.newInstance(1280, 720, android.graphics.ImageFormat.YUV_420_888, 1).surface
                 startCameraPreview(dummySurface)
                 isPreviewActive = true
@@ -107,10 +108,7 @@ class StreamEngine(
     fun setZoom(event: MotionEvent) {}
     fun setOverlayBitmap(bitmap: Bitmap) { updateOverlay(bitmap) }
     fun detachCallback() { callback = null }
-
-    fun release() {
-        close()
-    }
+    fun release() { close() }
 
     // --- STREAMPACK ENGINE ---
     suspend fun initializeCamera(videoConfig: EngineVideoConfig, targetRotation: Int? = null) {
