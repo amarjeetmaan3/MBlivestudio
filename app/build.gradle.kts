@@ -57,8 +57,9 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("androidx.activity:activity-ktx:1.8.2")
     
-    // 100% Correct Monolithic StreamPack Dependency (Version 2.8.0)
-    implementation("io.github.thibaultbee:streampack:2.8.0")
+    // StreamPack 3.2.0
+    implementation("io.github.thibaultbee.streampack:streampack-core:3.2.0")
+    implementation("io.github.thibaultbee.streampack:streampack-rtmp:3.2.0")
 
     implementation("com.google.android.gms:play-services-auth:20.7.0")
     implementation("com.google.api-client:google-api-client-android:1.32.2")
