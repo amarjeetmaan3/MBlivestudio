@@ -39,6 +39,10 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+        // This flag forces the older compiler to accept Kotlin 2.x libraries
+        freeCompilerArgs += listOf(
+            "-Xskip-metadata-version-check"
+        )
     }
 
     packaging {
@@ -51,7 +55,7 @@ android {
     }
 }
 
-// यह ब्लॉक तुम्हारी पुरानी फाइल से लिया गया है जो बैकग्राउंड वर्ज़न्स को क्रैश होने से रोकेगा
+// Locks background dependencies to stable SDK 34 compatible versions
 configurations.all {
     resolutionStrategy {
         force("androidx.core:core:1.13.1")
@@ -64,7 +68,6 @@ configurations.all {
 dependencies {
     implementation("com.github.pedroSG94.RootEncoder:library:2.5.1")
     
-    // सुरक्षित वर्ज़न्स
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("androidx.activity:activity-ktx:1.9.1")
