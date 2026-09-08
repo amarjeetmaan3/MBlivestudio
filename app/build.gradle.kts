@@ -56,7 +56,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("androidx.activity:activity-ktx:1.8.2")
-    implementation 'io.github.thibaultbee:streampack:2.4.1'
+    implementation("io.github.thibaultbee:streampack:2.4.1")
 
     implementation("com.google.android.gms:play-services-auth:20.7.0")
     implementation("com.google.api-client:google-api-client-android:1.32.2")
