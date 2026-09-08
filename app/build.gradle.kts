@@ -57,9 +57,9 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("androidx.activity:activity-ktx:1.8.2")
     
-    // Updated StreamPack 2.9.0 Split Dependencies
-    implementation("io.github.thibaultbee.streampack:streampack-core:2.9.0")
-    implementation("io.github.thibaultbee.streampack:streampack-extension-rtmp:2.9.0")
+    // Corrected StreamPack IDs (Removed the extra .streampack)
+    implementation("io.github.thibaultbee:streampack-core:2.9.0")
+    implementation("io.github.thibaultbee:streampack-extension-rtmp:2.9.0")
 
     implementation("com.google.android.gms:play-services-auth:20.7.0")
     implementation("com.google.api-client:google-api-client-android:1.32.2")
