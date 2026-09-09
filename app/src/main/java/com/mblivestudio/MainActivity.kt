@@ -31,6 +31,7 @@ import android.text.TextUtils
 import android.text.TextWatcher
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
+import android.view.SurfaceHolder
 import android.view.View
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
@@ -409,9 +410,13 @@ class MainActivity : Activity(), ConnectChecker {
             }
         }
 
+        var currentTouchEvent: MotionEvent? = null
+
         val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
-                try { streamEngine.rtmpCamera.setZoom(MotionEvent.obtain(0L, 0L, 0, 0, 0f, 0f, 0, 0, 0f, 0f, 0, 0), detector.scaleFactor) } catch (e: Exception) {}
+                currentTouchEvent?.let { event ->
+                    try { streamEngine.rtmpCamera.setZoom(event, detector.scaleFactor) } catch (e: Exception) {}
+                }
                 return true
             }
         })
@@ -423,6 +428,7 @@ class MainActivity : Activity(), ConnectChecker {
                 imm.hideSoftInputFromWindow(openGlView.windowToken, 0)
             }
             if (event.pointerCount > 1) {
+                currentTouchEvent = event
                 scaleGestureDetector.onTouchEvent(event)
                 true
             } else {
@@ -1010,6 +1016,40 @@ class MainActivity : Activity(), ConnectChecker {
         if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK && data != null) data.data?.let { uri -> addImageOverlayToScreen(MediaStore.Images.Media.getBitmap(contentResolver, uri)) }
         if (requestCode == PICK_THUMBNAIL_REQUEST && resultCode == RESULT_OK && data != null) data.data?.let { uri -> pendingThumbnailUri = uri; thumbnailPreviewImageView?.setImageURI(uri) }
         if (requestCode == SIGN_IN_REQUEST) try { val account = GoogleSignIn.getSignedInAccountFromIntent(data).getResult(ApiException::class.java); connectedAccountEmail = account?.email; if (account != null) applyAccountToHeader(account) } catch (e: ApiException) { }
+    }
+
+    private fun addImageOverlayToScreen(bitmap: Bitmap) {
+        val imageView = ImageView(this).apply { setImageBitmap(bitmap); layoutParams = RelativeLayout.LayoutParams(300, 300).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) } }
+        overlayContainer.addView(imageView); makeDraggableAndScalable(imageView); selectedOverlay = imageView; updateOverlayMenuButtonPosition(); updateSnapshot()
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun makeDraggableAndScalable(view: View) {
+        val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() { override fun onScale(detector: ScaleGestureDetector): Boolean { if (view is WebView) return false; view.scaleX *= detector.scaleFactor; view.scaleY *= detector.scaleFactor; return true } })
+        var localDX = 0f; var localDY = 0f
+        view.setOnTouchListener { v, event ->
+            if (currentMode != "DRAG") return@setOnTouchListener false
+            scaleGestureDetector.onTouchEvent(event)
+            if (!scaleGestureDetector.isInProgress) {
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> { 
+                        localDX = v.x - event.rawX; localDY = v.y - event.rawY
+                        selectedOverlay = v
+                        updateOverlayMenuButtonPosition() 
+                    }
+                    MotionEvent.ACTION_MOVE -> { v.x = event.rawX + localDX; v.y = event.rawY + localDY; updateOverlayMenuButtonPosition() }
+                    MotionEvent.ACTION_UP -> { updateSnapshot() }
+                }
+            }
+            if (v is EditText) v.onTouchEvent(event)
+            true
+        }
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun makeStudioPanelDraggable(view: View) {
+        var dX = 0f; var dY = 0f
+        view.setOnTouchListener { v, event -> when (event.actionMasked) { MotionEvent.ACTION_DOWN -> { dX = v.x - event.rawX; dY = v.y - event.rawY }; MotionEvent.ACTION_MOVE -> { v.x = event.rawX + dX; v.y = event.rawY + dY } }; true }
     }
 
     override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "🔥 YOU ARE LIVE!", Toast.LENGTH_LONG).show(); startStudioTimer() } }
