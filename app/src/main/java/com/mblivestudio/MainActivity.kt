@@ -649,6 +649,12 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
         } else if (target is WebView) { target.settings.builtInZoomControls = true; target.settings.displayZoomControls = false; target.setOnTouchListener(null) }
     }
 
+    private fun applyImageMatrix(iv: ImageView, scale: Float, tx: Float, ty: Float) {
+        val matrix = android.graphics.Matrix()
+        matrix.postScale(scale, scale); matrix.postTranslate(tx, ty)
+        iv.imageMatrix = matrix; updateSnapshot()
+    }
+
     private fun showAddTextDialog() {
         val input = EditText(this).apply { hint = "Enter text..."; inputType = InputType.TYPE_CLASS_TEXT }
         AlertDialog.Builder(this).setTitle("Add Text Overlay").setView(input).setPositiveButton("Add") { _, _ -> 
@@ -1161,11 +1167,6 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
         reusableBitmap?.let { if (!it.isRecycled) it.recycle() }; reusableBitmap = null
         reusableCanvas = null
     }
-    
-    override fun onAuthError() {}
-    override fun onAuthSuccess() {}
-    override fun onConnectionStarted(url: String) {}
-    override fun onNewBitrate(bitrate: Long) {}
     
     private fun applyCameraLayout(rect: FloatArray) { 
         Toast.makeText(this, "Camera layouts coming in Phase 2", Toast.LENGTH_SHORT).show() 
