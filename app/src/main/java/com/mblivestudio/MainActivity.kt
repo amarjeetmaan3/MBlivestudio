@@ -112,7 +112,7 @@ class MainActivity : Activity(), ConnectChecker {
     private val overlayHandler = Handler(Looper.getMainLooper())
     private var pendingRefresh = false
 
-    // Double Buffering to fix RootEncoder Ghosting issue
+    // Safest Double Buffering Implementation
     private var bitmapA: Bitmap? = null
     private var canvasA: Canvas? = null
     private var bitmapB: Bitmap? = null
@@ -184,9 +184,7 @@ class MainActivity : Activity(), ConnectChecker {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        
         setContentView(R.layout.activity_main)
 
         openGlView = findViewById(R.id.surfaceView)
@@ -244,11 +242,9 @@ class MainActivity : Activity(), ConnectChecker {
             if (target !is TextView && target.tag != "LOWER_THIRD") {
                 popup.menu.add("Crop")
             }
-            
             if (target is TextView || target is EditText || target.tag == "LOWER_THIRD") {
                 popup.menu.add("Change Color")
             }
-            
             popup.setOnMenuItemClickListener { item ->
                 when (item.title) {
                     "Resize" -> enterResizeMode(target)
@@ -942,7 +938,7 @@ class MainActivity : Activity(), ConnectChecker {
                 useBufferA = !useBufferA
                 
                 if (useBufferA) {
-                    if (bitmapA == null || bitmapA!!.width != w || bitmapA!!.height != h) {
+                    if (bitmapA == null || bitmapA!!.isRecycled || bitmapA!!.width != w || bitmapA!!.height != h) {
                         bitmapA?.recycle()
                         bitmapA = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
                         canvasA = Canvas(bitmapA!!)
@@ -951,7 +947,7 @@ class MainActivity : Activity(), ConnectChecker {
                     overlayContainer.draw(canvasA!!)
                     streamEngine.setOverlayImage(bitmapA!!)
                 } else {
-                    if (bitmapB == null || bitmapB!!.width != w || bitmapB!!.height != h) {
+                    if (bitmapB == null || bitmapB!!.isRecycled || bitmapB!!.width != w || bitmapB!!.height != h) {
                         bitmapB?.recycle()
                         bitmapB = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
                         canvasB = Canvas(bitmapB!!)
@@ -1058,7 +1054,12 @@ class MainActivity : Activity(), ConnectChecker {
                         selectedOverlay = v
                         updateOverlayMenuButtonPosition() 
                     }
-                    MotionEvent.ACTION_MOVE -> { v.x = event.rawX + localDX; v.y = event.rawY + localDY; updateOverlayMenuButtonPosition() }
+                    MotionEvent.ACTION_MOVE -> { 
+                        v.x = event.rawX + localDX
+                        v.y = event.rawY + localDY
+                        updateOverlayMenuButtonPosition()
+                        updateSnapshot(50) 
+                    }
                     MotionEvent.ACTION_UP -> { updateSnapshot() }
                 }
             }
