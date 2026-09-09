@@ -31,6 +31,7 @@ import android.text.TextUtils
 import android.text.TextWatcher
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
+import android.view.SurfaceHolder
 import android.view.View
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
@@ -411,7 +412,6 @@ class MainActivity : Activity(), ConnectChecker {
 
         val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
-                try { streamEngine.rtmpCamera.setZoom(MotionEvent.obtain(0,0,0,0,0f,0f,0,0,0f,0f,0,0), detector.scaleFactor) } catch (e: Exception) {}
                 return true
             }
         })
@@ -424,6 +424,7 @@ class MainActivity : Activity(), ConnectChecker {
             }
             if (event.pointerCount > 1) {
                 scaleGestureDetector.onTouchEvent(event)
+                try { streamEngine.rtmpCamera.setZoom(event, scaleGestureDetector.scaleFactor) } catch (e: Exception) {}
                 true
             } else {
                 false
@@ -706,7 +707,6 @@ class MainActivity : Activity(), ConnectChecker {
             layoutParams = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT).apply { 
                 addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) 
             }
-            
             setOnFocusChangeListener { _, hasFocus ->
                 if (!hasFocus && text.toString().trim().isEmpty()) {
                     overlayContainer.removeView(this)
@@ -717,7 +717,6 @@ class MainActivity : Activity(), ConnectChecker {
                     updateSnapshot()
                 }
             }
-
             addTextChangedListener(object : TextWatcher { 
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { updateSnapshot() }
@@ -755,9 +754,7 @@ class MainActivity : Activity(), ConnectChecker {
                     setBackgroundColor(Color.TRANSPARENT); setLayerType(View.LAYER_TYPE_SOFTWARE, null); settings.javaScriptEnabled = true; settings.domStorageEnabled = true; settings.useWideViewPort = true; settings.loadWithOverviewMode = true; webViewClient = WebViewClient(); webChromeClient = WebChromeClient(); loadUrl(finalUrl)
                 }
                 overlayContainer.addView(webView); makeDraggableAndScalable(webView); selectedOverlay = webView; updateOverlayMenuButtonPosition(); 
-                
                 webSyncHandler.post(webSyncRunnable)
-                
                 overlayHandler.postDelayed({ updateSnapshot() }, 2000)
             }
         }.setNegativeButton("Cancel", null).show()
@@ -870,12 +867,7 @@ class MainActivity : Activity(), ConnectChecker {
 
     private fun pollViewersOnce() {
         if (!chatPollingActive || currentBroadcastId == null) return
-        
-        if (!switchViewerSync.isChecked) {
-            chatHandler.postDelayed({ pollViewersOnce() }, 5000L)
-            return
-        }
-
+        if (!switchViewerSync.isChecked) { chatHandler.postDelayed({ pollViewersOnce() }, 5000L); return }
         val youtube = youtubeClient ?: return
         Thread {
             addQuota(1)
@@ -894,12 +886,7 @@ class MainActivity : Activity(), ConnectChecker {
 
     private fun pollChatOnce() {
         if (!chatPollingActive) return
-        
-        if (!switchChatSync.isChecked) {
-            chatHandler.postDelayed({ pollChatOnce() }, 5000L)
-            return
-        }
-
+        if (!switchChatSync.isChecked) { chatHandler.postDelayed({ pollChatOnce() }, 5000L); return }
         val chatId = currentLiveChatId ?: return
         val youtube = youtubeClient ?: return
         Thread {
@@ -945,7 +932,6 @@ class MainActivity : Activity(), ConnectChecker {
                 }
                 reusableBitmap!!.eraseColor(Color.TRANSPARENT)
                 overlayContainer.draw(reusableCanvas!!)
-                
                 streamEngine.setOverlayImage(reusableBitmap!!)
             } catch (e: Exception) { e.printStackTrace() }
             pendingRefresh = false
@@ -1076,4 +1062,9 @@ class MainActivity : Activity(), ConnectChecker {
         reusableBitmap?.let { if (!it.isRecycled) it.recycle() }; reusableBitmap = null
         reusableCanvas = null
     }
+
+    override fun onAuthError() {}
+    override fun onAuthSuccess() {}
+    override fun onConnectionStarted(url: String) {}
+    override fun onNewBitrate(bitrate: Long) {}
 }
