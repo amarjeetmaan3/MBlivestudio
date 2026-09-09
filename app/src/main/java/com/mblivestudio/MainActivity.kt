@@ -111,9 +111,7 @@ class MainActivity : Activity(), ConnectChecker {
 
     private val overlayHandler = Handler(Looper.getMainLooper())
     private var pendingRefresh = false
-
-    private var reusableBitmap: Bitmap? = null
-    private var reusableCanvas: Canvas? = null
+    private var surfaceReady = false
 
     private var pendingTitle: String = ""
     private var pendingDesc: String = ""
@@ -400,6 +398,7 @@ class MainActivity : Activity(), ConnectChecker {
             if (streamEngine.isOnPreview) {
                 streamEngine.stopPreview()
             }
+            surfaceReady = false
 
             if (streamEngine.streamWidth > streamEngine.streamHeight) {
                 requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
@@ -927,23 +926,24 @@ class MainActivity : Activity(), ConnectChecker {
     private fun startStudioTimer() { liveStartTimeMillis = System.currentTimeMillis(); timerRunning = true; tvLiveTimer.visibility = View.VISIBLE; timerHandler.post(timerRunnable) }
     private fun stopStudioTimer() { timerRunning = false; timerHandler.removeCallbacksAndMessages(null); tvLiveTimer.visibility = View.GONE; tvLiveTimer.text = "00:00:00" }
 
-    private fun updateSnapshot(delay: Long = 200) {
+    private fun updateSnapshot(delay: Long = 100) {
         if (!streamEngine.isOnPreview || overlayContainer.width == 0 || overlayContainer.height == 0 || pendingRefresh) return
         pendingRefresh = true
         overlayHandler.postDelayed({
             try {
                 val w = overlayContainer.width
                 val h = overlayContainer.height
-                if (reusableBitmap == null || reusableBitmap!!.width != w || reusableBitmap!!.height != h) {
-                    reusableBitmap?.recycle()
-                    reusableBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-                    reusableCanvas = Canvas(reusableBitmap!!)
-                }
-                reusableBitmap!!.eraseColor(Color.TRANSPARENT)
-                overlayContainer.draw(reusableCanvas!!)
-                streamEngine.setOverlayImage(reusableBitmap!!)
-            } catch (e: Exception) { e.printStackTrace() }
-            pendingRefresh = false
+                val snapshot = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(snapshot)
+                overlayContainer.draw(canvas)
+                streamEngine.setOverlayImage(snapshot)
+            } catch (e: Exception) { 
+                e.printStackTrace() 
+            } catch (e: OutOfMemoryError) {
+                e.printStackTrace()
+            } finally {
+                pendingRefresh = false
+            }
         }, delay)
     }
 
