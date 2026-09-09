@@ -111,7 +111,9 @@ class MainActivity : Activity(), ConnectChecker {
 
     private val overlayHandler = Handler(Looper.getMainLooper())
     private var pendingRefresh = false
-    private var surfaceReady = false
+
+    private var overlaySnapshot: Bitmap? = null
+    private var overlayCanvas: Canvas? = null
 
     private var pendingTitle: String = ""
     private var pendingDesc: String = ""
@@ -398,7 +400,6 @@ class MainActivity : Activity(), ConnectChecker {
             if (streamEngine.isOnPreview) {
                 streamEngine.stopPreview()
             }
-            surfaceReady = false
 
             if (streamEngine.streamWidth > streamEngine.streamHeight) {
                 requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
@@ -926,24 +927,23 @@ class MainActivity : Activity(), ConnectChecker {
     private fun startStudioTimer() { liveStartTimeMillis = System.currentTimeMillis(); timerRunning = true; tvLiveTimer.visibility = View.VISIBLE; timerHandler.post(timerRunnable) }
     private fun stopStudioTimer() { timerRunning = false; timerHandler.removeCallbacksAndMessages(null); tvLiveTimer.visibility = View.GONE; tvLiveTimer.text = "00:00:00" }
 
-    private fun updateSnapshot(delay: Long = 100) {
+    private fun updateSnapshot(delay: Long = 200) {
         if (!streamEngine.isOnPreview || overlayContainer.width == 0 || overlayContainer.height == 0 || pendingRefresh) return
         pendingRefresh = true
         overlayHandler.postDelayed({
             try {
                 val w = overlayContainer.width
                 val h = overlayContainer.height
-                val snapshot = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-                val canvas = Canvas(snapshot)
-                overlayContainer.draw(canvas)
-                streamEngine.setOverlayImage(snapshot)
-            } catch (e: Exception) { 
-                e.printStackTrace() 
-            } catch (e: OutOfMemoryError) {
-                e.printStackTrace()
-            } finally {
-                pendingRefresh = false
-            }
+                if (overlaySnapshot == null || overlaySnapshot!!.width != w || overlaySnapshot!!.height != h) {
+                    overlaySnapshot?.recycle()
+                    overlaySnapshot = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                    overlayCanvas = Canvas(overlaySnapshot!!)
+                }
+                overlaySnapshot!!.eraseColor(Color.TRANSPARENT)
+                overlayContainer.draw(overlayCanvas!!)
+                streamEngine.setOverlayImage(overlaySnapshot!!)
+            } catch (e: Exception) { e.printStackTrace() }
+            pendingRefresh = false
         }, delay)
     }
 
@@ -1018,40 +1018,6 @@ class MainActivity : Activity(), ConnectChecker {
         if (requestCode == SIGN_IN_REQUEST) try { val account = GoogleSignIn.getSignedInAccountFromIntent(data).getResult(ApiException::class.java); connectedAccountEmail = account?.email; if (account != null) applyAccountToHeader(account) } catch (e: ApiException) { }
     }
 
-    private fun addImageOverlayToScreen(bitmap: Bitmap) {
-        val imageView = ImageView(this).apply { setImageBitmap(bitmap); layoutParams = RelativeLayout.LayoutParams(300, 300).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) } }
-        overlayContainer.addView(imageView); makeDraggableAndScalable(imageView); selectedOverlay = imageView; updateOverlayMenuButtonPosition(); updateSnapshot()
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun makeDraggableAndScalable(view: View) {
-        val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() { override fun onScale(detector: ScaleGestureDetector): Boolean { if (view is WebView) return false; view.scaleX *= detector.scaleFactor; view.scaleY *= detector.scaleFactor; return true } })
-        var localDX = 0f; var localDY = 0f
-        view.setOnTouchListener { v, event ->
-            if (currentMode != "DRAG") return@setOnTouchListener false
-            scaleGestureDetector.onTouchEvent(event)
-            if (!scaleGestureDetector.isInProgress) {
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { 
-                        localDX = v.x - event.rawX; localDY = v.y - event.rawY
-                        selectedOverlay = v
-                        updateOverlayMenuButtonPosition() 
-                    }
-                    MotionEvent.ACTION_MOVE -> { v.x = event.rawX + localDX; v.y = event.rawY + localDY; updateOverlayMenuButtonPosition() }
-                    MotionEvent.ACTION_UP -> { updateSnapshot() }
-                }
-            }
-            if (v is EditText) v.onTouchEvent(event)
-            true
-        }
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun makeStudioPanelDraggable(view: View) {
-        var dX = 0f; var dY = 0f
-        view.setOnTouchListener { v, event -> when (event.actionMasked) { MotionEvent.ACTION_DOWN -> { dX = v.x - event.rawX; dY = v.y - event.rawY }; MotionEvent.ACTION_MOVE -> { v.x = event.rawX + dX; v.y = event.rawY + dY } }; true }
-    }
-
     override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "🔥 YOU ARE LIVE!", Toast.LENGTH_LONG).show(); startStudioTimer() } }
     override fun onConnectionFailed(reason: String) {
         if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { retryCount++; runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }; Thread { Thread.sleep(2000); try { streamEngine.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} }.start() } else { runOnUiThread { try { streamEngine.stopPreview() } catch (e: Exception) {}; streamEngine.tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { streamEngine.stopStream() } catch (e: Exception) {}; Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show(); stopChatPolling(); stopStudioTimer() } }
@@ -1068,8 +1034,13 @@ class MainActivity : Activity(), ConnectChecker {
         
         streamEngine.release()
         
-        reusableBitmap?.let { if (!it.isRecycled) it.recycle() }; reusableBitmap = null
-        reusableCanvas = null
+        overlaySnapshot?.let { 
+            if (!it.isRecycled) {
+                it.recycle()
+            }
+        }
+        overlaySnapshot = null
+        overlayCanvas = null
     }
 
     override fun onAuthError() {
