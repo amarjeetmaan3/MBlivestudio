@@ -74,9 +74,6 @@ class OverlayCompositor : ISurfaceProcessorInternal {
     private var hasOverlay = false
 
     private val texMatrix = FloatArray(16)
-    
-    // FIX: Manual rebasing fallback to prevent YouTube rejection
-    private var baseEncoderTimestampNs = -1L
 
     private data class OutputEntry(
         val output: ISurfaceOutput,
@@ -209,11 +206,9 @@ class OverlayCompositor : ISurfaceProcessorInternal {
         runOnGlThread {
             outputs.forEach { destroyWindowSurface(it.eglSurface) }
             outputs.clear()
-            baseEncoderTimestampNs = -1L
         }
     }
 
-    // FIX: Attach Timebase to the Encoder Surface
     override fun setTimebase(surface: Surface, timebase: Timebase) {
         runOnGlThread {
             outputs.find { it.output.targetSurface == surface }?.timebase = timebase
@@ -295,8 +290,8 @@ class OverlayCompositor : ISurfaceProcessorInternal {
             drawCamera(outputMatrix)
             if (hasOverlay) drawOverlay()
 
-            // FIX: Timestamp Rebasing Logic
-            var pts = timestampNs
+            // FIX: Timestamp Conversion Logic (Microseconds -> Nanoseconds)
+            var ptsNs = timestampNs
             val tb = entry.timebase
             var usedTb = false
             
@@ -305,18 +300,20 @@ class OverlayCompositor : ISurfaceProcessorInternal {
                     val m = tb.javaClass.methods.firstOrNull { it.name == "timestamp" || it.name == "getTimestamp" }
                     if (m != null) {
                         val result = m.invoke(tb, timestampNs)
-                        if (result is Long) { pts = result; usedTb = true }
+                        if (result is Long) { 
+                            ptsNs = result * 1000L // StreamPack returns Microseconds, EGL needs Nanoseconds
+                            usedTb = true 
+                        }
                     }
                 } catch (e: Exception) { }
             }
 
-            // Fallback rebase if StreamPack Timebase is inaccessible
             if (!usedTb) {
-                if (baseEncoderTimestampNs == -1L) baseEncoderTimestampNs = timestampNs
-                pts = timestampNs - baseEncoderTimestampNs
+                // Perfect fallback: Match Audio absolute clock
+                ptsNs = System.nanoTime()
             }
 
-            EGLExt.eglPresentationTimeANDROID(eglDisplay, entry.eglSurface, pts)
+            EGLExt.eglPresentationTimeANDROID(eglDisplay, entry.eglSurface, ptsNs)
             EGL14.eglSwapBuffers(eglDisplay, entry.eglSurface)
         }
         checkEglCurrent()
