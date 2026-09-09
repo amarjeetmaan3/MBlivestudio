@@ -52,6 +52,7 @@ class StreamEngine(
 
     var isStreamingActive = false
     var isPreviewActive = false
+    private var isMicMuted = false
 
     // --- BRIDGES FOR MAINACTIVITY ---
     inner class RtmpCameraBridge {
@@ -94,22 +95,38 @@ class StreamEngine(
                ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
     }
 
-    fun tryStartCameraPreview() {
-        if (!hasCameraPermissions() || isPreviewActive) return
+    fun tryStartCameraPreview(previewSurface: Surface? = null) {
+        if (!hasCameraPermissions() || isPreviewActive) {
+            callback?.onConnectionFailed("Camera or Mic permission missing")
+            return
+        }
+        
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 initializeCamera(EngineVideoConfig(1280, 720, 30, 3000000))
-                val dummySurface = ImageReader.newInstance(1280, 720, android.graphics.ImageFormat.YUV_420_888, 1).surface
-                startCameraPreview(dummySurface)
+                
+                // Invisible dummy surface ki jagah ab actual UI surface use hoga
+                val targetSurface = previewSurface 
+                    ?: (openGlView as? android.view.SurfaceView)?.holder?.surface 
+                    ?: ImageReader.newInstance(1280, 720, android.graphics.ImageFormat.YUV_420_888, 1).surface
+                
+                startCameraPreview(targetSurface)
                 isPreviewActive = true
             } catch (e: Exception) {
+                callback?.onConnectionFailed("Preview Error: ${e.message}")
                 e.printStackTrace()
             }
         }
     }
 
     fun switchCamera() { CoroutineScope(Dispatchers.IO).launch { flipCamera() } }
-    fun toggleBluetoothMic() {}
+    
+    fun toggleBluetoothMic() {
+        isMicMuted = !isMicMuted
+        muteAudio(isMicMuted)
+        callback?.onMicStatusChanged(if (isMicMuted) "Mic Muted" else "Mic Active", true)
+    }
+    
     fun setZoom(event: MotionEvent) {}
     fun setOverlayBitmap(bitmap: Bitmap) { updateOverlay(bitmap) }
     fun detachCallback() { callback = null }
