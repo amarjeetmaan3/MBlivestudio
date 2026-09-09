@@ -84,6 +84,11 @@ class StreamEngine(
 
     val rtmpCamera = RtmpCameraBridge()
 
+    // --- TOP LEVEL DIRECT BRIDGES ---
+    fun stopStream() { rtmpCamera.stopStream() }
+    fun startStream(url: String) { rtmpCamera.startStream(url) }
+    fun stopPreview() { rtmpCamera.stopPreview() }
+
     fun hasCameraPermissions(): Boolean {
         return ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED &&
                ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
