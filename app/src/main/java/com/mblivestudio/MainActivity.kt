@@ -180,9 +180,7 @@ class MainActivity : Activity(), ConnectChecker {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        
         setContentView(R.layout.activity_main)
 
         openGlView = findViewById(R.id.surfaceView)
@@ -400,6 +398,7 @@ class MainActivity : Activity(), ConnectChecker {
             if (streamEngine.isOnPreview) {
                 streamEngine.stopPreview()
             }
+            surfaceReady = false
 
             if (streamEngine.streamWidth > streamEngine.streamHeight) {
                 requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
@@ -410,9 +409,14 @@ class MainActivity : Activity(), ConnectChecker {
             }
         }
 
+        // --- FIX FOR ZOOM FLOAT ERROR ---
+        var currentTouchEvent: MotionEvent? = null
+
         val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
-                try { streamEngine.rtmpCamera.setZoom(MotionEvent.obtain(0L, 0L, 0, 0, 0f, 0f, 0, 0, 0f, 0f, 0, 0), detector.scaleFactor) } catch (e: Exception) {}
+                currentTouchEvent?.let {
+                    try { streamEngine.rtmpCamera.setZoom(it, detector.scaleFactor) } catch (e: Exception) {}
+                }
                 return true
             }
         })
@@ -424,6 +428,7 @@ class MainActivity : Activity(), ConnectChecker {
                 imm.hideSoftInputFromWindow(openGlView.windowToken, 0)
             }
             if (event.pointerCount > 1) {
+                currentTouchEvent = event
                 scaleGestureDetector.onTouchEvent(event)
                 true
             } else {
@@ -936,7 +941,6 @@ class MainActivity : Activity(), ConnectChecker {
                 }
                 reusableBitmap!!.eraseColor(Color.TRANSPARENT)
                 overlayContainer.draw(reusableCanvas!!)
-                
                 streamEngine.setOverlayImage(reusableBitmap!!)
             } catch (e: Exception) { e.printStackTrace() }
             pendingRefresh = false
