@@ -112,9 +112,11 @@ class MainActivity : Activity(), ConnectChecker {
     private val overlayHandler = Handler(Looper.getMainLooper())
     private var pendingRefresh = false
 
-    // Bulletproof Double Buffering for Overlays
+    // Double Buffering to fix RootEncoder Ghosting issue
     private var bitmapA: Bitmap? = null
+    private var canvasA: Canvas? = null
     private var bitmapB: Bitmap? = null
+    private var canvasB: Canvas? = null
     private var useBufferA = true
 
     private var pendingTitle: String = ""
@@ -452,8 +454,6 @@ class MainActivity : Activity(), ConnectChecker {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !streamEngine.hasCameraPermissions()) {
             requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
         }
-
-        // NOTE: The line `overlayContainer.setLayerType(View.LAYER_TYPE_SOFTWARE, null)` has been PERMANENTLY REMOVED here to fix the Android UI ghosting crash.
 
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).requestEmail().requestProfile().requestScopes(Scope("https://www.googleapis.com/auth/youtube")).build()
         googleSignInClient = GoogleSignIn.getClient(this, gso)
@@ -938,32 +938,30 @@ class MainActivity : Activity(), ConnectChecker {
             try {
                 val w = overlayContainer.width
                 val h = overlayContainer.height
-
-                val targetBitmap = if (useBufferA) {
-                    if (bitmapA == null || bitmapA!!.isRecycled || bitmapA!!.width != w) {
+                
+                useBufferA = !useBufferA
+                
+                if (useBufferA) {
+                    if (bitmapA == null || bitmapA!!.width != w || bitmapA!!.height != h) {
                         bitmapA?.recycle()
                         bitmapA = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                        canvasA = Canvas(bitmapA!!)
                     }
-                    bitmapA!!
+                    bitmapA!!.eraseColor(Color.TRANSPARENT)
+                    overlayContainer.draw(canvasA!!)
+                    streamEngine.setOverlayImage(bitmapA!!)
                 } else {
-                    if (bitmapB == null || bitmapB!!.isRecycled || bitmapB!!.width != w) {
+                    if (bitmapB == null || bitmapB!!.width != w || bitmapB!!.height != h) {
                         bitmapB?.recycle()
                         bitmapB = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                        canvasB = Canvas(bitmapB!!)
                     }
-                    bitmapB!!
+                    bitmapB!!.eraseColor(Color.TRANSPARENT)
+                    overlayContainer.draw(canvasB!!)
+                    streamEngine.setOverlayImage(bitmapB!!)
                 }
-
-                targetBitmap.eraseColor(Color.TRANSPARENT)
-                val canvas = Canvas(targetBitmap)
-                overlayContainer.draw(canvas)
-                
-                streamEngine.setOverlayImage(targetBitmap)
-                useBufferA = !useBufferA
-
-            } catch (e: Exception) {
-                e.printStackTrace()
-            } catch (e: OutOfMemoryError) {
-                e.printStackTrace()
+            } catch (e: Exception) { 
+                e.printStackTrace() 
             } finally {
                 pendingRefresh = false
             }
@@ -1041,40 +1039,6 @@ class MainActivity : Activity(), ConnectChecker {
         if (requestCode == SIGN_IN_REQUEST) try { val account = GoogleSignIn.getSignedInAccountFromIntent(data).getResult(ApiException::class.java); connectedAccountEmail = account?.email; if (account != null) applyAccountToHeader(account) } catch (e: ApiException) { }
     }
 
-    private fun addImageOverlayToScreen(bitmap: Bitmap) {
-        val imageView = ImageView(this).apply { setImageBitmap(bitmap); layoutParams = RelativeLayout.LayoutParams(300, 300).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) } }
-        overlayContainer.addView(imageView); makeDraggableAndScalable(imageView); selectedOverlay = imageView; updateOverlayMenuButtonPosition(); updateSnapshot()
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun makeDraggableAndScalable(view: View) {
-        val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() { override fun onScale(detector: ScaleGestureDetector): Boolean { if (view is WebView) return false; view.scaleX *= detector.scaleFactor; view.scaleY *= detector.scaleFactor; return true } })
-        var localDX = 0f; var localDY = 0f
-        view.setOnTouchListener { v, event ->
-            if (currentMode != "DRAG") return@setOnTouchListener false
-            scaleGestureDetector.onTouchEvent(event)
-            if (!scaleGestureDetector.isInProgress) {
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { 
-                        localDX = v.x - event.rawX; localDY = v.y - event.rawY
-                        selectedOverlay = v
-                        updateOverlayMenuButtonPosition() 
-                    }
-                    MotionEvent.ACTION_MOVE -> { v.x = event.rawX + localDX; v.y = event.rawY + localDY; updateOverlayMenuButtonPosition() }
-                    MotionEvent.ACTION_UP -> { updateSnapshot() }
-                }
-            }
-            if (v is EditText) v.onTouchEvent(event)
-            true
-        }
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun makeStudioPanelDraggable(view: View) {
-        var dX = 0f; var dY = 0f
-        view.setOnTouchListener { v, event -> when (event.actionMasked) { MotionEvent.ACTION_DOWN -> { dX = v.x - event.rawX; dY = v.y - event.rawY }; MotionEvent.ACTION_MOVE -> { v.x = event.rawX + dX; v.y = event.rawY + dY } }; true }
-    }
-
     override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "🔥 YOU ARE LIVE!", Toast.LENGTH_LONG).show(); startStudioTimer() } }
     override fun onConnectionFailed(reason: String) {
         if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { retryCount++; runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }; Thread { Thread.sleep(2000); try { streamEngine.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} }.start() } else { runOnUiThread { try { streamEngine.stopPreview() } catch (e: Exception) {}; streamEngine.tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { streamEngine.stopStream() } catch (e: Exception) {}; Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show(); stopChatPolling(); stopStudioTimer() } }
@@ -1093,8 +1057,11 @@ class MainActivity : Activity(), ConnectChecker {
         
         bitmapA?.let { if (!it.isRecycled) it.recycle() }
         bitmapA = null
+        canvasA = null
+        
         bitmapB?.let { if (!it.isRecycled) it.recycle() }
         bitmapB = null
+        canvasB = null
     }
 
     override fun onAuthError() {
