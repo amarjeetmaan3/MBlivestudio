@@ -74,10 +74,14 @@ class OverlayCompositor : ISurfaceProcessorInternal {
     private var hasOverlay = false
 
     private val texMatrix = FloatArray(16)
+    
+    // FIX: Manual rebasing fallback to prevent YouTube rejection
+    private var baseEncoderTimestampNs = -1L
 
     private data class OutputEntry(
         val output: ISurfaceOutput,
-        val eglSurface: EGLSurface
+        val eglSurface: EGLSurface,
+        var timebase: Any? = null
     )
 
     private val outputs = mutableListOf<OutputEntry>()
@@ -205,10 +209,16 @@ class OverlayCompositor : ISurfaceProcessorInternal {
         runOnGlThread {
             outputs.forEach { destroyWindowSurface(it.eglSurface) }
             outputs.clear()
+            baseEncoderTimestampNs = -1L
         }
     }
 
-    override fun setTimebase(surface: Surface, timebase: Timebase) {}
+    // FIX: Attach Timebase to the Encoder Surface
+    override fun setTimebase(surface: Surface, timebase: Timebase) {
+        runOnGlThread {
+            outputs.find { it.output.targetSurface == surface }?.timebase = timebase
+        }
+    }
 
     override fun release() {
         if (released) return
@@ -285,7 +295,28 @@ class OverlayCompositor : ISurfaceProcessorInternal {
             drawCamera(outputMatrix)
             if (hasOverlay) drawOverlay()
 
-            EGLExt.eglPresentationTimeANDROID(eglDisplay, entry.eglSurface, timestampNs)
+            // FIX: Timestamp Rebasing Logic
+            var pts = timestampNs
+            val tb = entry.timebase
+            var usedTb = false
+            
+            if (tb != null) {
+                try {
+                    val m = tb.javaClass.methods.firstOrNull { it.name == "timestamp" || it.name == "getTimestamp" }
+                    if (m != null) {
+                        val result = m.invoke(tb, timestampNs)
+                        if (result is Long) { pts = result; usedTb = true }
+                    }
+                } catch (e: Exception) { }
+            }
+
+            // Fallback rebase if StreamPack Timebase is inaccessible
+            if (!usedTb) {
+                if (baseEncoderTimestampNs == -1L) baseEncoderTimestampNs = timestampNs
+                pts = timestampNs - baseEncoderTimestampNs
+            }
+
+            EGLExt.eglPresentationTimeANDROID(eglDisplay, entry.eglSurface, pts)
             EGL14.eglSwapBuffers(eglDisplay, entry.eglSurface)
         }
         checkEglCurrent()
