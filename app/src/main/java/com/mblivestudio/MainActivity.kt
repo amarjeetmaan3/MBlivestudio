@@ -56,8 +56,6 @@ import com.google.api.client.json.gson.GsonFactory
 import com.google.api.client.util.DateTime
 import com.google.api.services.youtube.YouTube
 import com.google.api.services.youtube.model.*
-import java.net.Inet4Address
-import java.net.InetAddress
 import java.net.URL
 import java.util.Calendar
 
@@ -114,6 +112,7 @@ class MainActivity : Activity(), ConnectChecker {
 
     private var reusableBitmap: Bitmap? = null
     private var reusableCanvas: Canvas? = null
+    private var surfaceReady = false
 
     private var pendingTitle: String = ""
     private var pendingDesc: String = ""
@@ -180,9 +179,7 @@ class MainActivity : Activity(), ConnectChecker {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        
         setContentView(R.layout.activity_main)
 
         openGlView = findViewById(R.id.surfaceView)
@@ -240,11 +237,9 @@ class MainActivity : Activity(), ConnectChecker {
             if (target !is TextView && target.tag != "LOWER_THIRD") {
                 popup.menu.add("Crop")
             }
-            
             if (target is TextView || target is EditText || target.tag == "LOWER_THIRD") {
                 popup.menu.add("Change Color")
             }
-            
             popup.setOnMenuItemClickListener { item ->
                 when (item.title) {
                     "Resize" -> enterResizeMode(target)
@@ -277,6 +272,21 @@ class MainActivity : Activity(), ConnectChecker {
         val btnMicToggle: ImageButton = findViewById(R.id.btnMicToggle)
         val btnBluetoothMic: ImageButton = findViewById(R.id.btnBluetoothMic)
         val btnOrientation: ImageButton = findViewById(R.id.btnOrientation)
+
+        // Initialize StreamEngine with the required callback
+        streamEngine = StreamEngine(this, openGlView, this, object : StreamEngine.StreamEngineCallback {
+            override fun onCameraError(message: String) {
+                runOnUiThread { Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show() }
+            }
+            override fun onMicRouteChanged(route: StreamEngine.MicRoute, showMessage: Boolean, message: String) {
+                if (showMessage) runOnUiThread { Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show() }
+            }
+            override fun onBluetoothMicResult(success: Boolean, message: String) {
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity, message, if (success) Toast.LENGTH_SHORT else Toast.LENGTH_LONG).show()
+                }
+            }
+        })
         
         findViewById<Button>(R.id.btnToggleComments).setOnClickListener {
             popupSettings.visibility = View.GONE
@@ -345,20 +355,6 @@ class MainActivity : Activity(), ConnectChecker {
             } 
         }
 
-        streamEngine = StreamEngine(this, openGlView, this, object : StreamEngine.StreamEngineCallback {
-            override fun onCameraError(message: String) {
-                runOnUiThread { Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show() }
-            }
-            override fun onMicRouteChanged(route: StreamEngine.MicRoute, showMessage: Boolean, message: String) {
-                if (showMessage) runOnUiThread { Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show() }
-            }
-            override fun onBluetoothMicResult(success: Boolean, message: String) {
-                runOnUiThread {
-                    Toast.makeText(this@MainActivity, message, if (success) Toast.LENGTH_SHORT else Toast.LENGTH_LONG).show()
-                }
-            }
-        })
-
         btnMicToggle.setColorFilter(Color.parseColor("#4CAF50"))
         btnMicToggle.setOnClickListener {
             if (isAudioMuted) {
@@ -388,7 +384,7 @@ class MainActivity : Activity(), ConnectChecker {
         }
 
         btnOrientation.setOnClickListener {
-            if (streamEngine.rtmpCamera.isStreaming) {
+            if (streamEngine.isStreaming) {
                 Toast.makeText(this, "Stop stream to change orientation", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
@@ -400,6 +396,7 @@ class MainActivity : Activity(), ConnectChecker {
             if (streamEngine.isOnPreview) {
                 streamEngine.stopPreview()
             }
+            surfaceReady = false
 
             if (streamEngine.streamWidth > streamEngine.streamHeight) {
                 requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
@@ -412,6 +409,7 @@ class MainActivity : Activity(), ConnectChecker {
 
         val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
+                try { streamEngine.rtmpCamera.setZoom(MotionEvent.obtain(0,0,0,0,0f,0f,0,0,0f,0f,0,0), detector.scaleFactor) } catch (e: Exception) {}
                 return true
             }
         })
@@ -424,7 +422,6 @@ class MainActivity : Activity(), ConnectChecker {
             }
             if (event.pointerCount > 1) {
                 scaleGestureDetector.onTouchEvent(event)
-                try { streamEngine.rtmpCamera.setZoom(event, scaleGestureDetector.scaleFactor) } catch (e: Exception) {}
                 true
             } else {
                 false
@@ -473,8 +470,8 @@ class MainActivity : Activity(), ConnectChecker {
         btnStreamsManager.setOnClickListener { showSavedStreamsManager() }
 
         btnGoLive.setOnClickListener {
-            if (streamEngine.rtmpCamera.isStreaming) { AlertDialog.Builder(this).setTitle("Stop Live Stream?").setMessage("This will end your broadcast on YouTube.").setPositiveButton("End Stream") { _, _ -> stopLiveStream() }.setNegativeButton("Cancel", null).show(); return@setOnClickListener }
-            if (!streamEngine.rtmpCamera.isOnPreview) { streamEngine.tryStartCameraPreview(); Toast.makeText(this, "Camera starting, try LIVE again in a moment.", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
+            if (streamEngine.isStreaming) { AlertDialog.Builder(this).setTitle("Stop Live Stream?").setMessage("This will end your broadcast on YouTube.").setPositiveButton("End Stream") { _, _ -> stopLiveStream() }.setNegativeButton("Cancel", null).show(); return@setOnClickListener }
+            if (!streamEngine.isOnPreview) { streamEngine.tryStartCameraPreview(); Toast.makeText(this, "Camera starting, try LIVE again in a moment.", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
             val currentAccount = GoogleSignIn.getLastSignedInAccount(this)
             if (currentAccount == null) { Toast.makeText(this, "Please Sign In with YouTube first!", Toast.LENGTH_SHORT).show(); startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST); return@setOnClickListener }
             if (!GoogleSignIn.hasPermissions(currentAccount, Scope("https://www.googleapis.com/auth/youtube"))) { GoogleSignIn.requestPermissions(this, REQUEST_AUTHORIZATION, currentAccount, Scope("https://www.googleapis.com/auth/youtube")); return@setOnClickListener }
@@ -707,6 +704,7 @@ class MainActivity : Activity(), ConnectChecker {
             layoutParams = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT).apply { 
                 addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) 
             }
+            
             setOnFocusChangeListener { _, hasFocus ->
                 if (!hasFocus && text.toString().trim().isEmpty()) {
                     overlayContainer.removeView(this)
@@ -717,6 +715,7 @@ class MainActivity : Activity(), ConnectChecker {
                     updateSnapshot()
                 }
             }
+
             addTextChangedListener(object : TextWatcher { 
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { updateSnapshot() }
@@ -754,7 +753,9 @@ class MainActivity : Activity(), ConnectChecker {
                     setBackgroundColor(Color.TRANSPARENT); setLayerType(View.LAYER_TYPE_SOFTWARE, null); settings.javaScriptEnabled = true; settings.domStorageEnabled = true; settings.useWideViewPort = true; settings.loadWithOverviewMode = true; webViewClient = WebViewClient(); webChromeClient = WebChromeClient(); loadUrl(finalUrl)
                 }
                 overlayContainer.addView(webView); makeDraggableAndScalable(webView); selectedOverlay = webView; updateOverlayMenuButtonPosition(); 
+                
                 webSyncHandler.post(webSyncRunnable)
+                
                 overlayHandler.postDelayed({ updateSnapshot() }, 2000)
             }
         }.setNegativeButton("Cancel", null).show()
@@ -932,6 +933,7 @@ class MainActivity : Activity(), ConnectChecker {
                 }
                 reusableBitmap!!.eraseColor(Color.TRANSPARENT)
                 overlayContainer.draw(reusableCanvas!!)
+                
                 streamEngine.setOverlayImage(reusableBitmap!!)
             } catch (e: Exception) { e.printStackTrace() }
             pendingRefresh = false
@@ -985,9 +987,9 @@ class MainActivity : Activity(), ConnectChecker {
                 youtube.liveBroadcasts().bind(bId, "id,contentDetails").apply { streamId = stream2.id }.execute()
 
                 val ingestionUrl = stream2.cdn.ingestionInfo.ingestionAddress
-                var resolvedIp: String? = null
-                try { val host = if (ingestionUrl.contains("b.rtmp")) "b.rtmp.youtube.com" else "a.rtmp.youtube.com"; resolvedIp = InetAddress.getAllByName(host).firstOrNull { it is Inet4Address }?.hostAddress } catch (e: Exception) { e.printStackTrace() }
-                val finalUrl = if (resolvedIp != null && ingestionUrl.contains("a.rtmp.youtube.com")) ingestionUrl.replace("a.rtmp.youtube.com", resolvedIp) + "/" + stream2.cdn.ingestionInfo.streamName else ingestionUrl.replace("a.rtmp", "b.rtmp") + "/" + stream2.cdn.ingestionInfo.streamName
+                
+                // RESTORED DIRECT URL CREATION (No IP hack)
+                val finalUrl = ingestionUrl + "/" + stream2.cdn.ingestionInfo.streamName
                 
                 val shareLink = "https://youtu.be/$bId"
                 saveStreamLocally(finalTitle, bId, liveChatId, finalUrl)
@@ -1007,40 +1009,6 @@ class MainActivity : Activity(), ConnectChecker {
         if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK && data != null) data.data?.let { uri -> addImageOverlayToScreen(MediaStore.Images.Media.getBitmap(contentResolver, uri)) }
         if (requestCode == PICK_THUMBNAIL_REQUEST && resultCode == RESULT_OK && data != null) data.data?.let { uri -> pendingThumbnailUri = uri; thumbnailPreviewImageView?.setImageURI(uri) }
         if (requestCode == SIGN_IN_REQUEST) try { val account = GoogleSignIn.getSignedInAccountFromIntent(data).getResult(ApiException::class.java); connectedAccountEmail = account?.email; if (account != null) applyAccountToHeader(account) } catch (e: ApiException) { }
-    }
-
-    private fun addImageOverlayToScreen(bitmap: Bitmap) {
-        val imageView = ImageView(this).apply { setImageBitmap(bitmap); layoutParams = RelativeLayout.LayoutParams(300, 300).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) } }
-        overlayContainer.addView(imageView); makeDraggableAndScalable(imageView); selectedOverlay = imageView; updateOverlayMenuButtonPosition(); updateSnapshot()
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun makeDraggableAndScalable(view: View) {
-        val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() { override fun onScale(detector: ScaleGestureDetector): Boolean { if (view is WebView) return false; view.scaleX *= detector.scaleFactor; view.scaleY *= detector.scaleFactor; return true } })
-        var localDX = 0f; var localDY = 0f
-        view.setOnTouchListener { v, event ->
-            if (currentMode != "DRAG") return@setOnTouchListener false
-            scaleGestureDetector.onTouchEvent(event)
-            if (!scaleGestureDetector.isInProgress) {
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { 
-                        localDX = v.x - event.rawX; localDY = v.y - event.rawY
-                        selectedOverlay = v
-                        updateOverlayMenuButtonPosition() 
-                    }
-                    MotionEvent.ACTION_MOVE -> { v.x = event.rawX + localDX; v.y = event.rawY + localDY; updateOverlayMenuButtonPosition() }
-                    MotionEvent.ACTION_UP -> { updateSnapshot() }
-                }
-            }
-            if (v is EditText) v.onTouchEvent(event)
-            true
-        }
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun makeStudioPanelDraggable(view: View) {
-        var dX = 0f; var dY = 0f
-        view.setOnTouchListener { v, event -> when (event.actionMasked) { MotionEvent.ACTION_DOWN -> { dX = v.x - event.rawX; dY = v.y - event.rawY }; MotionEvent.ACTION_MOVE -> { v.x = event.rawX + dX; v.y = event.rawY + dY } }; true }
     }
 
     override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "🔥 YOU ARE LIVE!", Toast.LENGTH_LONG).show(); startStudioTimer() } }
@@ -1063,8 +1031,12 @@ class MainActivity : Activity(), ConnectChecker {
         reusableCanvas = null
     }
 
-    override fun onAuthError() {}
-    override fun onAuthSuccess() {}
+    override fun onAuthError() {
+        runOnUiThread { Toast.makeText(this, "Auth Error", Toast.LENGTH_SHORT).show() }
+    }
+    override fun onAuthSuccess() {
+        runOnUiThread { Toast.makeText(this, "Auth Success", Toast.LENGTH_SHORT).show() }
+    }
     override fun onConnectionStarted(url: String) {}
     override fun onNewBitrate(bitrate: Long) {}
 }
