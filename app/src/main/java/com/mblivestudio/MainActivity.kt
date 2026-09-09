@@ -42,7 +42,9 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.*
+import com.pedro.common.ConnectChecker
 import com.pedro.library.view.OpenGlView
+import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
 
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
@@ -63,13 +65,14 @@ import java.net.InetAddress
 import java.net.URL
 import java.util.Calendar
 
-class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
+class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
-    // --- REPLACED RTMPCAMERA2 WITH STREAM ENGINE ---
     private lateinit var streamEngine: StreamEngine
-    
     private lateinit var openGlView: OpenGlView
     private lateinit var overlayContainer: RelativeLayout
+    private lateinit var imageFilterRender: ImageObjectFilterRender
+    
+    private val cameraLayoutFilter = com.mblivestudio.filters.CameraLayoutFilterRender()
 
     private lateinit var dragScoreboard: LinearLayout
     private lateinit var scoreMainText: TextView
@@ -123,12 +126,12 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
     private val overlayHandler = Handler(Looper.getMainLooper())
     private var pendingRefresh = false
 
-    private var reusableBitmap: Bitmap? = null
-    private var reusableCanvas: Canvas? = null
+    private var lastOverlayBitmap: Bitmap? = null
     private var surfaceReady = false
 
     private var streamWidth = 1920
     private var streamHeight = 1080
+    private var streamBitrate = 5_000_000
 
     private var pendingTitle: String = ""
     private var pendingDesc: String = ""
@@ -249,15 +252,12 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
             val target = selectedOverlay ?: return@setOnClickListener
             val popup = PopupMenu(this, btnOverlayMenu)
             popup.menu.add("Resize")
-            
             if (target !is TextView && target.tag != "LOWER_THIRD") {
                 popup.menu.add("Crop")
             }
-            
             if (target is TextView || target is EditText || target.tag == "LOWER_THIRD") {
                 popup.menu.add("Change Color")
             }
-            
             popup.setOnMenuItemClickListener { item ->
                 when (item.title) {
                     "Resize" -> enterResizeMode(target)
@@ -319,17 +319,16 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
         findViewById<Button>(R.id.btnToggleScore).setOnClickListener { popupSettings.visibility = View.GONE; if (dragScoreboard.visibility == View.VISIBLE) { dragScoreboard.visibility = View.GONE; updateSnapshot() } else { showScoreboardDialog() } }
         findViewById<Button>(R.id.btnAddLowerThird).setOnClickListener { popupSettings.visibility = View.GONE; showAddLowerThirdDialog() }
         
-        findViewById<ImageButton>(R.id.btnLayoutFull).setOnClickListener { applyCameraLayout(floatArrayOf(0f,0f,1f,1f)); popupSettings.visibility = View.GONE }
-        findViewById<ImageButton>(R.id.btnLayoutSplit).setOnClickListener { applyCameraLayout(floatArrayOf(0f,0f,0.5f,1f)); popupSettings.visibility = View.GONE }
-        findViewById<ImageButton>(R.id.btnLayoutCornerTL).setOnClickListener { applyCameraLayout(floatArrayOf(0f,0f,0.3f,0.3f)); popupSettings.visibility = View.GONE }
-        findViewById<ImageButton>(R.id.btnLayoutCornerBR).setOnClickListener { applyCameraLayout(floatArrayOf(0.7f,0.7f,1f,1f)); popupSettings.visibility = View.GONE }
+        findViewById<ImageButton>(R.id.btnLayoutFull).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.FULL); popupSettings.visibility = View.GONE }
+        findViewById<ImageButton>(R.id.btnLayoutSplit).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.SPLIT_LEFT); popupSettings.visibility = View.GONE }
+        findViewById<ImageButton>(R.id.btnLayoutCornerTL).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.CORNER_TOP_LEFT); popupSettings.visibility = View.GONE }
+        findViewById<ImageButton>(R.id.btnLayoutCornerBR).setOnClickListener { applyCameraLayout(com.mblivestudio.filters.CameraLayoutFilterRender.CORNER_BOTTOM_RIGHT); popupSettings.visibility = View.GONE }
 
         val btnLiveText: ImageButton = findViewById(R.id.btnLiveText)
         btnLiveText.setOnClickListener { popupSettings.visibility = View.GONE; addLiveTextOverlay() }
         
         findViewById<ImageButton>(R.id.btnRemoveSelected).setOnClickListener { 
             popupSettings.visibility = View.GONE
-            
             var target = selectedOverlay
             if (target == null) {
                 val focusView = currentFocus
@@ -337,34 +336,25 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
                     target = focusView
                 }
             }
-
             target?.let { 
                 if (it != dragScoreboard) { 
-                    if (it.tag == "LOWER_THIRD") {
-                        tickerHandler.removeCallbacks(tickerRunnable)
-                    }
-                    if (it.tag == "WEB_OVERLAY") {
-                        webSyncHandler.removeCallbacks(webSyncRunnable)
-                    }
-                    
+                    if (it.tag == "LOWER_THIRD") { tickerHandler.removeCallbacks(tickerRunnable) }
+                    if (it.tag == "WEB_OVERLAY") { webSyncHandler.removeCallbacks(webSyncRunnable) }
                     if (it is EditText) {
                         it.clearFocus()
                         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
                         imm.hideSoftInputFromWindow(it.windowToken, 0)
                     }
-
                     overlayContainer.removeView(it)
                     if (selectedOverlay == it) selectedOverlay = null
-                    
                     updateOverlayMenuButtonPosition()
                     updateSnapshot() 
                 } 
             } 
         }
 
-        // --- INIT NEW ENGINE ---
+        // --- RESTORED STREAM ENGINE INITIALIZATION ---
         streamEngine = StreamEngine(this, openGlView, this)
-        openGlView.holder.addCallback(this)
 
         btnMicToggle.setColorFilter(Color.parseColor("#4CAF50"))
         btnMicToggle.setOnClickListener {
@@ -376,13 +366,16 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
             } else {
                 streamEngine.muteAudio(true)
                 isAudioMuted = true
-                btnMicToggle.setImageResource(R.drawable.ic_mic_off) 
+                btnMicToggle.setImageResource(R.drawable.ic_mic_on) 
                 btnMicToggle.setColorFilter(Color.parseColor("#E53935"))
             }
         }
 
         btnSwitchCamera.setOnClickListener {
             streamEngine.switchCamera()
+            if (!streamEngine.rtmpCamera.isStreaming) {
+                try { streamEngine.stopPreview(); tryStartCameraPreview() } catch (e: Exception) {}
+            }
         }
 
         btnBluetoothMic.setOnClickListener {
@@ -396,7 +389,6 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
                 Toast.makeText(this, "Stop stream to change orientation", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            
             val temp = streamWidth
             streamWidth = streamHeight
             streamHeight = temp
@@ -415,13 +407,8 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
             }
         }
 
-        findViewById<Button>(R.id.btnZoomIn).setOnClickListener { 
-            // In Phase 2 this will map to streamEngine.setZoom() 
-            Toast.makeText(this, "Zoom feature coming in Phase 2", Toast.LENGTH_SHORT).show()
-        }
-        findViewById<Button>(R.id.btnZoomOut).setOnClickListener { 
-             Toast.makeText(this, "Zoom feature coming in Phase 2", Toast.LENGTH_SHORT).show()
-        }
+        findViewById<Button>(R.id.btnZoomIn).setOnClickListener { performSmoothZoom(true) }
+        findViewById<Button>(R.id.btnZoomOut).setOnClickListener { performSmoothZoom(false) }
 
         openGlView.setOnTouchListener { _, event ->
             if (event.action == MotionEvent.ACTION_DOWN) {
@@ -429,11 +416,18 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
                 val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
                 imm.hideSoftInputFromWindow(openGlView.windowToken, 0)
             }
-            false
+            if (event.pointerCount > 1) {
+                streamEngine.setZoom(event)
+                true
+            } else {
+                false
+            }
         }
 
+        openGlView.holder.addCallback(this)
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !hasCameraPermissions()) requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
-        
+        imageFilterRender = ImageObjectFilterRender()
         overlayContainer.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
 
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).requestEmail().requestProfile().requestScopes(Scope("https://www.googleapis.com/auth/youtube")).build()
@@ -649,12 +643,6 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
         } else if (target is WebView) { target.settings.builtInZoomControls = true; target.settings.displayZoomControls = false; target.setOnTouchListener(null) }
     }
 
-    private fun applyImageMatrix(iv: ImageView, scale: Float, tx: Float, ty: Float) {
-        val matrix = android.graphics.Matrix()
-        matrix.postScale(scale, scale); matrix.postTranslate(tx, ty)
-        iv.imageMatrix = matrix; updateSnapshot()
-    }
-
     private fun showAddTextDialog() {
         val input = EditText(this).apply { hint = "Enter text..."; inputType = InputType.TYPE_CLASS_TEXT }
         AlertDialog.Builder(this).setTitle("Add Text Overlay").setView(input).setPositiveButton("Add") { _, _ -> 
@@ -702,9 +690,7 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
                 overlayContainer.addView(wrapper)
                 makeDraggableAndScalable(wrapper)
                 selectedOverlay = wrapper
-                
                 tickerHandler.post(tickerRunnable)
-                
                 updateOverlayMenuButtonPosition()
                 updateSnapshot()
             }.setNegativeButton("Cancel", null).show()
@@ -777,7 +763,6 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
             layoutParams = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT).apply { 
                 addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) 
             }
-            
             setOnFocusChangeListener { _, hasFocus ->
                 if (!hasFocus && text.toString().trim().isEmpty()) {
                     overlayContainer.removeView(this)
@@ -788,7 +773,6 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
                     updateSnapshot()
                 }
             }
-
             addTextChangedListener(object : TextWatcher { 
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { updateSnapshot() }
@@ -826,9 +810,7 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
                     setBackgroundColor(Color.TRANSPARENT); setLayerType(View.LAYER_TYPE_SOFTWARE, null); settings.javaScriptEnabled = true; settings.domStorageEnabled = true; settings.useWideViewPort = true; settings.loadWithOverviewMode = true; webViewClient = WebViewClient(); webChromeClient = WebChromeClient(); loadUrl(finalUrl)
                 }
                 overlayContainer.addView(webView); makeDraggableAndScalable(webView); selectedOverlay = webView; updateOverlayMenuButtonPosition(); 
-                
                 webSyncHandler.post(webSyncRunnable)
-                
                 overlayHandler.postDelayed({ updateSnapshot() }, 2000)
             }
         }.setNegativeButton("Cancel", null).show()
@@ -862,7 +844,6 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
         val prefs = getSharedPreferences("MBLiveStreams", Context.MODE_PRIVATE)
         val arr = org.json.JSONArray(prefs.getString("streams", "[]"))
         if (arr.length() == 0) { Toast.makeText(this, "No saved streams. Click GO LIVE to create one.", Toast.LENGTH_SHORT).show(); return }
-        
         val items = Array(arr.length()) { i -> arr.getJSONObject(i).getString("title") }
         AlertDialog.Builder(this).setTitle("Your Streams").setItems(items) { _, which ->
             val obj = arr.getJSONObject(which)
@@ -941,12 +922,7 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
 
     private fun pollViewersOnce() {
         if (!chatPollingActive || currentBroadcastId == null) return
-        
-        if (!switchViewerSync.isChecked) {
-            chatHandler.postDelayed({ pollViewersOnce() }, 5000L)
-            return
-        }
-
+        if (!switchViewerSync.isChecked) { chatHandler.postDelayed({ pollViewersOnce() }, 5000L); return }
         val youtube = youtubeClient ?: return
         Thread {
             addQuota(1)
@@ -965,12 +941,7 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
 
     private fun pollChatOnce() {
         if (!chatPollingActive) return
-        
-        if (!switchChatSync.isChecked) {
-            chatHandler.postDelayed({ pollChatOnce() }, 5000L)
-            return
-        }
-
+        if (!switchChatSync.isChecked) { chatHandler.postDelayed({ pollChatOnce() }, 5000L); return }
         val chatId = currentLiveChatId ?: return
         val youtube = youtubeClient ?: return
         Thread {
@@ -1002,7 +973,6 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
     private fun startStudioTimer() { liveStartTimeMillis = System.currentTimeMillis(); timerRunning = true; tvLiveTimer.visibility = View.VISIBLE; timerHandler.post(timerRunnable) }
     private fun stopStudioTimer() { timerRunning = false; timerHandler.removeCallbacksAndMessages(null); tvLiveTimer.visibility = View.GONE; tvLiveTimer.text = "00:00:00" }
 
-    // --- REPLACED: NEW ENGINE OVERLAY CAPTURE ---
     private fun updateSnapshot(delay: Long = 200) {
         if (!streamEngine.rtmpCamera.isOnPreview || overlayContainer.width == 0 || overlayContainer.height == 0 || pendingRefresh) return
         pendingRefresh = true
@@ -1017,8 +987,6 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
                 }
                 reusableBitmap!!.eraseColor(Color.TRANSPARENT)
                 overlayContainer.draw(reusableCanvas!!)
-                
-                // Send to StreamEngine Compositor instead of ImageFilter
                 streamEngine.setOverlayBitmap(reusableBitmap!!)
             } catch (e: Exception) { e.printStackTrace() }
             pendingRefresh = false
@@ -1131,7 +1099,54 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
     }
 
     private fun hasCameraPermissions(): Boolean = checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-    private fun tryStartCameraPreview() { if (surfaceReady && hasCameraPermissions()) streamEngine.tryStartCameraPreview(openGlView.holder.surface) }
+    
+    private fun tryStartCameraPreview() { 
+        if (surfaceReady && hasCameraPermissions()) {
+            try {
+                if (!streamEngine.rtmpCamera.isOnPreview) {
+                    var isSuccess = false
+                    val fallback = if (streamWidth >= streamHeight) {
+                        listOf(Triple(streamWidth, streamHeight, streamBitrate), Triple(1280, 720, 3_000_000), Triple(854, 480, 1_500_000))
+                    } else {
+                        listOf(Triple(streamWidth, streamHeight, streamBitrate), Triple(720, 1280, 3_000_000), Triple(480, 854, 1_500_000))
+                    }
+                    for (res in fallback) {
+                        try {
+                            if (streamEngine.rtmpCamera.prepareVideo(res.first, res.second, 30, res.third, 2, 0)) {
+                                isSuccess = true
+                                break
+                            }
+                        } catch (e: Exception) {}
+                    }
+                    if (!isSuccess) {
+                        try { isSuccess = streamEngine.rtmpCamera.prepareVideo() } catch (e: Exception) {}
+                    }
+
+                    var aReady = false
+                    if (isBluetoothMicActive) {
+                        try { aReady = streamEngine.rtmpCamera.prepareAudio(32 * 1024, 16000, false, false, false) } catch (e: Exception) {}
+                    } else {
+                        val useEchoCanceler = detectedMicRoute == MicRoute.PHONE
+                        try { aReady = streamEngine.rtmpCamera.prepareAudio(128 * 1024, 44100, true, useEchoCanceler, true) } catch (e: Exception) {}
+                    }
+                    if (!aReady) {
+                        try { aReady = streamEngine.rtmpCamera.prepareAudio() } catch (e: Exception) {}
+                    }
+
+                    if (isSuccess && aReady) {
+                        streamEngine.rtmpCamera.glInterface.setFilter(cameraLayoutFilter)
+                        streamEngine.rtmpCamera.glInterface.addFilter(imageFilterRender)
+                        streamEngine.rtmpCamera.startPreview()
+                        overlayHandler.postDelayed({ updateSnapshot() }, 1000)
+                    } else {
+                        runOnUiThread { Toast.makeText(this, "CAMERA ERROR: Encoder not supported.", Toast.LENGTH_LONG).show() }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
 
     override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "🔥 YOU ARE LIVE!", Toast.LENGTH_LONG).show(); startStudioTimer() } }
     override fun onConnectionFailed(reason: String) {
@@ -1161,14 +1176,40 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
         try { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) { audioDeviceCallback?.let { audioManager.unregisterAudioDeviceCallback(it) } } } catch (_: Exception) {}
         audioDeviceCallback = null; isBluetoothMicActive = false
         
-        streamEngine.detachCallback()
         streamEngine.release()
         
         reusableBitmap?.let { if (!it.isRecycled) it.recycle() }; reusableBitmap = null
         reusableCanvas = null
     }
     
+    override fun onAuthError() {}
+    override fun onAuthSuccess() {}
+    override fun onConnectionStarted(url: String) {}
+    override fun onNewBitrate(bitrate: Long) {}
+    
     private fun applyCameraLayout(rect: FloatArray) { 
-        Toast.makeText(this, "Camera layouts coming in Phase 2", Toast.LENGTH_SHORT).show() 
+        cameraLayoutFilter.setRect(rect[0], rect[1], rect[2], rect[3])
+        cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f)
+    }
+
+    private var currentZoomDistance = 100f
+    private fun performSmoothZoom(zoomIn: Boolean) {
+        val now = android.os.SystemClock.uptimeMillis()
+        val props = arrayOf(MotionEvent.PointerProperties(), MotionEvent.PointerProperties())
+        props[0].id = 0; props[1].id = 1
+        val coords = arrayOf(MotionEvent.PointerCoords(), MotionEvent.PointerCoords())
+        coords[0].x = 0f; coords[0].y = 0f
+        coords[1].x = currentZoomDistance; coords[1].y = 0f
+        var event = MotionEvent.obtain(now, now, MotionEvent.ACTION_MOVE, 2, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
+        try { streamEngine.setZoom(event) } catch (e: Exception) {}
+        event.recycle()
+
+        if (zoomIn) currentZoomDistance += 15f else currentZoomDistance -= 15f
+        if (currentZoomDistance < 100f) currentZoomDistance = 100f
+
+        coords[1].x = currentZoomDistance
+        event = MotionEvent.obtain(now, now, MotionEvent.ACTION_MOVE, 2, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
+        try { streamEngine.setZoom(event) } catch (e: Exception) {}
+        event.recycle()
     }
 }
