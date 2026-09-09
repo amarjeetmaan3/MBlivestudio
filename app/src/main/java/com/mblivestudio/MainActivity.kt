@@ -112,8 +112,10 @@ class MainActivity : Activity(), ConnectChecker {
     private val overlayHandler = Handler(Looper.getMainLooper())
     private var pendingRefresh = false
 
-    private var overlaySnapshot: Bitmap? = null
-    private var overlayCanvas: Canvas? = null
+    // Bulletproof Double Buffering for Overlays
+    private var bitmapA: Bitmap? = null
+    private var bitmapB: Bitmap? = null
+    private var useBufferA = true
 
     private var pendingTitle: String = ""
     private var pendingDesc: String = ""
@@ -447,9 +449,11 @@ class MainActivity : Activity(), ConnectChecker {
              streamEngine.sendSyntheticZoomEvent(MotionEvent.ACTION_MOVE, currentZoomDistance, 1f)
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !streamEngine.hasCameraPermissions()) requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
-        
-        overlayContainer.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !streamEngine.hasCameraPermissions()) {
+            requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
+        }
+
+        // NOTE: The line `overlayContainer.setLayerType(View.LAYER_TYPE_SOFTWARE, null)` has been PERMANENTLY REMOVED here to fix the Android UI ghosting crash.
 
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).requestEmail().requestProfile().requestScopes(Scope("https://www.googleapis.com/auth/youtube")).build()
         googleSignInClient = GoogleSignIn.getClient(this, gso)
@@ -927,23 +931,42 @@ class MainActivity : Activity(), ConnectChecker {
     private fun startStudioTimer() { liveStartTimeMillis = System.currentTimeMillis(); timerRunning = true; tvLiveTimer.visibility = View.VISIBLE; timerHandler.post(timerRunnable) }
     private fun stopStudioTimer() { timerRunning = false; timerHandler.removeCallbacksAndMessages(null); tvLiveTimer.visibility = View.GONE; tvLiveTimer.text = "00:00:00" }
 
-    private fun updateSnapshot(delay: Long = 200) {
+    private fun updateSnapshot(delay: Long = 100) {
         if (!streamEngine.isOnPreview || overlayContainer.width == 0 || overlayContainer.height == 0 || pendingRefresh) return
         pendingRefresh = true
         overlayHandler.postDelayed({
             try {
                 val w = overlayContainer.width
                 val h = overlayContainer.height
-                if (overlaySnapshot == null || overlaySnapshot!!.width != w || overlaySnapshot!!.height != h) {
-                    overlaySnapshot?.recycle()
-                    overlaySnapshot = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-                    overlayCanvas = Canvas(overlaySnapshot!!)
+
+                val targetBitmap = if (useBufferA) {
+                    if (bitmapA == null || bitmapA!!.isRecycled || bitmapA!!.width != w) {
+                        bitmapA?.recycle()
+                        bitmapA = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                    }
+                    bitmapA!!
+                } else {
+                    if (bitmapB == null || bitmapB!!.isRecycled || bitmapB!!.width != w) {
+                        bitmapB?.recycle()
+                        bitmapB = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                    }
+                    bitmapB!!
                 }
-                overlaySnapshot!!.eraseColor(Color.TRANSPARENT)
-                overlayContainer.draw(overlayCanvas!!)
-                streamEngine.setOverlayImage(overlaySnapshot!!)
-            } catch (e: Exception) { e.printStackTrace() }
-            pendingRefresh = false
+
+                targetBitmap.eraseColor(Color.TRANSPARENT)
+                val canvas = Canvas(targetBitmap)
+                overlayContainer.draw(canvas)
+                
+                streamEngine.setOverlayImage(targetBitmap)
+                useBufferA = !useBufferA
+
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } catch (e: OutOfMemoryError) {
+                e.printStackTrace()
+            } finally {
+                pendingRefresh = false
+            }
         }, delay)
     }
 
@@ -1068,13 +1091,10 @@ class MainActivity : Activity(), ConnectChecker {
         
         streamEngine.release()
         
-        overlaySnapshot?.let { 
-            if (!it.isRecycled) {
-                it.recycle()
-            }
-        }
-        overlaySnapshot = null
-        overlayCanvas = null
+        bitmapA?.let { if (!it.isRecycled) it.recycle() }
+        bitmapA = null
+        bitmapB?.let { if (!it.isRecycled) it.recycle() }
+        bitmapB = null
     }
 
     override fun onAuthError() {
