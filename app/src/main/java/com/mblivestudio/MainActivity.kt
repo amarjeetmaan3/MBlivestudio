@@ -16,6 +16,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.MotionEvent
+import android.view.SurfaceHolder
 import android.view.View
 import android.view.WindowManager
 import android.widget.*
@@ -54,9 +55,18 @@ class MainActivity : Activity(), EngineCallback {
         // Initialize Stream Engine
         streamEngine = StreamEngine(this, openGlView, this)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !streamEngine.hasCameraPermissions()) {
-            requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
-        }
+        // Link the OpenGlView surface lifecycle to the stream engine
+        openGlView.holder.addCallback(object : SurfaceHolder.Callback {
+            override fun surfaceCreated(holder: SurfaceHolder) {
+                checkPermissionsAndStartPreview(holder)
+            }
+
+            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+
+            override fun surfaceDestroyed(holder: SurfaceHolder) {
+                streamEngine.stopPreview()
+            }
+        })
 
         btnSwitchCamera.setOnClickListener {
             streamEngine.switchCamera()
@@ -91,6 +101,16 @@ class MainActivity : Activity(), EngineCallback {
         }
     }
 
+    private fun checkPermissionsAndStartPreview(holder: SurfaceHolder? = null) {
+        val targetHolder = holder ?: openGlView.holder
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !streamEngine.hasCameraPermissions()) {
+            requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
+        } else {
+            // Permissions are granted, start the preview on the actual surface
+            streamEngine.tryStartCameraPreview(targetHolder.surface)
+        }
+    }
+
     // --- SAFETY PATCH: Bitmap Buffer Re-use Logic ---
     private fun updateSnapshot(delay: Long = 200) {
         if (!streamEngine.rtmpCamera.isOnPreview || overlayContainer.width == 0 || overlayContainer.height == 0 || pendingRefresh) return
@@ -119,7 +139,9 @@ class MainActivity : Activity(), EngineCallback {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        streamEngine.tryStartCameraPreview()
+        if (requestCode == 1) {
+            checkPermissionsAndStartPreview()
+        }
     }
 
     override fun onConnectionSuccess() {
