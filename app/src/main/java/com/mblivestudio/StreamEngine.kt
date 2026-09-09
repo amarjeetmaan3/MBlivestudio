@@ -7,6 +7,7 @@ import android.graphics.Bitmap
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.media.AudioFormat
+import android.media.MediaFormat
 import android.view.MotionEvent
 import android.view.Surface
 import androidx.core.content.ContextCompat
@@ -140,8 +141,19 @@ class StreamEngine(
 
         targetRotation?.let { newStreamer.setTargetRotation(it) }
 
-        val audioConfig = AudioConfig(startBitrate = 128_000, sampleRate = 44_100, channelConfig = AudioFormat.CHANNEL_IN_STEREO)
-        val videoStreamConfig = VideoConfig(startBitrate = videoConfig.bitrateBps, resolution = android.util.Size(videoConfig.width, videoConfig.height), fps = videoConfig.fps)
+        // FIX: Force Mono Audio and H.264 Video to prevent YouTube Rejections
+        val audioConfig = AudioConfig(
+            startBitrate = 128_000, 
+            sampleRate = 44_100, 
+            channelConfig = AudioFormat.CHANNEL_IN_MONO 
+        )
+        
+        val videoStreamConfig = VideoConfig(
+            mimeType = MediaFormat.MIMETYPE_VIDEO_AVC, // Forces H.264
+            startBitrate = videoConfig.bitrateBps, 
+            resolution = android.util.Size(videoConfig.width, videoConfig.height), 
+            fps = videoConfig.fps
+        )
 
         newStreamer.setConfig(audioConfig, videoStreamConfig)
         streamer = newStreamer
@@ -168,7 +180,7 @@ class StreamEngine(
         if (nextId == null) return isFront
 
         return try {
-            s.stopPreview() // Fixes camera freeze
+            s.stopPreview() 
             s.setCameraId(nextId)
             currentCameraId = nextId
             isFront = !isFront
