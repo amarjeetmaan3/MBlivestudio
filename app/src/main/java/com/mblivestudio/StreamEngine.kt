@@ -89,6 +89,18 @@ class StreamEngine(
         cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f)
     }
 
+    /**
+     * Burns the overlay snapshot (text/logo/scoreboard/web bitmap) into
+     * the stream. MainActivity's updateSnapshot() should call this with
+     * its reusable Bitmap instead of touching imageFilterRender directly
+     * — that field is private to this class.
+     */
+    fun setOverlayImage(bitmap: android.graphics.Bitmap) {
+        imageFilterRender.setImage(bitmap)
+        imageFilterRender.setScale(100f, 100f)
+        imageFilterRender.setPosition(0f, 0f)
+    }
+
     fun sendSyntheticZoomEvent(action: Int, pointerDistance: Float, delta: Float) {
         val now = android.os.SystemClock.uptimeMillis()
         val props = arrayOf(MotionEvent.PointerProperties(), MotionEvent.PointerProperties())
