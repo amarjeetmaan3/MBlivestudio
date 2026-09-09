@@ -28,10 +28,10 @@ class MainActivity : Activity(), EngineCallback {
     private lateinit var btnSwitchCamera: ImageButton
     private lateinit var btnBluetoothMic: ImageButton
     
-    // Restored UI Buttons
-    private lateinit var btnAccount: ImageButton
+    // Exact IDs from your XML
+    private lateinit var ivProfilePhoto: ImageView
     private lateinit var btnSettings: ImageButton
-    private lateinit var btnOverlay: ImageButton
+    private lateinit var btnOverlayMenu: ImageButton
     private lateinit var btnLiveText: ImageButton
     private lateinit var btnOrientation: ImageButton
 
@@ -54,10 +54,10 @@ class MainActivity : Activity(), EngineCallback {
         btnSwitchCamera = findViewById(R.id.btnSwitchCamera)
         btnBluetoothMic = findViewById(R.id.btnBluetoothMic)
         
-        // Find Restored Buttons
-        btnAccount = findViewById(R.id.btnAccount)
+        // Mapped accurately to activity_main.xml
+        ivProfilePhoto = findViewById(R.id.ivProfilePhoto)
         btnSettings = findViewById(R.id.btnSettings)
-        btnOverlay = findViewById(R.id.btnOverlay)
+        btnOverlayMenu = findViewById(R.id.btnOverlayMenu)
         btnLiveText = findViewById(R.id.btnLiveText)
         btnOrientation = findViewById(R.id.btnOrientation)
 
@@ -99,10 +99,9 @@ class MainActivity : Activity(), EngineCallback {
             }
         }
 
-        // Restored Button Actions
-        btnAccount.setOnClickListener { Toast.makeText(this, "Account Menu Clicked", Toast.LENGTH_SHORT).show() }
+        ivProfilePhoto.setOnClickListener { Toast.makeText(this, "Account Menu Clicked", Toast.LENGTH_SHORT).show() }
         btnSettings.setOnClickListener { Toast.makeText(this, "Settings Opened", Toast.LENGTH_SHORT).show() }
-        btnOverlay.setOnClickListener { Toast.makeText(this, "Overlay Manager Opened", Toast.LENGTH_SHORT).show() }
+        btnOverlayMenu.setOnClickListener { Toast.makeText(this, "Overlay Manager Opened", Toast.LENGTH_SHORT).show() }
         btnLiveText.setOnClickListener { Toast.makeText(this, "Live Text Editor Opened", Toast.LENGTH_SHORT).show() }
         
         btnOrientation.setOnClickListener {
@@ -119,6 +118,31 @@ class MainActivity : Activity(), EngineCallback {
         } else {
             streamEngine.tryStartCameraPreview(targetHolder.surface)
         }
+    }
+
+    // --- SAFETY PATCH: Bitmap Buffer Re-use Logic ---
+    private fun updateSnapshot(delay: Long = 200) {
+        if (!streamEngine.rtmpCamera.isOnPreview || overlayContainer.width == 0 || overlayContainer.height == 0 || pendingRefresh) return
+        pendingRefresh = true
+        
+        overlayHandler.postDelayed({
+            try {
+                val w = overlayContainer.width
+                val h = overlayContainer.height
+                
+                if (reusableBitmap == null || reusableBitmap!!.width != w || reusableBitmap!!.height != h) {
+                    reusableBitmap?.recycle()
+                    reusableBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                    reusableCanvas = Canvas(reusableBitmap!!)
+                }
+                
+                reusableBitmap!!.eraseColor(Color.TRANSPARENT)
+                overlayContainer.draw(reusableCanvas!!)
+                
+                streamEngine.setOverlayBitmap(reusableBitmap!!)
+            } catch (e: Exception) { e.printStackTrace() }
+            pendingRefresh = false
+        }, delay)
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
