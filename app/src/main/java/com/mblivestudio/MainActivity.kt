@@ -54,9 +54,7 @@ import java.net.URL
 
 class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
 
-    // --- NEW STREAM ENGINE ---
     private lateinit var streamEngine: StreamEngine
-
     private lateinit var openGlView: OpenGlView
     private lateinit var overlayContainer: RelativeLayout
 
@@ -72,7 +70,6 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
     private lateinit var tvCommentsFeed: TextView
     private lateinit var commentsScrollView: ScrollView
 
-    // Task B Variables
     private lateinit var btnOverlayMenu: ImageButton
     private lateinit var btnOverlayDone: Button
     private var currentMode = "DRAG"
@@ -81,7 +78,6 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
 
     private var selectedOverlay: View? = null
     private var isAudioMuted = false
-    private var isMenuExpanded = false
     private var isBluetoothMicActive = false
     private lateinit var audioManager: AudioManager
 
@@ -100,12 +96,10 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
     private val overlayHandler = Handler(Looper.getMainLooper())
     private var pendingRefresh = false
 
-    private var lastOverlayBitmap: Bitmap? = null
+    private var reusableBitmap: Bitmap? = null
+    private var reusableCanvas: Canvas? = null
     private var surfaceReady = false
 
-    private var streamWidth = 1920
-    private var streamHeight = 1080
-    private var streamBitrate = 5_000_000
     private var lastAppliedZoomFactor = 1f
 
     private var pendingTitle: String = ""
@@ -163,9 +157,11 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
         tvCommentsFeed = findViewById(R.id.tvCommentsFeed)
         commentsScrollView = findViewById(R.id.commentsScrollView)
         
-        // Task B Setup
         btnOverlayMenu = findViewById(R.id.btnOverlayMenu)
         btnOverlayDone = findViewById(R.id.btnOverlayDone)
+
+        streamEngine = StreamEngine(this, openGlView, this)
+        openGlView.holder.addCallback(this)
 
         btnOverlayMenu.setOnClickListener {
             val target = selectedOverlay ?: return@setOnClickListener
@@ -195,48 +191,24 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
             updateSnapshot()
         }
 
-        val btnToggleMenu: ImageButton? = findViewById(R.id.btnToggleMenu)
-        val menuLabelsContainer: LinearLayout? = findViewById(R.id.menuLabelsContainer)
-
-        btnToggleMenu?.setOnClickListener {
-            if (isMenuExpanded) {
-                menuLabelsContainer?.visibility = View.GONE
-                btnToggleMenu.setImageResource(R.drawable.ic_arrow_down)
-                isMenuExpanded = false
-            } else {
-                menuLabelsContainer?.visibility = View.VISIBLE
-                btnToggleMenu.setImageResource(R.drawable.ic_arrow_up)
-                isMenuExpanded = true
-            }
-        }
-
         val btnSwitchCamera: ImageButton = findViewById(R.id.btnSwitchCamera)
         val btnMicToggle: ImageButton = findViewById(R.id.btnMicToggle)
         val btnBluetoothMic: ImageButton = findViewById(R.id.btnBluetoothMic)
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         
-        val btnToggleLayouts: ImageButton = findViewById(R.id.btnToggleLayouts)
-        val btnToggleOverlays: ImageButton = findViewById(R.id.btnToggleOverlays)
-        val btnToggleComments: ImageButton = findViewById(R.id.btnToggleComments)
-
-        val popupLayouts: LinearLayout = findViewById(R.id.popupLayouts)
-        val popupOverlays: LinearLayout = findViewById(R.id.popupOverlays)
-        val btnCloseLayouts: Button = findViewById(R.id.btnCloseLayouts)
-        val btnCloseOverlays: Button = findViewById(R.id.btnCloseOverlays)
-
-        btnToggleLayouts.setOnClickListener { popupLayouts.visibility = View.VISIBLE; popupOverlays.visibility = View.GONE }
-        btnToggleOverlays.setOnClickListener { popupOverlays.visibility = View.VISIBLE; popupLayouts.visibility = View.GONE }
-        btnCloseLayouts.setOnClickListener { popupLayouts.visibility = View.GONE }
-        btnCloseOverlays.setOnClickListener { popupOverlays.visibility = View.GONE }
-
-        // Live Chat Toggle Link
-        btnToggleComments.setOnClickListener {
-            commentsPanel.visibility = if (commentsPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        val popupSettings: LinearLayout = findViewById(R.id.popupSettings)
+        
+        findViewById<ImageButton>(R.id.btnSettings).setOnClickListener {
+            popupSettings.visibility = if (popupSettings.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         }
 
-        // --- NEW ENGINE INIT ---
-        streamEngine = StreamEngine(this, openGlView, this)
-        openGlView.holder.addCallback(this)
+        findViewById<Button>(R.id.btnCloseSettings).setOnClickListener {
+            popupSettings.visibility = View.GONE
+        }
+
+        findViewById<Button>(R.id.btnToggleComments).setOnClickListener {
+            commentsPanel.visibility = if (commentsPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        }
 
         btnMicToggle.setOnClickListener {
             isAudioMuted = !isAudioMuted
@@ -253,42 +225,35 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
                 Toast.makeText(this, "Stop the stream before switching mic source.", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 2)
                 return@setOnClickListener
             }
             toggleBluetoothMic(btnBluetoothMic)
         }
 
-        findViewById<ImageButton>(R.id.btnLayoutFull).setOnClickListener { applyCameraLayout(floatArrayOf(0f,0f,1f,1f)); popupLayouts.visibility = View.GONE }
-        findViewById<ImageButton>(R.id.btnLayoutSplit).setOnClickListener { applyCameraLayout(floatArrayOf(0f,0f,0.5f,1f)); popupLayouts.visibility = View.GONE }
-        findViewById<ImageButton>(R.id.btnLayoutCornerTL).setOnClickListener { applyCameraLayout(floatArrayOf(0f,0f,0.3f,0.3f)); popupLayouts.visibility = View.GONE }
-        findViewById<ImageButton>(R.id.btnLayoutCornerBR).setOnClickListener { applyCameraLayout(floatArrayOf(0.7f,0.7f,1f,1f)); popupLayouts.visibility = View.GONE }
+        findViewById<ImageButton>(R.id.btnLayoutFull).setOnClickListener { applyCameraLayout(floatArrayOf(0f,0f,1f,1f)); popupSettings.visibility = View.GONE }
+        findViewById<ImageButton>(R.id.btnLayoutSplit).setOnClickListener { applyCameraLayout(floatArrayOf(0f,0f,0.5f,1f)); popupSettings.visibility = View.GONE }
+        findViewById<ImageButton>(R.id.btnLayoutCornerTL).setOnClickListener { applyCameraLayout(floatArrayOf(0f,0f,0.3f,0.3f)); popupSettings.visibility = View.GONE }
+        findViewById<ImageButton>(R.id.btnLayoutCornerBR).setOnClickListener { applyCameraLayout(floatArrayOf(0.7f,0.7f,1f,1f)); popupSettings.visibility = View.GONE }
 
-        findViewById<ImageButton>(R.id.btnOrientation)?.setOnClickListener {
+        findViewById<ImageButton>(R.id.btnOrientation).setOnClickListener {
             val isLand = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
             requestedOrientation = if (isLand) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
             Toast.makeText(this, "Orientation Switched", Toast.LENGTH_SHORT).show()
         }
         
-        findViewById<ImageButton>(R.id.btnSettings)?.setOnClickListener {
-            findViewById<LinearLayout>(R.id.popupSettings)?.let { popup ->
-                popup.visibility = if (popup.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-            }
-        }
-        
-        findViewById<ImageButton>(R.id.btnLiveText)?.setOnClickListener { showAddTextDialog() }
+        findViewById<ImageButton>(R.id.btnLiveText).setOnClickListener { showAddTextDialog() }
 
-        findViewById<Button>(R.id.btnAddText)?.setOnClickListener { popupOverlays.visibility = View.GONE; showAddTextDialog() }
-        findViewById<Button>(R.id.btnAddWebOverlay)?.setOnClickListener { popupOverlays.visibility = View.GONE; showAddWebDialog() }
-        findViewById<Button>(R.id.btnAddLogo)?.setOnClickListener { popupOverlays.visibility = View.GONE; val intent = Intent(Intent.ACTION_GET_CONTENT); intent.type = "image/*"; startActivityForResult(intent, PICK_IMAGE_REQUEST) }
-        findViewById<ImageButton>(R.id.btnToggleScore).setOnClickListener { 
-            popupOverlays.visibility = View.GONE
+        findViewById<Button>(R.id.btnAddText).setOnClickListener { popupSettings.visibility = View.GONE; showAddTextDialog() }
+        findViewById<Button>(R.id.btnAddWebOverlay).setOnClickListener { popupSettings.visibility = View.GONE; showAddWebDialog() }
+        findViewById<Button>(R.id.btnAddLogo).setOnClickListener { popupSettings.visibility = View.GONE; val intent = Intent(Intent.ACTION_GET_CONTENT); intent.type = "image/*"; startActivityForResult(intent, PICK_IMAGE_REQUEST) }
+        findViewById<Button>(R.id.btnToggleScore).setOnClickListener { 
+            popupSettings.visibility = View.GONE
             if (dragScoreboard.visibility == View.VISIBLE) { dragScoreboard.visibility = View.GONE; updateSnapshot() } else { showScoreboardDialog() } 
         }
         findViewById<ImageButton>(R.id.btnRemoveSelected).setOnClickListener { 
-            popupOverlays.visibility = View.GONE
+            popupSettings.visibility = View.GONE
             selectedOverlay?.let { if (it != dragScoreboard) { overlayContainer.removeView(it); selectedOverlay = null; updateOverlayMenuButtonPosition(); updateSnapshot() } } 
         }
 
@@ -325,7 +290,6 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
         makeStudioPanelDraggable(commentsPanel)
     }
 
-    // --- BLUETOOTH SCO LOGIC FIX FOR ANDROID 12+ ---
     private var scoStateReceiver: android.content.BroadcastReceiver? = null
     private val scoConnectTimeoutHandler = Handler(Looper.getMainLooper())
 
@@ -420,7 +384,6 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
         Handler(Looper.getMainLooper()).postDelayed({ tryStartCameraPreview() }, delayMs)
     }
 
-    // --- TASK B: RESIZE & CROP LOGIC ---
     private fun updateOverlayMenuButtonPosition() {
         val target = selectedOverlay
         if (target == null || currentMode != "DRAG") { btnOverlayMenu.visibility = View.GONE; return }
@@ -595,7 +558,6 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
         matrix.postScale(scale, scale); matrix.postTranslate(tx, ty)
         iv.imageMatrix = matrix; updateSnapshot()
     }
-    // ------------------------------------
 
     private fun showAddTextDialog() {
         val input = EditText(this).apply { hint = "Enter text..."; inputType = InputType.TYPE_CLASS_TEXT }
@@ -698,29 +660,6 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
             dialog.dismiss(); retryCount = 0; createYouTubeBroadcast()
         }
         dialog.show()
-    }
-
-    private fun showTextColorDialog() {
-        val target = selectedOverlay
-        if (target !is TextView) { Toast.makeText(this, "Select a text overlay first.", Toast.LENGTH_SHORT).show(); return }
-        val presetColors = listOf("#FFFFFF", "#FFEB3B", "#FF5252", "#4CAF50", "#2196F3", "#FF9800", "#000000")
-        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(16, 16, 16, 16) }
-        container.addView(TextView(this).apply { text = "Font Color"; setTextColor(Color.WHITE) })
-        container.addView(colorSwatchRow(presetColors) { color -> target.setTextColor(Color.parseColor(color)); updateSnapshot() })
-        container.addView(TextView(this).apply { text = "Background Color"; setTextColor(Color.WHITE); setPadding(0, 20, 0, 0) })
-        container.addView(colorSwatchRow(presetColors) { color -> target.setBackgroundColor(Color.parseColor(color)); updateSnapshot() })
-        AlertDialog.Builder(this).setTitle("Text Colors").setView(container).setPositiveButton("Done", null).show()
-    }
-
-    private fun colorSwatchRow(colors: List<String>, onPick: (String) -> Unit): LinearLayout {
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        colors.forEach { colorHex ->
-            row.addView(View(this).apply {
-                layoutParams = LinearLayout.LayoutParams(60, 60).apply { marginEnd = 16 }
-                setBackgroundColor(Color.parseColor(colorHex)); setOnClickListener { onPick(colorHex) }
-            })
-        }
-        return row
     }
 
     private fun startChatPolling(liveChatId: String) { currentLiveChatId = liveChatId; chatNextPageToken = null; chatPollingActive = true; pollChatOnce() }
@@ -886,7 +825,6 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
     }
     override fun onDisconnect() { runOnUiThread { btnGoLive.text = "LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F")); try { streamEngine.stopPreview() } catch (e: Exception) {}; tryStartCameraPreview(); stopChatPolling(); stopStudioTimer() } }
     
-    // NEW: Handles Mic Status from StreamEngine (if needed)
     override fun onMicStatusChanged(message: String, isSuccess: Boolean) { }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) { super.onRequestPermissionsResult(requestCode, permissions, grantResults); tryStartCameraPreview() }
@@ -922,10 +860,9 @@ class MainActivity : Activity(), EngineCallback, SurfaceHolder.Callback {
         streamEngine.detachCallback()
         streamEngine.release()
 
-        lastOverlayBitmap?.let { if (!it.isRecycled) it.recycle() }
-        lastOverlayBitmap = null
         reusableBitmap?.let { if (!it.isRecycled) it.recycle() }
         reusableBitmap = null
+        reusableCanvas = null
     }
 
     private fun applyCameraLayout(rect: FloatArray) { 
