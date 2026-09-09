@@ -96,7 +96,7 @@ class StreamEngine(
         val actualSurface = previewSurface ?: (openGlView as? android.view.SurfaceView)?.holder?.surface
         
         if (actualSurface == null) {
-            callback?.onConnectionFailed("Target Surface is null. Pass Surface from Compose.")
+            callback?.onConnectionFailed("Target Surface is null")
             return
         }
 
@@ -168,9 +168,14 @@ class StreamEngine(
         if (nextId == null) return isFront
 
         return try {
+            s.stopPreview() // Fixes camera freeze
             s.setCameraId(nextId)
             currentCameraId = nextId
             isFront = !isFront
+            
+            val surface = (openGlView as? android.view.SurfaceView)?.holder?.surface
+            if (surface != null) s.startPreview(surface)
+            
             isFront
         } catch (e: Exception) {
             e.printStackTrace()
