@@ -386,19 +386,21 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             } 
         }
 
-        // FEATURE 1: ADVANCED MIC TOGGLE
-        btnMicToggle.setColorFilter(Color.parseColor("#4CAF50"))
+     // FEATURE 1: ADVANCED MIC TOGGLE (Icon Color Only)
+        btnMicToggle.setColorFilter(Color.parseColor("#4CAF50"), android.graphics.PorterDuff.Mode.SRC_IN)
         btnMicToggle.setOnClickListener {
             if (isAudioMuted) {
+                // MIC ON (Green Icon)
                 rtmpCamera.enableAudio()
                 isAudioMuted = false
                 btnMicToggle.setImageResource(R.drawable.ic_mic_on)
-                btnMicToggle.setColorFilter(Color.parseColor("#4CAF50"))
+                btnMicToggle.setColorFilter(Color.parseColor("#4CAF50"), android.graphics.PorterDuff.Mode.SRC_IN)
             } else {
+                // MIC OFF (Red Icon)
                 rtmpCamera.disableAudio()
                 isAudioMuted = true
                 btnMicToggle.setImageResource(R.drawable.ic_mic_off) 
-                btnMicToggle.setColorFilter(Color.parseColor("#E53935"))
+                btnMicToggle.setColorFilter(Color.parseColor("#E53935"), android.graphics.PorterDuff.Mode.SRC_IN)
             }
         }
 
