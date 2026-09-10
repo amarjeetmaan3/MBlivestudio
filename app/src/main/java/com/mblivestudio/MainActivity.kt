@@ -1202,19 +1202,42 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         dialog.show()
     }
 
-    // --- TIMERS LOGIC ---
-    private fun startStudioTimer() { 
-        liveStartTimeMillis = System.currentTimeMillis()
-        timerRunning = true
-        tvLiveTimer.visibility = View.VISIBLE
-        timerHandler.post(timerRunnable) 
-    }
-    
-    private fun stopStudioTimer() { 
-        timerRunning = false
-        timerHandler.removeCallbacksAndMessages(null)
-        tvLiveTimer.visibility = View.GONE
-        tvLiveTimer.text = "00:00:00" 
+    private fun showGoLiveDialog() {
+        pendingScheduleTimeMs = 0L 
+        val padding = (16 * resources.displayMetrics.density).toInt()
+        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(padding, padding, padding, padding) }
+        val etTitle = EditText(this).apply { hint = "Broadcast Title"; setText(pendingTitle) }
+        val etDesc = EditText(this).apply { hint = "Description"; setText(pendingDesc) }
+        val privacyOptions = arrayOf("Public", "Unlisted", "Private")
+        val spinner = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, privacyOptions); setSelection(privacyOptions.indexOfFirst { it.equals(pendingPrivacy, ignoreCase = true) }.coerceAtLeast(1)) }
+        
+        val btnTime = Button(this).apply { text = "SCHEDULE (OPTIONAL)" }
+        val thumbPreview = ImageView(this).apply { layoutParams = LinearLayout.LayoutParams((140 * resources.displayMetrics.density).toInt(), (90 * resources.displayMetrics.density).toInt()).apply { gravity = android.view.Gravity.CENTER_HORIZONTAL }; scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(Color.parseColor("#333333")); pendingThumbnailUri?.let { setImageURI(it) } }
+        thumbnailPreviewImageView = thumbPreview
+        val thumbWrapper = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER; addView(thumbPreview) }
+        val btnThumbnail = Button(this).apply { text = "CHOOSE THUMBNAIL" }
+        val btnConfirmLive = Button(this).apply { text = "CREATE STREAM"; setBackgroundColor(Color.parseColor("#D32F2F")); setTextColor(Color.WHITE) }
+
+        btnTime.setOnClickListener {
+            val c = Calendar.getInstance()
+            DatePickerDialog(this, { _, y, m, d ->
+                TimePickerDialog(this, { _, h, min ->
+                    val sel = Calendar.getInstance().apply { set(y, m, d, h, min, 0) }
+                    pendingScheduleTimeMs = sel.timeInMillis
+                    btnTime.text = "Scheduled: ${java.text.SimpleDateFormat("dd MMM, HH:mm", java.util.Locale.US).format(sel.time)}"
+                }, c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), false).show()
+            }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
+        }
+
+        listOf(etTitle, etDesc, spinner, btnTime, thumbWrapper, btnThumbnail, btnConfirmLive).forEach { val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT); lp.bottomMargin = (8 * resources.displayMetrics.density).toInt(); it.layoutParams = lp; container.addView(it) }
+        val dialog = AlertDialog.Builder(this).setTitle("Setup Broadcast").setView(ScrollView(this).apply { addView(container) }).setNegativeButton("Cancel", null).create()
+
+        btnThumbnail.setOnClickListener { val intent = Intent(Intent.ACTION_GET_CONTENT); intent.type = "image/*"; startActivityForResult(intent, PICK_THUMBNAIL_REQUEST) }
+        btnConfirmLive.setOnClickListener {
+            pendingTitle = etTitle.text.toString(); pendingDesc = etDesc.text.toString(); pendingPrivacy = spinner.selectedItem.toString().lowercase()
+            dialog.dismiss(); retryCount = 0; createYouTubeBroadcast()
+        }
+        dialog.show()
     }
 
     private fun addImageOverlayToScreen(bitmap: Bitmap) {
@@ -1254,5 +1277,41 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private fun makeStudioPanelDraggable(view: View) {
         var dX = 0f; var dY = 0f
         view.setOnTouchListener { v, event -> when (event.actionMasked) { MotionEvent.ACTION_DOWN -> { dX = v.x - event.rawX; dY = v.y - event.rawY }; MotionEvent.ACTION_MOVE -> { v.x = event.rawX + dX; v.y = event.rawY + dY } }; true }
+    }
+
+    override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "🔥 YOU ARE LIVE!", Toast.LENGTH_LONG).show(); startStudioTimer() } }
+    override fun onConnectionFailed(reason: String) {
+        if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { retryCount++; runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }; Thread { Thread.sleep(2000); try { rtmpCamera.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} }.start() } else { runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show(); stopChatPolling(); stopStudioTimer() } }
+    }
+    override fun onDisconnect() { runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F")); try { rtmpCamera.stopPreview() } catch (e: Exception) {}; tryStartCameraPreview(); stopChatPolling(); stopStudioTimer() } }
+    
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) { super.onRequestPermissionsResult(requestCode, permissions, grantResults); tryStartCameraPreview() }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        overlayHandler.removeCallbacksAndMessages(null); chatHandler.removeCallbacksAndMessages(null); timerHandler.removeCallbacksAndMessages(null)
+        tickerHandler.removeCallbacksAndMessages(null)
+        webSyncHandler.removeCallbacksAndMessages(null)
+        
+        bitmapA?.let { if (!it.isRecycled) it.recycle() }
+        bitmapA = null
+        canvasA = null
+        
+        bitmapB?.let { if (!it.isRecycled) it.recycle() }
+        bitmapB = null
+        canvasB = null
+    }
+
+    override fun onAuthError() {
+        runOnUiThread { Toast.makeText(this, "Auth Error", Toast.LENGTH_SHORT).show() }
+    }
+    override fun onAuthSuccess() {
+        runOnUiThread { Toast.makeText(this, "Auth Success", Toast.LENGTH_SHORT).show() }
+    }
+    override fun onConnectionStarted(url: String) {}
+    override fun onNewBitrate(bitrate: Long) {
+        if (rtmpCamera.isStreaming) {
+            try { rtmpCamera.setVideoBitrateOnFly(bitrate.toInt()) } catch (e: Exception) {}
+        }
     }
 }
