@@ -482,6 +482,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
         }
+        // NEW: needed so the background-streaming StreamingService can show its notification
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 3)
+        }
 
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).requestEmail().requestProfile().requestScopes(Scope("https://www.googleapis.com/auth/youtube")).build()
         googleSignInClient = GoogleSignIn.getClient(this, gso)
@@ -746,8 +750,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         surfaceReady = false
-        if (rtmpCamera.isStreaming) rtmpCamera.stopStream()
-        if (rtmpCamera.isOnPreview) rtmpCamera.stopPreview()
+        // NEW: do NOT stop the stream here anymore. Screen lock / app background
+        // destroys this Surface, but RootEncoder's StreamBase keeps the camera +
+        // encoder pipeline running independently once actively streaming
+        // (stopPreview() is a no-op while isStreaming == true). Only tear the
+        // camera down here if we were merely previewing (not live yet) — that
+        // avoids camera-in-use conflicts with other apps while not streaming.
+        if (!rtmpCamera.isStreaming && rtmpCamera.isOnPreview) rtmpCamera.stopPreview()
     }
 
     private fun loadQuota() {
@@ -1088,7 +1097,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             currentBroadcastId = broadcastId
             generatedRtmpUrl = rtmpUrl
             btnGoLive.text = "CONNECTING..."
-            try { rtmpCamera.startStream(rtmpUrl); startChatPolling(chatId) } catch (e: Exception) { Toast.makeText(this, "Stream Error", Toast.LENGTH_LONG).show(); btnGoLive.text = "GO LIVE" }
+            try { StreamingService.start(this@MainActivity); rtmpCamera.startStream(rtmpUrl); startChatPolling(chatId) } catch (e: Exception) { StreamingService.stop(this@MainActivity); Toast.makeText(this, "Stream Error", Toast.LENGTH_LONG).show(); btnGoLive.text = "GO LIVE" }
         }
         dialog.show()
     }
@@ -1148,6 +1157,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 currentBroadcastId = null 
             }
             try { rtmpCamera.stopStream() } catch (e: Exception) {}
+            StreamingService.stop(this@MainActivity)
             runOnUiThread {
                 btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
                 Toast.makeText(this@MainActivity, "Stream Ended Permanently.", Toast.LENGTH_SHORT).show()
@@ -1303,10 +1313,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "🔥 YOU ARE LIVE!", Toast.LENGTH_LONG).show(); startStudioTimer() } }
     
     override fun onConnectionFailed(reason: String) {
-        if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { retryCount++; runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }; Thread { Thread.sleep(2000); try { rtmpCamera.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} }.start() } else { runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show(); stopChatPolling(); stopStudioTimer() } }
+        if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { retryCount++; runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }; Thread { Thread.sleep(2000); try { rtmpCamera.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} }.start() } else { StreamingService.stop(this@MainActivity); runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show(); stopChatPolling(); stopStudioTimer() } }
     }
     
-    override fun onDisconnect() { runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F")); try { rtmpCamera.stopPreview() } catch (e: Exception) {}; tryStartCameraPreview(); stopChatPolling(); stopStudioTimer() } }
+    override fun onDisconnect() { StreamingService.stop(this@MainActivity); runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F")); try { rtmpCamera.stopPreview() } catch (e: Exception) {}; tryStartCameraPreview(); stopChatPolling(); stopStudioTimer() } }
     
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) { super.onRequestPermissionsResult(requestCode, permissions, grantResults); tryStartCameraPreview() }
     
