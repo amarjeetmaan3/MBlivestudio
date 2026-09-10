@@ -941,14 +941,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     setBackgroundColor(Color.TRANSPARENT); setLayerType(View.LAYER_TYPE_SOFTWARE, null); settings.javaScriptEnabled = true; settings.domStorageEnabled = true; settings.useWideViewPort = true; settings.loadWithOverviewMode = true; webViewClient = WebViewClient(); webChromeClient = WebChromeClient(); loadUrl(finalUrl)
                 }
                 overlayContainer.addView(webView); makeDraggableAndScalable(webView); selectedOverlay = webView; updateOverlayMenuButtonPosition(); 
+                
                 webSyncHandler.post(webSyncRunnable)
+                
                 overlayHandler.postDelayed({ updateSnapshot() }, 2000)
             }
         }.setNegativeButton("Cancel", null).show()
     }
 
     private fun applyAccountToHeader(account: com.google.android.gms.auth.api.signin.GoogleSignInAccount) {
-        account.photoUrl?.let { url -> Thread { try { val input = URL(url.toString()).openStream(); val bmp = BitmapFactory.decodeStream(input); input.close(); val circular = cropToCircle(bmp); runOnUiThread { findViewById<ImageView>(R.id.ivProfilePhoto).setImageBitmap(circular) } } catch (e: Exception) { e.printStackTrace() } }.start() }
+        account.photoUrl?.let { url -> Thread { try { val input = java.net.URL(url.toString()).openStream(); val bmp = BitmapFactory.decodeStream(input); input.close(); val circular = cropToCircle(bmp); runOnUiThread { findViewById<ImageView>(R.id.ivProfilePhoto).setImageBitmap(circular) } } catch (e: Exception) { e.printStackTrace() } }.start() }
     }
 
     private fun cropToCircle(bitmap: Bitmap): Bitmap {
@@ -1164,76 +1166,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 }
             } catch (e: Exception) { e.printStackTrace(); runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; Toast.makeText(this@MainActivity, "Timeout/API Error: ${e.message}", Toast.LENGTH_LONG).show() } }
         }.start()
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQUEST_AUTHORIZATION && GoogleSignIn.hasPermissions(GoogleSignIn.getLastSignedInAccount(this), Scope("https://www.googleapis.com/auth/youtube"))) Toast.makeText(this, "Permission Granted! Tap LIVE again.", Toast.LENGTH_LONG).show()
-        if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK && data != null) data.data?.let { uri -> addImageOverlayToScreen(MediaStore.Images.Media.getBitmap(contentResolver, uri)) }
-        if (requestCode == PICK_THUMBNAIL_REQUEST && resultCode == RESULT_OK && data != null) data.data?.let { uri -> pendingThumbnailUri = uri; thumbnailPreviewImageView?.setImageURI(uri) }
-        if (requestCode == SIGN_IN_REQUEST) try { val account = GoogleSignIn.getSignedInAccountFromIntent(data).getResult(ApiException::class.java); connectedAccountEmail = account?.email; if (account != null) applyAccountToHeader(account) } catch (e: ApiException) { }
-    }
-
-    private fun addImageOverlayToScreen(bitmap: Bitmap) {
-        val imageView = ImageView(this).apply { setImageBitmap(bitmap); layoutParams = RelativeLayout.LayoutParams(300, 300).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) } }
-        overlayContainer.addView(imageView); makeDraggableAndScalable(imageView); selectedOverlay = imageView; updateOverlayMenuButtonPosition(); updateSnapshot()
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun makeDraggableAndScalable(view: View) {
-        val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() { override fun onScale(detector: ScaleGestureDetector): Boolean { if (view is WebView) return false; view.scaleX *= detector.scaleFactor; view.scaleY *= detector.scaleFactor; return true } })
-        var localDX = 0f; var localDY = 0f
-        view.setOnTouchListener { v, event ->
-            if (currentMode != "DRAG") return@setOnTouchListener false
-            scaleGestureDetector.onTouchEvent(event)
-            if (!scaleGestureDetector.isInProgress) {
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { 
-                        localDX = v.x - event.rawX; localDY = v.y - event.rawY
-                        selectedOverlay = v
-                        updateOverlayMenuButtonPosition() 
-                    }
-                    MotionEvent.ACTION_MOVE -> { 
-                        v.x = event.rawX + localDX
-                        v.y = event.rawY + localDY
-                        updateOverlayMenuButtonPosition()
-                        updateSnapshot() 
-                    }
-                    MotionEvent.ACTION_UP -> { updateSnapshot() }
-                }
-            }
-            if (v is EditText) v.onTouchEvent(event)
-            true
-        }
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun makeStudioPanelDraggable(view: View) {
-        var dX = 0f; var dY = 0f
-        view.setOnTouchListener { v, event -> when (event.actionMasked) { MotionEvent.ACTION_DOWN -> { dX = v.x - event.rawX; dY = v.y - event.rawY }; MotionEvent.ACTION_MOVE -> { v.x = event.rawX + dX; v.y = event.rawY + dY } }; true }
-    }
-
-    override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "🔥 YOU ARE LIVE!", Toast.LENGTH_LONG).show(); startStudioTimer() } }
-    override fun onConnectionFailed(reason: String) {
-        if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { retryCount++; runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }; Thread { Thread.sleep(2000); try { rtmpCamera.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} }.start() } else { runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show(); stopChatPolling(); stopStudioTimer() } }
-    }
-    override fun onDisconnect() { runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F")); try { rtmpCamera.stopPreview() } catch (e: Exception) {}; tryStartCameraPreview(); stopChatPolling(); stopStudioTimer() } }
-    
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) { super.onRequestPermissionsResult(requestCode, permissions, grantResults); tryStartCameraPreview() }
-    
-    override fun onDestroy() {
-        super.onDestroy()
-        overlayHandler.removeCallbacksAndMessages(null); chatHandler.removeCallbacksAndMessages(null); timerHandler.removeCallbacksAndMessages(null)
-        tickerHandler.removeCallbacksAndMessages(null)
-        webSyncHandler.removeCallbacksAndMessages(null)
-        
-        bitmapA?.let { if (!it.isRecycled) it.recycle() }
-        bitmapA = null
-        canvasA = null
-        
-        bitmapB?.let { if (!it.isRecycled) it.recycle() }
-        bitmapB = null
-        canvasB = null
     }
 
     override fun onAuthError() {
