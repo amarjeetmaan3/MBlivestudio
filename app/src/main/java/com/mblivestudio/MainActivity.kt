@@ -1156,6 +1156,67 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }.start()
     }
 
+    private fun stopLiveStream() {
+        btnGoLive.isEnabled = false; btnGoLive.text = "STOPPING..."
+        Thread {
+            currentBroadcastId?.let { broadcastId -> 
+                try { youtubeClient?.liveBroadcasts()?.transition("complete", broadcastId, "status")?.execute() } catch (e: Exception) { e.printStackTrace() }
+                removeSavedStream(broadcastId)
+                currentBroadcastId = null 
+            }
+            try { rtmpCamera.stopStream() } catch (e: Exception) {}
+            runOnUiThread {
+                btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
+                Toast.makeText(this@MainActivity, "Stream Ended Permanently.", Toast.LENGTH_SHORT).show()
+                generatedRtmpUrl = null; stopChatPolling(); stopStudioTimer()
+            }
+        }.start()
+    }
+
+    private fun createYouTubeBroadcast() {
+        btnGoLive.text = "1/3: API..."; btnGoLive.isEnabled = false
+        val finalTitle = pendingTitle.trim().ifEmpty { "Live from M.B. Live Studio" }
+        val finalDesc = pendingDesc.trim().ifEmpty { "Streaming via Android App" }
+        val privacyInput = pendingPrivacy
+        Thread {
+            addQuota(150)
+            try {
+                val credential = GoogleAccountCredential.usingOAuth2(this@MainActivity, listOf("https://www.googleapis.com/auth/youtube"))
+                val signInAccount = GoogleSignIn.getLastSignedInAccount(this@MainActivity)
+                if (signInAccount?.account != null) credential.selectedAccount = signInAccount.account else credential.selectedAccountName = connectedAccountEmail
+                val youtube = YouTube.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), HttpRequestInitializer { request -> credential.initialize(request); request.connectTimeout = 10000; request.readTimeout = 10000; request.numberOfRetries = 0 }).setApplicationName("MBLiveStudio").build()
+                youtubeClient = youtube
+                runOnUiThread { btnGoLive.text = "2/3: ROOM..." }
+
+                val scheduleTime = if (pendingScheduleTimeMs > 0) DateTime(pendingScheduleTimeMs) else DateTime(System.currentTimeMillis())
+                val broadcastSnippet = LiveBroadcastSnippet().apply { title = finalTitle; description = finalDesc; scheduledStartTime = scheduleTime }
+                val broadcastStatus = LiveBroadcastStatus().apply { privacyStatus = privacyInput; selfDeclaredMadeForKids = false }
+                val broadcastContentDetails = LiveBroadcastContentDetails().apply { enableAutoStart = true; latencyPreference = "ultraLow" }
+                val broadcast = youtube.liveBroadcasts().insert("snippet,status,contentDetails", LiveBroadcast().apply { snippet = broadcastSnippet; status = broadcastStatus; contentDetails = broadcastContentDetails }).execute()
+
+                val bId = broadcast.id
+                val liveChatId = broadcast.snippet?.liveChatId ?: ""
+                pendingThumbnailUri?.let { uri -> try { val stream = contentResolver.openInputStream(uri); if (stream != null) { youtube.thumbnails().set(bId, InputStreamContent("image/jpeg", stream)).execute() } } catch (e: Exception) { e.printStackTrace() } }
+                runOnUiThread { btnGoLive.text = "3/3: KEY..." }
+
+                val stream2 = youtube.liveStreams().insert("snippet,cdn", LiveStream().apply { snippet = LiveStreamSnippet().apply { title = "$finalTitle - Key" }; cdn = CdnSettings().apply { ingestionType = "rtmp"; resolution = "variable"; frameRate = "variable" } }).execute()
+                youtube.liveBroadcasts().bind(bId, "id,contentDetails").apply { streamId = stream2.id }.execute()
+
+                val ingestionUrl = stream2.cdn.ingestionInfo.ingestionAddress
+                val finalUrl = ingestionUrl + "/" + stream2.cdn.ingestionInfo.streamName
+                
+                val shareLink = "https://youtu.be/$bId"
+                saveStreamLocally(finalTitle, bId, liveChatId, finalUrl)
+
+                runOnUiThread {
+                    btnGoLive.text = "GO LIVE"
+                    btnGoLive.isEnabled = true
+                    showStreamReadyDialog(finalTitle, shareLink, finalUrl, bId, liveChatId)
+                }
+            } catch (e: Exception) { e.printStackTrace(); runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; Toast.makeText(this@MainActivity, "Timeout/API Error: ${e.message}", Toast.LENGTH_LONG).show() } }
+        }.start()
+    }
+
     private fun applyCameraLayout(rect: FloatArray) { 
         cameraLayoutFilter.setRect(rect[0], rect[1], rect[2], rect[3])
         cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f) 
@@ -1235,5 +1296,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     
     override fun onConnectionStarted(url: String) {}
     
-    override fun onNewBitrate(bitrate: Long) {}
+    override fun onNewBitrate(bitrate: Long) {
+        if (rtmpCamera.isStreaming) {
+            try { rtmpCamera.setVideoBitrateOnFly(bitrate.toInt()) } catch (e: Exception) {}
+        }
+    }
 }
