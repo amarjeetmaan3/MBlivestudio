@@ -62,6 +62,9 @@ import com.google.api.client.json.gson.GsonFactory
 import com.google.api.client.util.DateTime
 import com.google.api.services.youtube.YouTube
 import com.google.api.services.youtube.model.*
+import java.net.Inet4Address
+import java.net.InetAddress
+import java.net.URL
 import java.util.Calendar
 
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
@@ -1107,65 +1110,104 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private fun startStudioTimer() { liveStartTimeMillis = System.currentTimeMillis(); timerRunning = true; tvLiveTimer.visibility = View.VISIBLE; timerHandler.post(timerRunnable) }
     private fun stopStudioTimer() { timerRunning = false; timerHandler.removeCallbacksAndMessages(null); tvLiveTimer.visibility = View.GONE; tvLiveTimer.text = "00:00:00" }
 
-    private fun stopLiveStream() {
-        btnGoLive.isEnabled = false; btnGoLive.text = "STOPPING..."
-        Thread {
-            currentBroadcastId?.let { broadcastId -> 
-                try { youtubeClient?.liveBroadcasts()?.transition("complete", broadcastId, "status")?.execute() } catch (e: Exception) { e.printStackTrace() }
-                removeSavedStream(broadcastId)
-                currentBroadcastId = null 
+    // --- OVERLAY GHOSTING FIX (Double Buffering) ---
+    private fun updateSnapshot(delay: Long = 100) {
+        if (!rtmpCamera.isOnPreview || overlayContainer.width == 0 || overlayContainer.height == 0 || pendingRefresh) return
+        pendingRefresh = true
+        overlayHandler.postDelayed({
+            try {
+                val w = overlayContainer.width
+                val h = overlayContainer.height
+                
+                useBufferA = !useBufferA
+                
+                if (useBufferA) {
+                    if (bitmapA == null || bitmapA!!.isRecycled || bitmapA!!.width != w || bitmapA!!.height != h) {
+                        bitmapA?.recycle()
+                        bitmapA = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                        canvasA = Canvas(bitmapA!!)
+                    }
+                    bitmapA!!.eraseColor(Color.TRANSPARENT)
+                    overlayContainer.draw(canvasA!!)
+                    imageFilterRender.setImage(bitmapA!!)
+                } else {
+                    if (bitmapB == null || bitmapB!!.isRecycled || bitmapB!!.width != w || bitmapB!!.height != h) {
+                        bitmapB?.recycle()
+                        bitmapB = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                        canvasB = Canvas(bitmapB!!)
+                    }
+                    bitmapB!!.eraseColor(Color.TRANSPARENT)
+                    overlayContainer.draw(canvasB!!)
+                    imageFilterRender.setImage(bitmapB!!)
+                }
+            } catch (e: Exception) { 
+                e.printStackTrace() 
+            } finally {
+                pendingRefresh = false
             }
-            try { rtmpCamera.stopStream() } catch (e: Exception) {}
-            runOnUiThread {
-                btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
-                Toast.makeText(this@MainActivity, "Stream Ended Permanently.", Toast.LENGTH_SHORT).show()
-                generatedRtmpUrl = null; stopChatPolling(); stopStudioTimer()
-            }
-        }.start()
+        }, delay)
     }
 
-    private fun createYouTubeBroadcast() {
-        btnGoLive.text = "1/3: API..."; btnGoLive.isEnabled = false
-        val finalTitle = pendingTitle.trim().ifEmpty { "Live from M.B. Live Studio" }
-        val finalDesc = pendingDesc.trim().ifEmpty { "Streaming via Android App" }
-        val privacyInput = pendingPrivacy
-        Thread {
-            addQuota(150)
-            try {
-                val credential = GoogleAccountCredential.usingOAuth2(this@MainActivity, listOf("https://www.googleapis.com/auth/youtube"))
-                val signInAccount = GoogleSignIn.getLastSignedInAccount(this@MainActivity)
-                if (signInAccount?.account != null) credential.selectedAccount = signInAccount.account else credential.selectedAccountName = connectedAccountEmail
-                val youtube = YouTube.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), HttpRequestInitializer { request -> credential.initialize(request); request.connectTimeout = 10000; request.readTimeout = 10000; request.numberOfRetries = 0 }).setApplicationName("MBLiveStudio").build()
-                youtubeClient = youtube
-                runOnUiThread { btnGoLive.text = "2/3: ROOM..." }
+    private fun addImageOverlayToScreen(bitmap: Bitmap) {
+        val imageView = ImageView(this).apply { setImageBitmap(bitmap); layoutParams = RelativeLayout.LayoutParams(300, 300).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) } }
+        overlayContainer.addView(imageView); makeDraggableAndScalable(imageView); selectedOverlay = imageView; updateOverlayMenuButtonPosition(); updateSnapshot()
+    }
 
-                val scheduleTime = if (pendingScheduleTimeMs > 0) DateTime(pendingScheduleTimeMs) else DateTime(System.currentTimeMillis())
-                val broadcastSnippet = LiveBroadcastSnippet().apply { title = finalTitle; description = finalDesc; scheduledStartTime = scheduleTime }
-                val broadcastStatus = LiveBroadcastStatus().apply { privacyStatus = privacyInput; selfDeclaredMadeForKids = false }
-                val broadcastContentDetails = LiveBroadcastContentDetails().apply { enableAutoStart = true; latencyPreference = "ultraLow" }
-                val broadcast = youtube.liveBroadcasts().insert("snippet,status,contentDetails", LiveBroadcast().apply { snippet = broadcastSnippet; status = broadcastStatus; contentDetails = broadcastContentDetails }).execute()
-
-                val bId = broadcast.id
-                val liveChatId = broadcast.snippet?.liveChatId ?: ""
-                pendingThumbnailUri?.let { uri -> try { val stream = contentResolver.openInputStream(uri); if (stream != null) { youtube.thumbnails().set(bId, InputStreamContent("image/jpeg", stream)).execute() } } catch (e: Exception) { e.printStackTrace() } }
-                runOnUiThread { btnGoLive.text = "3/3: KEY..." }
-
-                val stream2 = youtube.liveStreams().insert("snippet,cdn", LiveStream().apply { snippet = LiveStreamSnippet().apply { title = "$finalTitle - Key" }; cdn = CdnSettings().apply { ingestionType = "rtmp"; resolution = "variable"; frameRate = "variable" } }).execute()
-                youtube.liveBroadcasts().bind(bId, "id,contentDetails").apply { streamId = stream2.id }.execute()
-
-                val ingestionUrl = stream2.cdn.ingestionInfo.ingestionAddress
-                val finalUrl = ingestionUrl + "/" + stream2.cdn.ingestionInfo.streamName
-                
-                val shareLink = "https://youtu.be/$bId"
-                saveStreamLocally(finalTitle, bId, liveChatId, finalUrl)
-
-                runOnUiThread {
-                    btnGoLive.text = "GO LIVE"
-                    btnGoLive.isEnabled = true
-                    showStreamReadyDialog(finalTitle, shareLink, finalUrl, bId, liveChatId)
+    @SuppressLint("ClickableViewAccessibility")
+    private fun makeDraggableAndScalable(view: View) {
+        val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() { override fun onScale(detector: ScaleGestureDetector): Boolean { if (view is WebView) return false; view.scaleX *= detector.scaleFactor; view.scaleY *= detector.scaleFactor; return true } })
+        var localDX = 0f; var localDY = 0f
+        view.setOnTouchListener { v, event ->
+            if (currentMode != "DRAG") return@setOnTouchListener false
+            scaleGestureDetector.onTouchEvent(event)
+            if (!scaleGestureDetector.isInProgress) {
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> { 
+                        localDX = v.x - event.rawX; localDY = v.y - event.rawY
+                        selectedOverlay = v
+                        updateOverlayMenuButtonPosition() 
+                    }
+                    MotionEvent.ACTION_MOVE -> { 
+                        v.x = event.rawX + localDX
+                        v.y = event.rawY + localDY
+                        updateOverlayMenuButtonPosition()
+                        updateSnapshot(50) 
+                    }
+                    MotionEvent.ACTION_UP -> { updateSnapshot() }
                 }
-            } catch (e: Exception) { e.printStackTrace(); runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; Toast.makeText(this@MainActivity, "Timeout/API Error: ${e.message}", Toast.LENGTH_LONG).show() } }
-        }.start()
+            }
+            if (v is EditText) v.onTouchEvent(event)
+            true
+        }
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun makeStudioPanelDraggable(view: View) {
+        var dX = 0f; var dY = 0f
+        view.setOnTouchListener { v, event -> when (event.actionMasked) { MotionEvent.ACTION_DOWN -> { dX = v.x - event.rawX; dY = v.y - event.rawY }; MotionEvent.ACTION_MOVE -> { v.x = event.rawX + dX; v.y = event.rawY + dY } }; true }
+    }
+
+    override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "🔥 YOU ARE LIVE!", Toast.LENGTH_LONG).show(); startStudioTimer() } }
+    override fun onConnectionFailed(reason: String) {
+        if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { retryCount++; runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }; Thread { Thread.sleep(2000); try { rtmpCamera.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} }.start() } else { runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show(); stopChatPolling(); stopStudioTimer() } }
+    }
+    override fun onDisconnect() { runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F")); try { rtmpCamera.stopPreview() } catch (e: Exception) {}; tryStartCameraPreview(); stopChatPolling(); stopStudioTimer() } }
+    
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) { super.onRequestPermissionsResult(requestCode, permissions, grantResults); tryStartCameraPreview() }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        overlayHandler.removeCallbacksAndMessages(null); chatHandler.removeCallbacksAndMessages(null); timerHandler.removeCallbacksAndMessages(null)
+        tickerHandler.removeCallbacksAndMessages(null)
+        webSyncHandler.removeCallbacksAndMessages(null)
+        
+        bitmapA?.let { if (!it.isRecycled) it.recycle() }
+        bitmapA = null
+        canvasA = null
+        
+        bitmapB?.let { if (!it.isRecycled) it.recycle() }
+        bitmapB = null
+        canvasB = null
     }
 
     override fun onAuthError() {
