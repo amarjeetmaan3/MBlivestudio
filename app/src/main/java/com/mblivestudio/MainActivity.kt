@@ -42,10 +42,11 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.*
+import com.mblivestudio.filters.CameraLayoutFilterRender
 import com.pedro.common.ConnectChecker
+import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
 import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
-import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
 
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
@@ -68,12 +69,13 @@ import java.util.Calendar
 
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
+    // --- ORIGINAL ROOTENCODER SETUP ---
     private lateinit var rtmpCamera: RtmpCamera2
     private lateinit var openGlView: OpenGlView
     private lateinit var overlayContainer: RelativeLayout
     private lateinit var imageFilterRender: ImageObjectFilterRender
     
-    private val cameraLayoutFilter = com.mblivestudio.filters.CameraLayoutFilterRender()
+    private val cameraLayoutFilter = CameraLayoutFilterRender()
 
     private lateinit var dragScoreboard: LinearLayout
     private lateinit var scoreMainText: TextView
@@ -126,10 +128,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private val MAX_RETRIES = 3
     private var generatedRtmpUrl: String? = null
 
+    // --- DOUBLE BUFFERING OVERLAY ---
     private val overlayHandler = Handler(Looper.getMainLooper())
     private var pendingRefresh = false
-
-    // 100% Safe Double Buffering (No Ghosting)
     private var bitmapA: Bitmap? = null
     private var canvasA: Canvas? = null
     private var bitmapB: Bitmap? = null
@@ -162,6 +163,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     private var dailyQuotaUsed = 0
 
+    // --- TIMERS & HANDLERS ---
     private var liveStartTimeMillis: Long = 0L
     private var timerRunning = false
     private val timerHandler = Handler(Looper.getMainLooper())
@@ -174,6 +176,22 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             val seconds = (elapsed / 1000) % 60
             tvLiveTimer.text = String.format("%02d:%02d:%02d", hours, minutes, seconds)
             timerHandler.postDelayed(this, 1000)
+        }
+    }
+
+    private val tickerHandler = Handler(Looper.getMainLooper())
+    private val tickerRunnable = object : Runnable {
+        override fun run() {
+            updateSnapshot(50) 
+            tickerHandler.postDelayed(this, 100)
+        }
+    }
+
+    private val webSyncHandler = Handler(Looper.getMainLooper())
+    private val webSyncRunnable = object : Runnable {
+        override fun run() {
+            updateSnapshot(100)
+            webSyncHandler.postDelayed(this, 1000)
         }
     }
 
@@ -329,10 +347,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         findViewById<Button>(R.id.btnToggleScore).setOnClickListener { popupSettings.visibility = View.GONE; if (dragScoreboard.visibility == View.VISIBLE) { dragScoreboard.visibility = View.GONE; updateSnapshot() } else { showScoreboardDialog() } }
         findViewById<Button>(R.id.btnAddLowerThird).setOnClickListener { popupSettings.visibility = View.GONE; showAddLowerThirdDialog() }
         
-        findViewById<ImageButton>(R.id.btnLayoutFull).setOnClickListener { cameraLayoutFilter.setRect(0f,0f,1f,1f); popupSettings.visibility = View.GONE }
-        findViewById<ImageButton>(R.id.btnLayoutSplit).setOnClickListener { cameraLayoutFilter.setRect(0f,0f,0.5f,1f); popupSettings.visibility = View.GONE }
-        findViewById<ImageButton>(R.id.btnLayoutCornerTL).setOnClickListener { cameraLayoutFilter.setRect(0f,0f,0.3f,0.3f); popupSettings.visibility = View.GONE }
-        findViewById<ImageButton>(R.id.btnLayoutCornerBR).setOnClickListener { cameraLayoutFilter.setRect(0.7f,0.7f,1f,1f); popupSettings.visibility = View.GONE }
+        findViewById<ImageButton>(R.id.btnLayoutFull).setOnClickListener { applyCameraLayout(floatArrayOf(0f,0f,1f,1f)); popupSettings.visibility = View.GONE }
+        findViewById<ImageButton>(R.id.btnLayoutSplit).setOnClickListener { applyCameraLayout(floatArrayOf(0f,0f,0.5f,1f)); popupSettings.visibility = View.GONE }
+        findViewById<ImageButton>(R.id.btnLayoutCornerTL).setOnClickListener { applyCameraLayout(floatArrayOf(0f,0f,0.3f,0.3f)); popupSettings.visibility = View.GONE }
+        findViewById<ImageButton>(R.id.btnLayoutCornerBR).setOnClickListener { applyCameraLayout(floatArrayOf(0.7f,0.7f,1f,1f)); popupSettings.visibility = View.GONE }
 
         val btnLiveText: ImageButton = findViewById(R.id.btnLiveText)
         btnLiveText.setOnClickListener { popupSettings.visibility = View.GONE; addLiveTextOverlay() }
@@ -349,6 +367,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
             target?.let { 
                 if (it != dragScoreboard) { 
+                    if (it.tag == "LOWER_THIRD") tickerHandler.removeCallbacks(tickerRunnable)
+                    if (it.tag == "WEB_OVERLAY") webSyncHandler.removeCallbacks(webSyncRunnable)
                     if (it is EditText) {
                         it.clearFocus()
                         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
@@ -493,6 +513,20 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         makeDraggableAndScalable(dragScoreboard)
         makeStudioPanelDraggable(commentsPanel)
+    }
+
+    private fun startStudioTimer() { 
+        liveStartTimeMillis = System.currentTimeMillis()
+        timerRunning = true
+        tvLiveTimer.visibility = View.VISIBLE
+        timerHandler.post(timerRunnable) 
+    }
+    
+    private fun stopStudioTimer() { 
+        timerRunning = false
+        timerHandler.removeCallbacksAndMessages(null)
+        tvLiveTimer.visibility = View.GONE
+        tvLiveTimer.text = "00:00:00" 
     }
 
     private fun tryStartCameraPreview() {
@@ -897,6 +931,46 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         dialog.show()
     }
 
+    private fun addLiveTextOverlay() {
+        val liveEditText = EditText(this).apply {
+            hint = "Start typing..."
+            setHintTextColor(Color.argb(128, 255, 255, 255))
+            setTextColor(Color.YELLOW)
+            textSize = 30f
+            setTypeface(null, Typeface.BOLD)
+            background = null
+            setShadowLayer(5f, 2f, 2f, Color.BLACK)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            layoutParams = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT).apply { 
+                addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) 
+            }
+            
+            setOnFocusChangeListener { _, hasFocus ->
+                if (!hasFocus && text.toString().trim().isEmpty()) {
+                    overlayContainer.removeView(this)
+                    if (selectedOverlay == this) {
+                        selectedOverlay = null
+                        updateOverlayMenuButtonPosition()
+                    }
+                    updateSnapshot()
+                }
+            }
+
+            addTextChangedListener(object : TextWatcher { 
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { updateSnapshot() }
+                override fun afterTextChanged(s: Editable?) {} 
+            })
+        }
+        overlayContainer.addView(liveEditText)
+        makeDraggableAndScalable(liveEditText)
+        selectedOverlay = liveEditText
+        updateOverlayMenuButtonPosition()
+        updateSnapshot()
+        liveEditText.requestFocus()
+        (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(liveEditText, InputMethodManager.SHOW_IMPLICIT)
+    }
+
     private fun showScoreboardDialog() {
         val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(40, 20, 40, 20) }
         val mainInput = EditText(this).apply { hint = "Main Score (IND 245/3)" }
@@ -1082,65 +1156,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }.start()
     }
 
-    private fun stopLiveStream() {
-        btnGoLive.isEnabled = false; btnGoLive.text = "STOPPING..."
-        Thread {
-            currentBroadcastId?.let { broadcastId -> 
-                try { youtubeClient?.liveBroadcasts()?.transition("complete", broadcastId, "status")?.execute() } catch (e: Exception) { e.printStackTrace() }
-                removeSavedStream(broadcastId)
-                currentBroadcastId = null 
-            }
-            try { rtmpCamera.stopStream() } catch (e: Exception) {}
-            runOnUiThread {
-                btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
-                Toast.makeText(this@MainActivity, "Stream Ended Permanently.", Toast.LENGTH_SHORT).show()
-                generatedRtmpUrl = null; stopChatPolling(); stopStudioTimer()
-            }
-        }.start()
-    }
-
-    private fun createYouTubeBroadcast() {
-        btnGoLive.text = "1/3: API..."; btnGoLive.isEnabled = false
-        val finalTitle = pendingTitle.trim().ifEmpty { "Live from M.B. Live Studio" }
-        val finalDesc = pendingDesc.trim().ifEmpty { "Streaming via Android App" }
-        val privacyInput = pendingPrivacy
-        Thread {
-            addQuota(150)
-            try {
-                val credential = GoogleAccountCredential.usingOAuth2(this@MainActivity, listOf("https://www.googleapis.com/auth/youtube"))
-                val signInAccount = GoogleSignIn.getLastSignedInAccount(this@MainActivity)
-                if (signInAccount?.account != null) credential.selectedAccount = signInAccount.account else credential.selectedAccountName = connectedAccountEmail
-                val youtube = YouTube.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), HttpRequestInitializer { request -> credential.initialize(request); request.connectTimeout = 10000; request.readTimeout = 10000; request.numberOfRetries = 0 }).setApplicationName("MBLiveStudio").build()
-                youtubeClient = youtube
-                runOnUiThread { btnGoLive.text = "2/3: ROOM..." }
-
-                val scheduleTime = if (pendingScheduleTimeMs > 0) DateTime(pendingScheduleTimeMs) else DateTime(System.currentTimeMillis())
-                val broadcastSnippet = LiveBroadcastSnippet().apply { title = finalTitle; description = finalDesc; scheduledStartTime = scheduleTime }
-                val broadcastStatus = LiveBroadcastStatus().apply { privacyStatus = privacyInput; selfDeclaredMadeForKids = false }
-                val broadcastContentDetails = LiveBroadcastContentDetails().apply { enableAutoStart = true; latencyPreference = "ultraLow" }
-                val broadcast = youtube.liveBroadcasts().insert("snippet,status,contentDetails", LiveBroadcast().apply { snippet = broadcastSnippet; status = broadcastStatus; contentDetails = broadcastContentDetails }).execute()
-
-                val bId = broadcast.id
-                val liveChatId = broadcast.snippet?.liveChatId ?: ""
-                pendingThumbnailUri?.let { uri -> try { val stream = contentResolver.openInputStream(uri); if (stream != null) { youtube.thumbnails().set(bId, InputStreamContent("image/jpeg", stream)).execute() } } catch (e: Exception) { e.printStackTrace() } }
-                runOnUiThread { btnGoLive.text = "3/3: KEY..." }
-
-                val stream2 = youtube.liveStreams().insert("snippet,cdn", LiveStream().apply { snippet = LiveStreamSnippet().apply { title = "$finalTitle - Key" }; cdn = CdnSettings().apply { ingestionType = "rtmp"; resolution = "variable"; frameRate = "variable" } }).execute()
-                youtube.liveBroadcasts().bind(bId, "id,contentDetails").apply { streamId = stream2.id }.execute()
-
-                val ingestionUrl = stream2.cdn.ingestionInfo.ingestionAddress
-                val finalUrl = ingestionUrl + "/" + stream2.cdn.ingestionInfo.streamName
-                
-                val shareLink = "https://youtu.be/$bId"
-                saveStreamLocally(finalTitle, bId, liveChatId, finalUrl)
-
-                runOnUiThread {
-                    btnGoLive.text = "GO LIVE"
-                    btnGoLive.isEnabled = true
-                    showStreamReadyDialog(finalTitle, shareLink, finalUrl, bId, liveChatId)
-                }
-            } catch (e: Exception) { e.printStackTrace(); runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; Toast.makeText(this@MainActivity, "Timeout/API Error: ${e.message}", Toast.LENGTH_LONG).show() } }
-        }.start()
+    private fun applyCameraLayout(rect: FloatArray) { 
+        cameraLayoutFilter.setRect(rect[0], rect[1], rect[2], rect[3])
+        cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f) 
     }
 
     private fun addImageOverlayToScreen(bitmap: Bitmap) {
