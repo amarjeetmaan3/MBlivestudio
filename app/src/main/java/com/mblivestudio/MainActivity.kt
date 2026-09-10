@@ -42,11 +42,10 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.*
-import com.mblivestudio.filters.CameraLayoutFilterRender
 import com.pedro.common.ConnectChecker
-import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
 import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
+import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
 
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
@@ -69,22 +68,45 @@ import java.util.Calendar
 
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
-    // --- ORIGINAL ROOTENCODER SETUP ---
     private lateinit var rtmpCamera: RtmpCamera2
     private lateinit var openGlView: OpenGlView
     private lateinit var overlayContainer: RelativeLayout
-    private val imageFilterRender = ImageObjectFilterRender()
-    private val cameraLayoutFilter = CameraLayoutFilterRender()
+    private lateinit var imageFilterRender: ImageObjectFilterRender
+    
+    private val cameraLayoutFilter = com.mblivestudio.filters.CameraLayoutFilterRender()
 
-    private var streamWidth = 1920
-    private var streamHeight = 1080
-    private var streamBitrate = 5_000_000
-    private var surfaceReady = false
+    private lateinit var dragScoreboard: LinearLayout
+    private lateinit var scoreMainText: TextView
+    private lateinit var scoreSubText: TextView
 
-    // --- AUDIO & BLUETOOTH ---
-    private lateinit var audioManager: AudioManager
+    private lateinit var btnGoLive: Button
+    private lateinit var btnStreamsManager: Button
+    private lateinit var ivProfilePhoto: ImageView
+    private lateinit var tvLiveTimer: TextView
+    private lateinit var tvViewerCount: TextView
+    private lateinit var tvApiQuota: TextView
+
+    private lateinit var commentsPanel: LinearLayout
+    private lateinit var tvCommentsFeed: TextView
+    private lateinit var commentsScrollView: ScrollView
+    private lateinit var tvStreamChatOverlay: TextView
+    
+    private lateinit var switchChatSync: Switch
+    private lateinit var switchViewerSync: Switch
+    private lateinit var switchShowQuota: Switch
+    private lateinit var switchShowViewers: Switch
+
+    private lateinit var btnOverlayMenu: ImageButton
+    private lateinit var btnOverlayDone: Button
+    private var currentMode = "DRAG"
+    private val resizeHandles = mutableListOf<View>()
+    private val cropFrameViews = mutableListOf<View>()
+
+    private var selectedOverlay: View? = null
     private var isAudioMuted = false
     private var isBluetoothMicActive = false
+    private lateinit var audioManager: AudioManager
+
     private enum class MicRoute { PHONE, BLUETOOTH, WIRED }
     private var detectedMicRoute = MicRoute.PHONE
     private var bluetoothCommunicationDevice: AudioDeviceInfo? = null
@@ -92,33 +114,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private var scoStateReceiver: android.content.BroadcastReceiver? = null
     private val scoConnectTimeoutHandler = Handler(Looper.getMainLooper())
 
-    // --- UI ELEMENTS ---
-    private lateinit var dragScoreboard: LinearLayout
-    private lateinit var scoreMainText: TextView
-    private lateinit var scoreSubText: TextView
-    private lateinit var btnGoLive: Button
-    private lateinit var btnStreamsManager: Button
-    private lateinit var ivProfilePhoto: ImageView
-    private lateinit var tvLiveTimer: TextView
-    private lateinit var tvViewerCount: TextView
-    private lateinit var tvApiQuota: TextView
-    private lateinit var commentsPanel: LinearLayout
-    private lateinit var tvCommentsFeed: TextView
-    private lateinit var commentsScrollView: ScrollView
-    private lateinit var tvStreamChatOverlay: TextView
-    private lateinit var switchChatSync: Switch
-    private lateinit var switchViewerSync: Switch
-    private lateinit var switchShowQuota: Switch
-    private lateinit var switchShowViewers: Switch
-    private lateinit var btnOverlayMenu: ImageButton
-    private lateinit var btnOverlayDone: Button
-
-    private var currentMode = "DRAG"
-    private val resizeHandles = mutableListOf<View>()
-    private val cropFrameViews = mutableListOf<View>()
-    private var selectedOverlay: View? = null
-
-    // --- CONSTANTS & GLOBALS ---
     private val PICK_IMAGE_REQUEST = 101
     private val SIGN_IN_REQUEST = 102
     private val REQUEST_AUTHORIZATION = 1001
@@ -126,36 +121,47 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     private lateinit var googleSignInClient: GoogleSignInClient
     private var connectedAccountEmail: String? = null
+
     private var retryCount = 0
     private val MAX_RETRIES = 3
     private var generatedRtmpUrl: String? = null
 
-    // --- DOUBLE BUFFERING OVERLAY ---
     private val overlayHandler = Handler(Looper.getMainLooper())
     private var pendingRefresh = false
+
+    // 100% Safe Double Buffering (No Ghosting)
     private var bitmapA: Bitmap? = null
     private var canvasA: Canvas? = null
     private var bitmapB: Bitmap? = null
     private var canvasB: Canvas? = null
     private var useBufferA = true
+    
+    private var surfaceReady = false
 
-    // --- YOUTUBE API ---
+    // ROCK-SOLID SPORTS BROADCASTING STANDARD (720p, 3 Mbps)
+    private var streamWidth = 1280
+    private var streamHeight = 720
+    private var streamBitrate = 3_000_000
+
     private var pendingTitle: String = ""
     private var pendingDesc: String = ""
     private var pendingPrivacy: String = "unlisted"
     private var pendingScheduleTimeMs: Long = 0L
     private var pendingThumbnailUri: android.net.Uri? = null
     private var thumbnailPreviewImageView: ImageView? = null
+
     private var youtubeClient: YouTube? = null
     private var currentLiveChatId: String? = null
     private var currentBroadcastId: String? = null
+    
     private var chatNextPageToken: String? = null
     private var chatPollingActive = false
     private val chatHandler = Handler(Looper.getMainLooper())
+    
     private val streamChatHistory = mutableListOf<String>()
+
     private var dailyQuotaUsed = 0
 
-    // --- TIMERS ---
     private var liveStartTimeMillis: Long = 0L
     private var timerRunning = false
     private val timerHandler = Handler(Looper.getMainLooper())
@@ -171,22 +177,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    private val tickerHandler = Handler(Looper.getMainLooper())
-    private val tickerRunnable = object : Runnable {
-        override fun run() {
-            updateSnapshot(50) 
-            tickerHandler.postDelayed(this, 100)
-        }
-    }
-
-    private val webSyncHandler = Handler(Looper.getMainLooper())
-    private val webSyncRunnable = object : Runnable {
-        override fun run() {
-            updateSnapshot(100)
-            webSyncHandler.postDelayed(this, 1000)
-        }
-    }
-
     override fun attachBaseContext(newBase: Context?) {
         super.attachBaseContext(newBase)
         System.setProperty("java.net.preferIPv4Stack", "true")
@@ -196,6 +186,20 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         updateSnapshot()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            window.decorView.systemUiVisibility = (
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+            )
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
@@ -300,58 +304,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val btnMicToggle: ImageButton = findViewById(R.id.btnMicToggle)
         val btnBluetoothMic: ImageButton = findViewById(R.id.btnBluetoothMic)
         val btnOrientation: ImageButton = findViewById(R.id.btnOrientation)
-
-        btnMicToggle.setColorFilter(Color.parseColor("#4CAF50"))
-        btnMicToggle.setOnClickListener {
-            if (isAudioMuted) {
-                rtmpCamera.enableAudio()
-                isAudioMuted = false
-                btnMicToggle.setImageResource(R.drawable.ic_mic_on)
-                btnMicToggle.setColorFilter(Color.parseColor("#4CAF50"))
-            } else {
-                rtmpCamera.disableAudio()
-                isAudioMuted = true
-                btnMicToggle.setImageResource(R.drawable.ic_mic_off) 
-                btnMicToggle.setColorFilter(Color.parseColor("#E53935"))
-            }
-        }
-
-        btnSwitchCamera.setOnClickListener {
-            rtmpCamera.switchCamera()
-            if (!rtmpCamera.isStreaming) {
-                try { rtmpCamera.stopPreview(); tryStartCameraPreview() } catch (e: Exception) {}
-            }
-        }
-
-        btnBluetoothMic.setOnClickListener {
-            if (rtmpCamera.isStreaming) { Toast.makeText(this, "Stop the stream before switching mic source.", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) { requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 2); return@setOnClickListener }
-            toggleBluetoothMic()
-        }
-
-        btnOrientation.setOnClickListener {
-            if (rtmpCamera.isStreaming) {
-                Toast.makeText(this, "Stop stream to change orientation", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            
-            val temp = streamWidth
-            streamWidth = streamHeight
-            streamHeight = temp
-
-            if (rtmpCamera.isOnPreview) {
-                rtmpCamera.stopPreview()
-            }
-            surfaceReady = false
-
-            if (streamWidth > streamHeight) {
-                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                Toast.makeText(this, "Landscape Mode Locked", Toast.LENGTH_SHORT).show()
-            } else {
-                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                Toast.makeText(this, "Portrait Mode Locked", Toast.LENGTH_SHORT).show()
-            }
-        }
         
         findViewById<Button>(R.id.btnToggleComments).setOnClickListener {
             popupSettings.visibility = View.GONE
@@ -382,7 +334,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         findViewById<ImageButton>(R.id.btnLayoutCornerTL).setOnClickListener { cameraLayoutFilter.setRect(0f,0f,0.3f,0.3f); popupSettings.visibility = View.GONE }
         findViewById<ImageButton>(R.id.btnLayoutCornerBR).setOnClickListener { cameraLayoutFilter.setRect(0.7f,0.7f,1f,1f); popupSettings.visibility = View.GONE }
 
-        findViewById<ImageButton>(R.id.btnLiveText).setOnClickListener { popupSettings.visibility = View.GONE; addLiveTextOverlay() }
+        val btnLiveText: ImageButton = findViewById(R.id.btnLiveText)
+        btnLiveText.setOnClickListener { popupSettings.visibility = View.GONE; addLiveTextOverlay() }
         
         findViewById<ImageButton>(R.id.btnRemoveSelected).setOnClickListener { 
             popupSettings.visibility = View.GONE
@@ -396,8 +349,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
             target?.let { 
                 if (it != dragScoreboard) { 
-                    if (it.tag == "LOWER_THIRD") tickerHandler.removeCallbacks(tickerRunnable)
-                    if (it.tag == "WEB_OVERLAY") webSyncHandler.removeCallbacks(webSyncRunnable)
                     if (it is EditText) {
                         it.clearFocus()
                         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
@@ -409,6 +360,58 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     updateSnapshot() 
                 } 
             } 
+        }
+
+        btnMicToggle.setColorFilter(Color.parseColor("#4CAF50"))
+        btnMicToggle.setOnClickListener {
+            if (isAudioMuted) {
+                rtmpCamera.enableAudio()
+                isAudioMuted = false
+                btnMicToggle.setImageResource(R.drawable.ic_mic_on)
+                btnMicToggle.setColorFilter(Color.parseColor("#4CAF50"))
+            } else {
+                rtmpCamera.disableAudio()
+                isAudioMuted = true
+                btnMicToggle.setImageResource(R.drawable.ic_mic_off) 
+                btnMicToggle.setColorFilter(Color.parseColor("#E53935"))
+            }
+        }
+
+        btnSwitchCamera.setOnClickListener {
+            rtmpCamera.switchCamera()
+            if (!rtmpCamera.isStreaming) {
+                try { rtmpCamera.stopPreview(); tryStartCameraPreview() } catch (e: Exception) {}
+            }
+        }
+
+        btnBluetoothMic.setOnClickListener {
+            if (rtmpCamera.isStreaming) { Toast.makeText(this, "Stop the stream before switching mic source.", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) { requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 2); return@setOnClickListener }
+            toggleBluetoothMic(btnBluetoothMic)
+        }
+
+        btnOrientation.setOnClickListener {
+            if (rtmpCamera.isStreaming) {
+                Toast.makeText(this, "Stop stream to change orientation", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            
+            val temp = streamWidth
+            streamWidth = streamHeight
+            streamHeight = temp
+
+            if (rtmpCamera.isOnPreview) {
+                rtmpCamera.stopPreview()
+            }
+            surfaceReady = false
+
+            if (streamWidth > streamHeight) {
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                Toast.makeText(this, "Landscape Mode Locked", Toast.LENGTH_SHORT).show()
+            } else {
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                Toast.makeText(this, "Portrait Mode Locked", Toast.LENGTH_SHORT).show()
+            }
         }
 
         var currentTouchEvent: MotionEvent? = null
@@ -451,6 +454,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
         }
 
+        imageFilterRender = ImageObjectFilterRender()
+
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).requestEmail().requestProfile().requestScopes(Scope("https://www.googleapis.com/auth/youtube")).build()
         googleSignInClient = GoogleSignIn.getClient(this, gso)
         val account = GoogleSignIn.getLastSignedInAccount(this)
@@ -490,8 +495,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         makeStudioPanelDraggable(commentsPanel)
     }
 
-    // --- ORIGINAL CORE METHODS ---
-
     private fun tryStartCameraPreview() {
         if (!surfaceReady || rtmpCamera.isOnPreview) return
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return
@@ -503,19 +506,19 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             listOf(Triple(streamWidth, streamHeight, streamBitrate), Triple(720, 1280, 3_000_000), Triple(480, 854, 1_500_000), Triple(480, 640, 1_000_000))
         
         for (res in fallback) {
-            try { if (rtmpCamera.prepareVideo(res.first, res.second, 30, res.third, 2, 0)) { isSuccess = true; break } } catch (_: Exception) {}
+            try { if (rtmpCamera.prepareVideo(res.first, res.second, 30, res.third, 2, 0)) { isSuccess = true; break } } catch (e: Exception) {}
         }
-        if (!isSuccess) try { isSuccess = rtmpCamera.prepareVideo() } catch (_: Exception) {}
+        if (!isSuccess) try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) {}
 
         var aReady = false
         if (isBluetoothMicActive) {
-            try { aReady = rtmpCamera.prepareAudio(32 * 1024, 16000, false, false, false) } catch (_: Exception) {}
+            try { aReady = rtmpCamera.prepareAudio(32 * 1024, 16000, false, false, false) } catch (e: Exception) {}
         } else {
             val useEchoCanceler = detectedMicRoute == MicRoute.PHONE
-            try { aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, true, useEchoCanceler, true) } catch (_: Exception) {}
-            if (!aReady) try { aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, false, useEchoCanceler, true) } catch (_: Exception) {}
+            try { aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, true, useEchoCanceler, true) } catch (e: Exception) {}
+            if (!aReady) try { aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, false, useEchoCanceler, true) } catch (e: Exception) {}
         }
-        if (!aReady) try { aReady = rtmpCamera.prepareAudio() } catch (_: Exception) {}
+        if (!aReady) try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) {}
 
         if (isSuccess && aReady) {
             cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f)
@@ -575,11 +578,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         coords[0].x = 0f; coords[0].y = 0f
         coords[1].x = pointerDistance; coords[1].y = 0f
         val event = MotionEvent.obtain(now, now, action, 2, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
-        try { rtmpCamera.setZoom(event, delta) } catch (_: Exception) {}
+        try { rtmpCamera.setZoom(event, delta) } catch (e: Exception) {}
         event.recycle()
     }
 
-    // --- BLUETOOTH ORIGINAL ROUTING ---
     private fun registerAudioDeviceMonitoring() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
         audioDeviceCallback = object : AudioDeviceCallback() {
@@ -611,7 +613,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     @SuppressLint("MissingPermission")
-    private fun toggleBluetoothMic() {
+    private fun toggleBluetoothMic(button: ImageButton) {
         if (!isBluetoothMicActive) {
             val btInput = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS).firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && it.type == AudioDeviceInfo.TYPE_BLE_HEADSET) } else null
             if (btInput == null) { Toast.makeText(this, "Bluetooth mic not found.", Toast.LENGTH_SHORT).show(); return }
@@ -623,20 +625,31 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     audioManager.setCommunicationDevice(commDevice)
                     Handler(Looper.getMainLooper()).postDelayed({ updateDetectedMicRoute(false) }, 150)
                 } else {
+                    val receiver = object : android.content.BroadcastReceiver() {
+                        override fun onReceive(context: Context?, intent: Intent?) {
+                            when (intent?.getIntExtra(AudioManager.EXTRA_SCO_AUDIO_STATE, -1)) {
+                                AudioManager.SCO_AUDIO_STATE_CONNECTED -> { scoConnectTimeoutHandler.removeCallbacksAndMessages(null); try { unregisterReceiver(this) } catch (e: Exception) {}; scoStateReceiver = null; restartCameraForAudioChange(150) }
+                                AudioManager.SCO_AUDIO_STATE_DISCONNECTED -> { scoConnectTimeoutHandler.removeCallbacksAndMessages(null); try { unregisterReceiver(this) } catch (e: Exception) {}; scoStateReceiver = null; isBluetoothMicActive = false; bluetoothCommunicationDevice = null; updateDetectedMicRoute(false) }
+                            }
+                        }
+                    }
+                    scoStateReceiver = receiver
+                    registerReceiver(receiver, android.content.IntentFilter(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED))
                     audioManager.startBluetoothSco()
                     audioManager.isBluetoothScoOn = true
+                    scoConnectTimeoutHandler.postDelayed({ scoStateReceiver?.let { try { unregisterReceiver(it) } catch (e: Exception) {}; scoStateReceiver = null; isBluetoothMicActive = false; bluetoothCommunicationDevice = null; try { audioManager.stopBluetoothSco(); audioManager.isBluetoothScoOn = false; audioManager.mode = AudioManager.MODE_NORMAL } catch (e: Exception) {}; updateDetectedMicRoute(false) } }, 8000)
                 }
                 isBluetoothMicActive = true
                 bluetoothCommunicationDevice = btInput
+                button.setColorFilter(Color.parseColor("#4CAF50"))
                 Toast.makeText(this, "Bluetooth mic selected", Toast.LENGTH_SHORT).show()
-                findViewById<ImageButton>(R.id.btnBluetoothMic).setColorFilter(Color.parseColor("#4CAF50"))
                 restartCameraForAudioChange(300)
             } catch (e: Exception) { e.printStackTrace() }
         } else {
             clearBluetoothRoute()
             isBluetoothMicActive = false
             bluetoothCommunicationDevice = null
-            findViewById<ImageButton>(R.id.btnBluetoothMic).clearColorFilter()
+            button.clearColorFilter()
             Toast.makeText(this, "Bluetooth mic off", Toast.LENGTH_SHORT).show()
             restartCameraForAudioChange(250)
         }
@@ -644,6 +657,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     @SuppressLint("MissingPermission")
     private fun clearBluetoothRoute() {
+        scoStateReceiver?.let { try { unregisterReceiver(it) } catch (e: Exception) {} }
+        scoStateReceiver = null
+        scoConnectTimeoutHandler.removeCallbacksAndMessages(null)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 audioManager.clearCommunicationDevice()
@@ -672,7 +688,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (rtmpCamera.isOnPreview) rtmpCamera.stopPreview()
     }
 
-    // --- UTILS & YOUTUBE API ---
     private fun loadQuota() {
         val prefs = getSharedPreferences("MBLivePrefs", Context.MODE_PRIVATE)
         val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
@@ -882,46 +897,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         dialog.show()
     }
 
-    private fun addLiveTextOverlay() {
-        val liveEditText = EditText(this).apply {
-            hint = "Start typing..."
-            setHintTextColor(Color.argb(128, 255, 255, 255))
-            setTextColor(Color.YELLOW)
-            textSize = 30f
-            setTypeface(null, Typeface.BOLD)
-            background = null
-            setShadowLayer(5f, 2f, 2f, Color.BLACK)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            layoutParams = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT).apply { 
-                addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) 
-            }
-            
-            setOnFocusChangeListener { _, hasFocus ->
-                if (!hasFocus && text.toString().trim().isEmpty()) {
-                    overlayContainer.removeView(this)
-                    if (selectedOverlay == this) {
-                        selectedOverlay = null
-                        updateOverlayMenuButtonPosition()
-                    }
-                    updateSnapshot()
-                }
-            }
-
-            addTextChangedListener(object : TextWatcher { 
-                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { updateSnapshot() }
-                override fun afterTextChanged(s: Editable?) {} 
-            })
-        }
-        overlayContainer.addView(liveEditText)
-        makeDraggableAndScalable(liveEditText)
-        selectedOverlay = liveEditText
-        updateOverlayMenuButtonPosition()
-        updateSnapshot()
-        liveEditText.requestFocus()
-        (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(liveEditText, InputMethodManager.SHOW_IMPLICIT)
-    }
-
     private fun showScoreboardDialog() {
         val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(40, 20, 40, 20) }
         val mainInput = EditText(this).apply { hint = "Main Score (IND 245/3)" }
@@ -1107,9 +1082,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }.start()
     }
 
-    private fun startStudioTimer() { liveStartTimeMillis = System.currentTimeMillis(); timerRunning = true; tvLiveTimer.visibility = View.VISIBLE; timerHandler.post(timerRunnable) }
-    private fun stopStudioTimer() { timerRunning = false; timerHandler.removeCallbacksAndMessages(null); tvLiveTimer.visibility = View.GONE; tvLiveTimer.text = "00:00:00" }
-
     private fun stopLiveStream() {
         btnGoLive.isEnabled = false; btnGoLive.text = "STOPPING..."
         Thread {
@@ -1211,9 +1183,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "🔥 YOU ARE LIVE!", Toast.LENGTH_LONG).show(); startStudioTimer() } }
+    
     override fun onConnectionFailed(reason: String) {
         if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { retryCount++; runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }; Thread { Thread.sleep(2000); try { rtmpCamera.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} }.start() } else { runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show(); stopChatPolling(); stopStudioTimer() } }
     }
+    
     override fun onDisconnect() { runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F")); try { rtmpCamera.stopPreview() } catch (e: Exception) {}; tryStartCameraPreview(); stopChatPolling(); stopStudioTimer() } }
     
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) { super.onRequestPermissionsResult(requestCode, permissions, grantResults); tryStartCameraPreview() }
@@ -1236,9 +1210,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onAuthError() {
         runOnUiThread { Toast.makeText(this, "Auth Error", Toast.LENGTH_SHORT).show() }
     }
+    
     override fun onAuthSuccess() {
         runOnUiThread { Toast.makeText(this, "Auth Success", Toast.LENGTH_SHORT).show() }
     }
+    
     override fun onConnectionStarted(url: String) {}
+    
     override fun onNewBitrate(bitrate: Long) {}
 }
