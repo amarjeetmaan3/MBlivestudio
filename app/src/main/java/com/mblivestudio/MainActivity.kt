@@ -128,17 +128,18 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private val MAX_RETRIES = 3
     private var generatedRtmpUrl: String? = null
 
-    // --- DOUBLE BUFFERING FOR OVERLAYS ---
     private val overlayHandler = Handler(Looper.getMainLooper())
     private var pendingRefresh = false
+    private var surfaceReady = false
+
+    // Double Buffering to fix RootEncoder Ghosting issue
     private var bitmapA: Bitmap? = null
     private var canvasA: Canvas? = null
     private var bitmapB: Bitmap? = null
     private var canvasB: Canvas? = null
     private var useBufferA = true
-    private var surfaceReady = false
 
-    // --- Stream Resolution & Bitrate ---
+    // ROCK-SOLID SPORTS BROADCASTING STANDARD (720p, 3 Mbps)
     private var streamWidth = 1280
     private var streamHeight = 720
     private var streamBitrate = 3_000_000
@@ -153,9 +154,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private var youtubeClient: YouTube? = null
     private var currentLiveChatId: String? = null
     private var currentBroadcastId: String? = null
+    
     private var chatNextPageToken: String? = null
     private var chatPollingActive = false
     private val chatHandler = Handler(Looper.getMainLooper())
+    
     private val streamChatHistory = mutableListOf<String>()
 
     private var dailyQuotaUsed = 0
@@ -230,7 +233,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         openGlView.holder.addCallback(this)
         rtmpCamera = RtmpCamera2(openGlView, this)
         imageFilterRender = ImageObjectFilterRender()
-        
+
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         registerAudioDeviceMonitoring()
 
@@ -406,6 +409,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
         }
 
+        // FEATURE 2: BLUETOOTH AUDIO ROUTING
         btnBluetoothMic.clearColorFilter()
         btnBluetoothMic.setOnClickListener {
             if (rtmpCamera.isStreaming) { Toast.makeText(this, "Stop the stream before switching mic source.", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
@@ -547,7 +551,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (showToast && changed) Toast.makeText(this, "Mic: $route", Toast.LENGTH_SHORT).show()
     }
 
-    // FEATURE 2: BLUETOOTH AUDIO ROUTING (FIXED TIMEOUT)
     @SuppressLint("MissingPermission")
     private fun toggleBluetoothMic(button: ImageButton) {
         if (!isBluetoothMicActive) {
