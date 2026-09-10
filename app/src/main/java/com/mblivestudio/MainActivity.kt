@@ -321,58 +321,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val btnMicToggle: ImageButton = findViewById(R.id.btnMicToggle)
         val btnBluetoothMic: ImageButton = findViewById(R.id.btnBluetoothMic)
         val btnOrientation: ImageButton = findViewById(R.id.btnOrientation)
-
-        // Init colors
-        btnMicToggle.setColorFilter(Color.parseColor("#4CAF50")) // Mic Green initially
-        setBluetoothButtonColor(false) // BT Red initially
-        
-        btnMicToggle.setOnClickListener {
-            if (isAudioMuted) {
-                rtmpCamera.enableAudio()
-                isAudioMuted = false
-                btnMicToggle.setImageResource(R.drawable.ic_mic_on)
-                btnMicToggle.setColorFilter(Color.parseColor("#4CAF50"))
-            } else {
-                rtmpCamera.disableAudio()
-                isAudioMuted = true
-                btnMicToggle.setImageResource(R.drawable.ic_mic_off) 
-                btnMicToggle.setColorFilter(Color.parseColor("#E53935"))
-            }
-        }
-
-        btnBluetoothMic.setOnClickListener {
-            if (rtmpCamera.isStreaming) { Toast.makeText(this, "Stop stream before switching mic.", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) { requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 2); return@setOnClickListener }
-            toggleBluetoothMic()
-        }
-
-        btnSwitchCamera.setOnClickListener {
-            rtmpCamera.switchCamera()
-            if (!rtmpCamera.isStreaming) {
-                try { rtmpCamera.stopPreview(); tryStartCameraPreview() } catch (e: Exception) {}
-            }
-        }
-
-        btnOrientation.setOnClickListener {
-            if (rtmpCamera.isStreaming) {
-                Toast.makeText(this, "Stop stream to change orientation", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            val temp = streamWidth
-            streamWidth = streamHeight
-            streamHeight = temp
-
-            if (rtmpCamera.isOnPreview) rtmpCamera.stopPreview()
-            surfaceReady = false
-
-            if (streamWidth > streamHeight) {
-                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                Toast.makeText(this, "Landscape Mode Locked", Toast.LENGTH_SHORT).show()
-            } else {
-                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                Toast.makeText(this, "Portrait Mode Locked", Toast.LENGTH_SHORT).show()
-            }
-        }
         
         findViewById<Button>(R.id.btnToggleComments).setOnClickListener {
             popupSettings.visibility = View.GONE
@@ -415,6 +363,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     target = focusView
                 }
             }
+
             target?.let { 
                 if (it != dragScoreboard) { 
                     if (it.tag == "LOWER_THIRD") tickerHandler.removeCallbacks(tickerRunnable)
@@ -430,6 +379,61 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     updateSnapshot() 
                 } 
             } 
+        }
+
+        // MIC LOGIC: Green when ON, Red when OFF
+        btnMicToggle.setColorFilter(Color.parseColor("#4CAF50"))
+        btnMicToggle.setOnClickListener {
+            if (isAudioMuted) {
+                rtmpCamera.enableAudio()
+                isAudioMuted = false
+                btnMicToggle.setImageResource(R.drawable.ic_mic_on)
+                btnMicToggle.setColorFilter(Color.parseColor("#4CAF50"))
+            } else {
+                rtmpCamera.disableAudio()
+                isAudioMuted = true
+                btnMicToggle.setImageResource(R.drawable.ic_mic_off) 
+                btnMicToggle.setColorFilter(Color.parseColor("#E53935"))
+            }
+        }
+
+        btnSwitchCamera.setOnClickListener {
+            rtmpCamera.switchCamera()
+            if (!rtmpCamera.isStreaming) {
+                try { rtmpCamera.stopPreview(); tryStartCameraPreview() } catch (e: Exception) {}
+            }
+        }
+
+        // BLUETOOTH LOGIC: Default/Clear when OFF, Green when ON
+        btnBluetoothMic.clearColorFilter()
+        btnBluetoothMic.setOnClickListener {
+            if (rtmpCamera.isStreaming) { Toast.makeText(this, "Stop the stream before switching mic source.", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) { requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 2); return@setOnClickListener }
+            toggleBluetoothMic(btnBluetoothMic)
+        }
+
+        btnOrientation.setOnClickListener {
+            if (rtmpCamera.isStreaming) {
+                Toast.makeText(this, "Stop stream to change orientation", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            
+            val temp = streamWidth
+            streamWidth = streamHeight
+            streamHeight = temp
+
+            if (rtmpCamera.isOnPreview) {
+                rtmpCamera.stopPreview()
+            }
+            surfaceReady = false
+
+            if (streamWidth > streamHeight) {
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                Toast.makeText(this, "Landscape Mode Locked", Toast.LENGTH_SHORT).show()
+            } else {
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                Toast.makeText(this, "Portrait Mode Locked", Toast.LENGTH_SHORT).show()
+            }
         }
 
         var currentTouchEvent: MotionEvent? = null
@@ -510,18 +514,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         makeStudioPanelDraggable(commentsPanel)
     }
 
-    // --- BLUETOOTH RED/GREEN COLOR FIX ---
-    private fun setBluetoothButtonColor(isActive: Boolean) {
-        runOnUiThread {
-            val btn = findViewById<ImageButton>(R.id.btnBluetoothMic)
-            if (isActive) {
-                btn.setColorFilter(Color.parseColor("#4CAF50")) // Green
-            } else {
-                btn.setColorFilter(Color.parseColor("#E53935")) // Red
-            }
-        }
-    }
-
     private fun registerAudioDeviceMonitoring() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
         audioDeviceCallback = object : AudioDeviceCallback() {
@@ -553,7 +545,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     @SuppressLint("MissingPermission")
-    private fun toggleBluetoothMic() {
+    private fun toggleBluetoothMic(button: ImageButton) {
         if (!isBluetoothMicActive) {
             val btInput = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS).firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && it.type == AudioDeviceInfo.TYPE_BLE_HEADSET) } else null
             if (btInput == null) { Toast.makeText(this, "Bluetooth mic not found.", Toast.LENGTH_SHORT).show(); return }
@@ -569,7 +561,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                         override fun onReceive(context: Context?, intent: Intent?) {
                             when (intent?.getIntExtra(AudioManager.EXTRA_SCO_AUDIO_STATE, -1)) {
                                 AudioManager.SCO_AUDIO_STATE_CONNECTED -> { scoConnectTimeoutHandler.removeCallbacksAndMessages(null); try { unregisterReceiver(this) } catch (e: Exception) {}; scoStateReceiver = null; restartCameraForAudioChange(150) }
-                                AudioManager.SCO_AUDIO_STATE_DISCONNECTED -> { scoConnectTimeoutHandler.removeCallbacksAndMessages(null); try { unregisterReceiver(this) } catch (e: Exception) {}; scoStateReceiver = null; isBluetoothMicActive = false; bluetoothCommunicationDevice = null; updateDetectedMicRoute(false); setBluetoothButtonColor(false) }
+                                AudioManager.SCO_AUDIO_STATE_DISCONNECTED -> { scoConnectTimeoutHandler.removeCallbacksAndMessages(null); try { unregisterReceiver(this) } catch (e: Exception) {}; scoStateReceiver = null; isBluetoothMicActive = false; bluetoothCommunicationDevice = null; updateDetectedMicRoute(false); findViewById<ImageButton>(R.id.btnBluetoothMic).clearColorFilter() }
                             }
                         }
                     }
@@ -577,11 +569,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     registerReceiver(receiver, android.content.IntentFilter(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED))
                     audioManager.startBluetoothSco()
                     audioManager.isBluetoothScoOn = true
-                    scoConnectTimeoutHandler.postDelayed({ scoStateReceiver?.let { try { unregisterReceiver(it) } catch (e: Exception) {}; scoStateReceiver = null; isBluetoothMicActive = false; bluetoothCommunicationDevice = null; try { audioManager.stopBluetoothSco(); audioManager.isBluetoothScoOn = false; audioManager.mode = AudioManager.MODE_NORMAL } catch (e: Exception) {}; updateDetectedMicRoute(false); setBluetoothButtonColor(false) } }, 8000)
+                    scoConnectTimeoutHandler.postDelayed({ scoStateReceiver?.let { try { unregisterReceiver(it) } catch (e: Exception) {}; scoStateReceiver = null; isBluetoothMicActive = false; bluetoothCommunicationDevice = null; try { audioManager.stopBluetoothSco(); audioManager.isBluetoothScoOn = false; audioManager.mode = AudioManager.MODE_NORMAL } catch (e: Exception) {}; updateDetectedMicRoute(false); findViewById<ImageButton>(R.id.btnBluetoothMic).clearColorFilter() } }, 8000)
                 }
                 isBluetoothMicActive = true
                 bluetoothCommunicationDevice = btInput
-                setBluetoothButtonColor(true)
+                button.setColorFilter(Color.parseColor("#4CAF50"))
                 Toast.makeText(this, "Bluetooth mic selected", Toast.LENGTH_SHORT).show()
                 restartCameraForAudioChange(300)
             } catch (e: Exception) { e.printStackTrace() }
@@ -589,7 +581,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             clearBluetoothRoute()
             isBluetoothMicActive = false
             bluetoothCommunicationDevice = null
-            setBluetoothButtonColor(false)
+            button.clearColorFilter()
             Toast.makeText(this, "Bluetooth mic off", Toast.LENGTH_SHORT).show()
             restartCameraForAudioChange(250)
         }
@@ -609,7 +601,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
             audioManager.mode = AudioManager.MODE_NORMAL
         } catch (e: Exception) {}
-        setBluetoothButtonColor(false)
+        findViewById<ImageButton>(R.id.btnBluetoothMic).clearColorFilter()
     }
 
     private fun restartCameraForAudioChange(delayMs: Long) {
