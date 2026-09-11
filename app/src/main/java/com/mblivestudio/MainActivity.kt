@@ -386,25 +386,32 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             } 
         }
 
-     // FEATURE 1: ADVANCED MIC TOGGLE (Icon Color Only)
-        // पुराने किसी भी फिल्टर को साफ करें और सही Tint सेट करें
+     // FEATURE 1: ADVANCED MIC TOGGLE - BULLETPROOF METHOD
+        // इमेजेज को सुरक्षित तरीके से लोड करें
+        val micOnDrawable = androidx.core.content.ContextCompat.getDrawable(this, R.drawable.ic_mic_on)
+        val micOffDrawable = androidx.core.content.ContextCompat.getDrawable(this, R.drawable.ic_mic_off)
+
+        // पुराने सभी फिल्टर्स साफ़ करें
         btnMicToggle.clearColorFilter()
-        btnMicToggle.setImageResource(R.drawable.ic_mic_on)
-        btnMicToggle.imageTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#4CAF50"))
-        
+        btnMicToggle.imageTintList = null
+
+        // डिफ़ॉल्ट ON स्टेट सेट करें
+        btnMicToggle.setImageDrawable(micOnDrawable)
+        btnMicToggle.setColorFilter(android.graphics.Color.parseColor("#4CAF50"))
+
         btnMicToggle.setOnClickListener {
             if (isAudioMuted) {
-                // MIC ON (Green Icon)
+                // MIC ON (हरा रंग)
                 rtmpCamera.enableAudio()
                 isAudioMuted = false
-                btnMicToggle.setImageResource(R.drawable.ic_mic_on)
-                btnMicToggle.imageTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#4CAF50"))
+                btnMicToggle.setImageDrawable(micOnDrawable)
+                btnMicToggle.setColorFilter(android.graphics.Color.parseColor("#4CAF50"))
             } else {
-                // MIC OFF (Red Icon)
+                // MIC OFF (लाल रंग)
                 rtmpCamera.disableAudio()
                 isAudioMuted = true
-                btnMicToggle.setImageResource(R.drawable.ic_mic_off)
-                btnMicToggle.imageTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#E53935"))
+                btnMicToggle.setImageDrawable(micOffDrawable)
+                btnMicToggle.setColorFilter(android.graphics.Color.parseColor("#E53935"))
             }
         }
 
