@@ -386,32 +386,25 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             } 
         }
 
-     // FEATURE 1: ADVANCED MIC TOGGLE - BULLETPROOF METHOD
-        // इमेजेज को सुरक्षित तरीके से लोड करें
-        val micOnDrawable = androidx.core.content.ContextCompat.getDrawable(this, R.drawable.ic_mic_on)
-        val micOffDrawable = androidx.core.content.ContextCompat.getDrawable(this, R.drawable.ic_mic_off)
-
-        // पुराने सभी फिल्टर्स साफ़ करें
+     // FEATURE 1: ADVANCED MIC TOGGLE - NATIVE METHOD
+        // पुराने सभी कलर फ़िल्टर साफ़ करें ताकि वे आइकॉन को गायब न करें
         btnMicToggle.clearColorFilter()
         btnMicToggle.imageTintList = null
 
-        // डिफ़ॉल्ट ON स्टेट सेट करें
-        btnMicToggle.setImageDrawable(micOnDrawable)
-        btnMicToggle.setColorFilter(android.graphics.Color.parseColor("#4CAF50"))
+        // नेटिव getDrawable() का इस्तेमाल करें जो बिना AndroidX के 100% काम करेगा
+        btnMicToggle.setImageDrawable(getDrawable(R.drawable.ic_mic_on))
 
         btnMicToggle.setOnClickListener {
             if (isAudioMuted) {
-                // MIC ON (हरा रंग)
+                // MIC ON (XML फ़ाइल से डिफ़ॉल्ट रूप से हरा रंग आएगा)
                 rtmpCamera.enableAudio()
                 isAudioMuted = false
-                btnMicToggle.setImageDrawable(micOnDrawable)
-                btnMicToggle.setColorFilter(android.graphics.Color.parseColor("#4CAF50"))
+                btnMicToggle.setImageDrawable(getDrawable(R.drawable.ic_mic_on))
             } else {
-                // MIC OFF (लाल रंग)
+                // MIC OFF (XML फ़ाइल से डिफ़ॉल्ट रूप से लाल रंग आएगा)
                 rtmpCamera.disableAudio()
                 isAudioMuted = true
-                btnMicToggle.setImageDrawable(micOffDrawable)
-                btnMicToggle.setColorFilter(android.graphics.Color.parseColor("#E53935"))
+                btnMicToggle.setImageDrawable(getDrawable(R.drawable.ic_mic_off))
             }
         }
 
