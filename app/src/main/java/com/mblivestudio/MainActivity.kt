@@ -103,6 +103,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private val cropFrameViews = mutableListOf<View>()
 
     private var selectedOverlay: View? = null
+    private var selectedChannelId: String? = null
     
     // --- Audio & Bluetooth Controls ---
     private var isAudioMuted = false
@@ -1381,23 +1382,97 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 }
                 
                 // 3. Google Sign-In Result
-                SIGN_IN_REQUEST -> {
-                    val task = com.google.android.gms.auth.api.signin.GoogleSignIn.getSignedInAccountFromIntent(data)
-                    try {
-                        val account = task.getResult(com.google.android.gms.common.api.ApiException::class.java)
-                        connectedAccountEmail = account?.email
-                        if (account != null) {
-                            applyAccountToHeader(account)
-                        }
-                        Toast.makeText(this, "Signed in as ${account?.email}", Toast.LENGTH_SHORT).show()
-                    } catch (e: com.google.android.gms.common.api.ApiException) {
-                        e.printStackTrace()
-                        Toast.makeText(this, "Sign-in failed", Toast.LENGTH_SHORT).show()
+               SIGN_IN_REQUEST -> {
+    val task = com.google.android.gms.auth.api.signin.GoogleSignIn.getSignedInAccountFromIntent(data)
+    try {
+        val account = task.getResult(com.google.android.gms.common.api.ApiException::class.java)
+        connectedAccountEmail = account?.email
+        if (account != null) {
+            // नया बदलाव: सीधे लॉगिन की जगह पहले चैनल फेच करेगा
+            fetchAndSelectYouTubeChannel(account)
+        }
+    } catch (e: com.google.android.gms.common.api.ApiException) {
+        e.printStackTrace()
+        Toast.makeText(this, "Sign-in failed", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
         }
     }
+
+private fun fetchAndSelectYouTubeChannel(account: com.google.android.gms.auth.api.signin.GoogleSignInAccount) {
+    Toast.makeText(this, "Fetching channels...", Toast.LENGTH_SHORT).show()
+    Thread {
+        try {
+            val credential = GoogleAccountCredential.usingOAuth2(
+                this@MainActivity,
+                listOf("https://www.googleapis.com/auth/youtube")
+            )
+            credential.selectedAccount = account.account
+
+            val youtube = YouTube.Builder(
+                NetHttpTransport(), GsonFactory.getDefaultInstance(), credential
+            ).setApplicationName("MBLiveStudio").build()
+
+            // YouTube Data API कॉल
+            val request = youtube.channels().list("snippet")
+            request.mine = true
+            val response = request.execute()
+            val channels = response.items
+
+            runOnUiThread {
+                if (channels.isNullOrEmpty()) {
+                    Toast.makeText(this@MainActivity, "No channels found!", Toast.LENGTH_SHORT).show()
+                    applyAccountToHeader(account)
+                    return@runOnUiThread
+                }
+
+                if (channels.size == 1) {
+                    // सिर्फ एक चैनल है, सीधा सेलेक्ट करें
+                    selectedChannelId = channels[0].id
+                    loadCustomProfilePhoto(channels[0].snippet.thumbnails.default.url)
+                    Toast.makeText(this@MainActivity, "Logged in as ${channels[0].snippet.title}", Toast.LENGTH_SHORT).show()
+                } else {
+                    // एक से ज़्यादा चैनल हैं, डायलॉग (Picker) दिखाएं
+                    val channelNames = channels.map { it.snippet.title }.toTypedArray()
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Select YouTube Channel")
+                        .setItems(channelNames) { _, which ->
+                            val selectedChannel = channels[which]
+                            selectedChannelId = selectedChannel.id
+                            
+                            // चुने हुए चैनल का लोगो लगाएं
+                            loadCustomProfilePhoto(selectedChannel.snippet.thumbnails.default.url)
+                            Toast.makeText(this@MainActivity, "Selected: ${selectedChannel.snippet.title}", Toast.LENGTH_SHORT).show()
+                        }
+                        .setCancelable(false) // बिना सेलेक्ट किए बंद न होने दें
+                        .show()
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            runOnUiThread { 
+                Toast.makeText(this@MainActivity, "Error fetching channels", Toast.LENGTH_SHORT).show()
+                applyAccountToHeader(account) // Fallback
+            }
+        }
+    }.start()
+}
+
+// चैनल का कस्टम लोगो लोड करने के लिए हेल्पर
+private fun loadCustomProfilePhoto(url: String) {
+    Thread {
+        try {
+            val input = java.net.URL(url).openStream()
+            val bmp = BitmapFactory.decodeStream(input)
+            input.close()
+            val circular = cropToCircle(bmp)
+            runOnUiThread { findViewById<ImageView>(R.id.ivProfilePhoto).setImageBitmap(circular) }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }.start()
+}
     
     override fun onDestroy() {
         super.onDestroy()
