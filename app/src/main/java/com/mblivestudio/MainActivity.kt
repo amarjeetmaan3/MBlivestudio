@@ -390,17 +390,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnMicToggle.setImageResource(R.drawable.ic_mic_on)
 
         btnMicToggle.setOnClickListener {
-            if (isAudioMuted) {
-                // MIC ON 
-                rtmpCamera.enableAudio()
-                isAudioMuted = false
-                btnMicToggle.setImageResource(R.drawable.ic_mic_on)
-            } else {
-                // MIC OFF 
-                rtmpCamera.disableAudio()
-                isAudioMuted = true
-                btnMicToggle.setImageResource(R.drawable.ic_mic_off)
-            }
+    if (isAudioMuted) {
+        rtmpCamera.enableAudio()
+        isAudioMuted = false
+        btnMicToggle.setImageResource(R.drawable.ic_mic_on)
+    } else {
+        rtmpCamera.disableAudio()
+        isAudioMuted = true
+        // Sirf test ke liye ON icon yahan bhi lagao
+        btnMicToggle.setImageResource(R.drawable.ic_mic_on) 
+    }
         }
 
         btnSwitchCamera.setOnClickListener {
