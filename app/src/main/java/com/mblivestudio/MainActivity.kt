@@ -231,7 +231,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         openGlView = findViewById(R.id.surfaceView)
         openGlView.holder.addCallback(this)
-        rtmpCamera = RtmpCamera2(openGlView, this)
+        rtmpCamera = RtmpCamera2(this, this) // headless — अब किसी View से बंधा नहीं
         imageFilterRender = ImageObjectFilterRender()
 
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
