@@ -387,20 +387,20 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
 
      // FEATURE 1: ADVANCED MIC TOGGLE (Icon Color Only)
-        btnMicToggle.setColorFilter(Color.parseColor("#4CAF50"), android.graphics.PorterDuff.Mode.SRC_IN)
+        // शुरुआत में डिफ़ॉल्ट रूप से हरे रंग का (ON) आइकॉन सेट करें
+        btnMicToggle.setImageResource(R.drawable.ic_mic_on) 
+        
         btnMicToggle.setOnClickListener {
             if (isAudioMuted) {
-                // MIC ON (Green Icon)
+                // MIC ON (Green Icon XML से आएगा)
                 rtmpCamera.enableAudio()
                 isAudioMuted = false
                 btnMicToggle.setImageResource(R.drawable.ic_mic_on)
-                btnMicToggle.setColorFilter(Color.parseColor("#4CAF50"), android.graphics.PorterDuff.Mode.SRC_IN)
             } else {
-                // MIC OFF (Red Icon)
+                // MIC OFF (Red Icon XML से आएगा)
                 rtmpCamera.disableAudio()
                 isAudioMuted = true
                 btnMicToggle.setImageResource(R.drawable.ic_mic_off) 
-                btnMicToggle.setColorFilter(Color.parseColor("#E53935"), android.graphics.PorterDuff.Mode.SRC_IN)
             }
         }
 
