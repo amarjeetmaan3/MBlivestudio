@@ -386,25 +386,20 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             } 
         }
 
-     // FEATURE 1: ADVANCED MIC TOGGLE - NATIVE METHOD
-        // पुराने सभी कलर फ़िल्टर साफ़ करें ताकि वे आइकॉन को गायब न करें
-        btnMicToggle.clearColorFilter()
-        btnMicToggle.imageTintList = null
-
-        // नेटिव getDrawable() का इस्तेमाल करें जो बिना AndroidX के 100% काम करेगा
-        btnMicToggle.setImageDrawable(getDrawable(R.drawable.ic_mic_on))
+     // FEATURE 1: ADVANCED MIC TOGGLE
+        btnMicToggle.setImageResource(R.drawable.ic_mic_on)
 
         btnMicToggle.setOnClickListener {
             if (isAudioMuted) {
-                // MIC ON (XML फ़ाइल से डिफ़ॉल्ट रूप से हरा रंग आएगा)
+                // MIC ON 
                 rtmpCamera.enableAudio()
                 isAudioMuted = false
-                btnMicToggle.setImageDrawable(getDrawable(R.drawable.ic_mic_on))
+                btnMicToggle.setImageResource(R.drawable.ic_mic_on)
             } else {
-                // MIC OFF (XML फ़ाइल से डिफ़ॉल्ट रूप से लाल रंग आएगा)
+                // MIC OFF 
                 rtmpCamera.disableAudio()
                 isAudioMuted = true
-                btnMicToggle.setImageDrawable(getDrawable(R.drawable.ic_mic_off))
+                btnMicToggle.setImageResource(R.drawable.ic_mic_off)
             }
         }
 
