@@ -1030,7 +1030,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 val webView = WebView(this).apply {
                     tag = "WEB_OVERLAY"
                     layoutParams = RelativeLayout.LayoutParams(boxWidth, boxHeight).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) }
-                    setBackgroundColor(Color.TRANSPARENT); setLayerType(View.LAYER_TYPE_SOFTWARE, null); settings.javaScriptEnabled = true; settings.domStorageEnabled = true; settings.useWideViewPort = true; settings.loadWithOverviewMode = true; webViewClient = WebViewClient(); webChromeClient = WebChromeClient(); loadUrl(finalUrl)
+                    setBackgroundColor(Color.TRANSPARENT); settings.javaScriptEnabled = true; settings.domStorageEnabled = true; settings.useWideViewPort = true; settings.loadWithOverviewMode = true; webViewClient = WebViewClient(); webChromeClient = WebChromeClient(); loadUrl(finalUrl)
                 }
                 overlayContainer.addView(webView); makeDraggableAndScalable(webView); selectedOverlay = webView; updateOverlayMenuButtonPosition(); 
                 
