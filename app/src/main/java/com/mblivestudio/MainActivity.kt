@@ -1322,6 +1322,51 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onDisconnect() { StreamingService.stop(this@MainActivity); runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F")); try { rtmpCamera.stopPreview() } catch (e: Exception) {}; tryStartCameraPreview(); stopChatPolling(); stopStudioTimer() } }
     
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) { super.onRequestPermissionsResult(requestCode, permissions, grantResults); tryStartCameraPreview() }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        
+        if (resultCode == Activity.RESULT_OK && data != null) {
+            when (requestCode) {
+                // 1. Add Logo / Photo Overlay
+                PICK_IMAGE_REQUEST -> {
+                    try {
+                        val imageUri = data.data
+                        if (imageUri != null) {
+                            val inputStream = contentResolver.openInputStream(imageUri)
+                            val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+                            addImageOverlayToScreen(bitmap) 
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        Toast.makeText(this, "Failed to load image", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                
+                // 2. YouTube Thumbnail Picker
+                PICK_THUMBNAIL_REQUEST -> {
+                    pendingThumbnailUri = data.data
+                    thumbnailPreviewImageView?.setImageURI(pendingThumbnailUri)
+                }
+                
+                // 3. Google Sign-In Result
+                SIGN_IN_REQUEST -> {
+                    val task = com.google.android.gms.auth.api.signin.GoogleSignIn.getSignedInAccountFromIntent(data)
+                    try {
+                        val account = task.getResult(com.google.android.gms.common.api.ApiException::class.java)
+                        connectedAccountEmail = account?.email
+                        if (account != null) {
+                            applyAccountToHeader(account)
+                        }
+                        Toast.makeText(this, "Signed in as ${account?.email}", Toast.LENGTH_SHORT).show()
+                    } catch (e: com.google.android.gms.common.api.ApiException) {
+                        e.printStackTrace()
+                        Toast.makeText(this, "Sign-in failed", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
     
     override fun onDestroy() {
         super.onDestroy()
