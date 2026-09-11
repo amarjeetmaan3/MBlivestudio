@@ -682,6 +682,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             imageFilterRender.setScale(100f, 100f)
             imageFilterRender.setPosition(0f, 0f)
             rtmpCamera.glInterface.addFilter(imageFilterRender)
+            rtmpCamera.replaceView(openGlView)   // ← नई लाइन
             rtmpCamera.startPreview()
             updateSnapshot(1000)
         } else {
@@ -745,8 +746,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     override fun surfaceCreated(holder: SurfaceHolder) {}
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-        surfaceReady = true
+    surfaceReady = true
+    if (rtmpCamera.isOnPreview) {
+        try { rtmpCamera.replaceView(openGlView) } catch (e: Exception) {}
+    } else {
         tryStartCameraPreview()
+    }
     }
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         surfaceReady = false
