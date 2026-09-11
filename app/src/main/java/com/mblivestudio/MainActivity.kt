@@ -1026,17 +1026,48 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             val url = input.text.toString().trim()
             if (url.isNotEmpty()) {
                 val finalUrl = if (!url.startsWith("http")) "https://$url" else url
-                val displayMetrics = resources.displayMetrics; val boxWidth = (displayMetrics.widthPixels * 0.85).toInt(); val boxHeight = (displayMetrics.heightPixels * 0.85).toInt()
+                val displayMetrics = resources.displayMetrics
+                val boxWidth = (displayMetrics.widthPixels * 0.85).toInt()
+                val boxHeight = (displayMetrics.heightPixels * 0.85).toInt()
+                
                 val webView = WebView(this).apply {
                     tag = "WEB_OVERLAY"
-                    layoutParams = RelativeLayout.LayoutParams(boxWidth, boxHeight).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) }
-                    setBackgroundColor(Color.TRANSPARENT); settings.javaScriptEnabled = true; settings.domStorageEnabled = true; settings.useWideViewPort = true; settings.loadWithOverviewMode = true; webViewClient = WebViewClient(); webChromeClient = WebChromeClient(); loadUrl(finalUrl)
+                    layoutParams = RelativeLayout.LayoutParams(boxWidth, boxHeight).apply { 
+                        addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) 
+                    }
+                    
+                    setBackgroundColor(Color.TRANSPARENT)
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.useWideViewPort = true
+                    settings.loadWithOverviewMode = true
+                    
+                    // नया लॉजिक: शुरुआत में इसे पूरी तरह अदृश्य (Invisible) रखें
+                    alpha = 0f 
+                    
+                    webChromeClient = WebChromeClient()
+                    
+                    // नया लॉजिक: पेज पूरा लोड होने के बाद ही इसे स्मूथली स्क्रीन पर लाएं
+                    webViewClient = object : WebViewClient() {
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            super.onPageFinished(view, url)
+                            view?.animate()
+                                ?.alpha(1f)
+                                ?.setDuration(500) // 500ms का स्मूथ फेड-इन
+                                ?.setUpdateListener { updateSnapshot(0) }
+                                ?.start()
+                        }
+                    }
+                    
+                    loadUrl(finalUrl)
                 }
-                overlayContainer.addView(webView); makeDraggableAndScalable(webView); selectedOverlay = webView; updateOverlayMenuButtonPosition(); 
+                
+                overlayContainer.addView(webView)
+                makeDraggableAndScalable(webView)
+                selectedOverlay = webView
+                updateOverlayMenuButtonPosition() 
                 
                 webSyncHandler.post(webSyncRunnable)
-                
-                overlayHandler.postDelayed({ updateSnapshot() }, 2000)
             }
         }.setNegativeButton("Cancel", null).show()
     }
