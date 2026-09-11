@@ -398,7 +398,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         rtmpCamera.disableAudio()
         isAudioMuted = true
         // Sirf test ke liye ON icon yahan bhi lagao
-        btnMicToggle.setImageResource(R.drawable.ic_mic_on) 
+        btnMicToggle.setImageResource(R.drawable.ic_mic_off) 
     }
         }
 
