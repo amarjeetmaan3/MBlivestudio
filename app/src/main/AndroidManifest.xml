@@ -1,54 +1,57 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    
-    <!-- Internet & Network -->
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.mblivestudio">
 
-    <!-- Camera & Audio Recording -->
+    <!-- ज़रूरी परमिशन्स (Permissions) -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    
-    <!-- CRITICAL FIX: Required to shift audio from Phone Mic to Bluetooth Mic -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-
-    <!-- Bluetooth permissions for older Android versions (Android 11 and below) -->
-    <uses-permission android:name="android.permission.BLUETOOTH" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
-    
-    <!-- Bluetooth permission for new Android versions (Android 12+) -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-
-    <!-- NEW: Background/lock-screen streaming via StreamingService -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    
+
+    <!-- कैमरा हार्डवेयर की रिक्वायरमेंट -->
+    <uses-feature android:name="android.hardware.camera" android:required="true" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+
     <application
         android:allowBackup="true"
-        android:icon="@drawable/app_logo"
-        android:roundIcon="@drawable/app_logo"
+        android:icon="@mipmap/ic_launcher"
         android:label="M.B. Live Studio"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar">
-        
-        <!-- configChanges ensures the stream does NOT stop when auto-rotating the phone -->
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.AppCompat.NoActionBar"
+        android:usesCleartextTraffic="true">
+
+        <!-- MAIN ACTIVITY -->
         <activity
             android:name=".MainActivity"
-            android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:screenOrientation="landscape">
+            
+            <!-- ऐप को होम स्क्रीन से खोलने वाला डिफ़ॉल्ट इंटेंट -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- नया इंटेंट: Chrome से YouTube लॉगिन के बाद ऐप में वापस आने के लिए -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" android:host="localhost" />
+            </intent-filter>
         </activity>
 
-        <!-- NEW: Foreground service that keeps streaming alive when locked/backgrounded -->
-        <service
+        <!-- बैकग्राउंड में लाइव स्ट्रीम चालू रखने वाली सर्विस -->
+        <service 
             android:name=".StreamingService"
-            android:foregroundServiceType="camera|microphone"
-            android:exported="false" />
-        
+            android:exported="false"
+            android:foregroundServiceType="camera|microphone" />
+
     </application>
 </manifest>
