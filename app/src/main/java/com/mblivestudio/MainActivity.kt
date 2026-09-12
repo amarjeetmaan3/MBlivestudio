@@ -1019,7 +1019,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         AlertDialog.Builder(this).setTitle("Update Scoreboard").setView(layout).setPositiveButton("Show") { _, _ -> scoreMainText.text = mainInput.text.toString(); scoreSubText.text = subInput.text.toString(); dragScoreboard.visibility = View.VISIBLE; updateSnapshot() }.setNegativeButton("Cancel", null).show()
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
+   @SuppressLint("SetJavaScriptEnabled")
     private fun showAddWebDialog() {
         val input = EditText(this).apply { hint = "https://..." }
         AlertDialog.Builder(this).setTitle("Add Web Overlay").setView(input).setPositiveButton("Add") { _, _ ->
@@ -1036,11 +1036,24 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                         addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) 
                     }
                     
+                    // --- ओवरले फिक्स सेटिंग्स ---
                     setBackgroundColor(Color.TRANSPARENT)
-                    settings.javaScriptEnabled = true
-                    settings.domStorageEnabled = true
-                    settings.useWideViewPort = true
-                    settings.loadWithOverviewMode = true
+                    setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                    
+                    isVerticalScrollBarEnabled = false
+                    isHorizontalScrollBarEnabled = false
+                    
+                    settings.apply {
+                        javaScriptEnabled = true
+                        domStorageEnabled = true
+                        useWideViewPort = true
+                        loadWithOverviewMode = true
+                        textZoom = 100 // सिस्टम फॉन्ट को 100% पर लॉक करने के लिए
+                        setSupportZoom(false)
+                        builtInZoomControls = false
+                        displayZoomControls = false
+                    }
+                    // ---------------------------
                     
                     // नया लॉजिक: शुरुआत में इसे पूरी तरह अदृश्य (Invisible) रखें
                     alpha = 0f 
