@@ -1410,7 +1410,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     // NEW: launches Android's native Google account picker (uses accounts already
     // logged into the device — no email/password typing, no WebView).
     private fun startNativeGoogleSignIn() {
-        startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST)
+        // NEW: sign out first, every time, so Google always shows the account picker
+        // (and re-confirms the YouTube permission) instead of silently reusing whatever
+        // account/session was cached before — this is what was causing it to always
+        // jump straight back into the same old account with no picker and no channels.
+        googleSignInClient.signOut().addOnCompleteListener {
+            startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST)
+        }
     }
 
     // NEW: replaces the old WebView + fetchChannelDetails() flow. Gets a real OAuth
@@ -1454,6 +1460,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                             .show()
                     }
                 }
+            } catch (e: com.google.android.gms.auth.UserRecoverableAuthException) {
+                e.printStackTrace()
+                myAccessToken = null
+                runOnUiThread { Toast.makeText(this@MainActivity, "Please tap Login again and approve the YouTube permission screen.", Toast.LENGTH_LONG).show() }
             } catch (e: Exception) {
                 e.printStackTrace()
                 myAccessToken = null
