@@ -1019,7 +1019,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         AlertDialog.Builder(this).setTitle("Update Scoreboard").setView(layout).setPositiveButton("Show") { _, _ -> scoreMainText.text = mainInput.text.toString(); scoreSubText.text = subInput.text.toString(); dragScoreboard.visibility = View.VISIBLE; updateSnapshot() }.setNegativeButton("Cancel", null).show()
     }
 
- @SuppressLint("SetJavaScriptEnabled")
+@SuppressLint("SetJavaScriptEnabled")
     private fun showAddWebDialog() {
         val input = EditText(this).apply { hint = "https://..." }
         AlertDialog.Builder(this).setTitle("Add Web Overlay").setView(input).setPositiveButton("Add") { _, _ ->
@@ -1027,19 +1027,17 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             if (url.isNotEmpty()) {
                 val finalUrl = if (!url.startsWith("http")) "https://$url" else url
                 
-                // 1. OBS Studio लॉजिक: वेबपेज को पूरा 1920x1080 (Full HD) कैनवस दें
+                // 1. OBS Studio लॉजिक: 1920x1080 कैनवस
                 val targetWebWidth = 1920
                 val targetWebHeight = 1080
                 
                 val webView = WebView(this).apply {
                     tag = "WEB_OVERLAY"
                     
-                    // WebView का असली साइज़ 1920x1080 फिक्स कर दें (HTML कभी नहीं सिकुड़ेगा)
                     layoutParams = RelativeLayout.LayoutParams(targetWebWidth, targetWebHeight).apply { 
                         addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) 
                     }
                     
-                    // 2. Android ग्राफिक्स से उसे "फोटो की तरह" सिकोड़ें ताकि वह 85% स्क्रीन में फिट आ जाए
                     val displayMetrics = resources.displayMetrics
                     val screenWidth = displayMetrics.widthPixels.toFloat()
                     val fitScale = (screenWidth * 0.85f) / targetWebWidth.toFloat()
@@ -1047,9 +1045,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     scaleX = fitScale
                     scaleY = fitScale
                     
-                    // --- पुरानी सेटिंग्स ---
                     setBackgroundColor(Color.TRANSPARENT)
-                    setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                    
+                    // 🚨 सबसे बड़ा फिक्स 🚨
+                    // इसे LAYER_TYPE_HARDWARE से LAYER_TYPE_SOFTWARE कर दिया गया है
+                    // ताकि Canvas.draw() क्रैश न हो और बाकी Logo/Text गायब न हों
+                    setLayerType(View.LAYER_TYPE_SOFTWARE, null)
                     
                     isVerticalScrollBarEnabled = false
                     isHorizontalScrollBarEnabled = false
