@@ -1421,7 +1421,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         Toast.makeText(this, "Fetching channels...", Toast.LENGTH_SHORT).show()
         Thread {
             try {
-                val token = GoogleAuthUtil.getToken(this@MainActivity, account.account, "oauth2:https://www.googleapis.com/auth/youtube")
+                val googleAccount = account.account ?: throw IllegalStateException("No underlying Android account found")
+                val token = GoogleAuthUtil.getToken(this@MainActivity, googleAccount, "oauth2:https://www.googleapis.com/auth/youtube")
                 myAccessToken = token
                 val credential = com.google.api.client.googleapis.auth.oauth2.GoogleCredential().setAccessToken(token)
                 val youtube = YouTube.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), credential).setApplicationName("MBLiveStudio").build()
