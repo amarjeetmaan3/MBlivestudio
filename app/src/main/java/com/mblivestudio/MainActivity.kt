@@ -1461,16 +1461,22 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     }
                 }
             } catch (e: com.google.android.gms.auth.UserRecoverableAuthException) {
-                e.printStackTrace()
                 myAccessToken = null
-                runOnUiThread { Toast.makeText(this@MainActivity, "Please tap Login again and approve the YouTube permission screen.", Toast.LENGTH_LONG).show() }
+                runOnUiThread { 
+                    // यह Google की परमिशन स्क्रीन (Consent) खोलने का डायलॉग है
+                    startActivityForResult(e.intent, REQUEST_AUTHORIZATION)
+                }
             } catch (e: Exception) {
-                e.printStackTrace()
                 myAccessToken = null
-                runOnUiThread { Toast.makeText(this@MainActivity, "Error fetching channels: ${e.message}", Toast.LENGTH_LONG).show() }
+                runOnUiThread { 
+                    // यह कोड असली एरर को आपकी स्क्रीन पर पॉपअप में दिखाएगा
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Login Error")
+                        .setMessage("Error detail:\n${e.message}\n\n(Take a screenshot of this)")
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
             }
-        }.start()
-    }
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun startWebViewLogin() {
