@@ -1019,7 +1019,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         AlertDialog.Builder(this).setTitle("Update Scoreboard").setView(layout).setPositiveButton("Show") { _, _ -> scoreMainText.text = mainInput.text.toString(); scoreSubText.text = subInput.text.toString(); dragScoreboard.visibility = View.VISIBLE; updateSnapshot() }.setNegativeButton("Cancel", null).show()
     }
 
-   @SuppressLint("SetJavaScriptEnabled")
+ @SuppressLint("SetJavaScriptEnabled")
     private fun showAddWebDialog() {
         val input = EditText(this).apply { hint = "https://..." }
         AlertDialog.Builder(this).setTitle("Add Web Overlay").setView(input).setPositiveButton("Add") { _, _ ->
@@ -1036,37 +1036,44 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                         addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) 
                     }
                     
-                    // --- ओवरले फिक्स सेटिंग्स ---
                     setBackgroundColor(Color.TRANSPARENT)
+                    // हार्डवेयर एक्सेलेरेशन स्मूथ रेंडरिंग के लिए
                     setLayerType(View.LAYER_TYPE_HARDWARE, null)
                     
+                    // स्क्रॉलबार्स बंद करें ताकि ओवरले हिले नहीं
                     isVerticalScrollBarEnabled = false
                     isHorizontalScrollBarEnabled = false
                     
                     settings.apply {
                         javaScriptEnabled = true
                         domStorageEnabled = true
+                        
+                        // 1. डेस्कटॉप मोड (सबसे जरूरी): यह वेबपेज को मोबाइल की तरह सिकोड़ने से रोकेगा
+                        userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+                        
+                        // 2. लेआउट को चौड़े कैनवस पर फिक्स करने के लिए
                         useWideViewPort = true
                         loadWithOverviewMode = true
-                        textZoom = 100 // सिस्टम फॉन्ट को 100% पर लॉक करने के लिए
+                        
+                        // 3. सिस्टम फॉन्ट साइज़ को 100% पर लॉक करें ताकि टेक्स्ट लेआउट ना तोड़े
+                        textZoom = 100 
+                        
+                        // 4. ज़ूम कंट्रोल्स पूरी तरह बंद करें (रिसाइज़िंग अब सिर्फ scaleX/scaleY से होगी)
                         setSupportZoom(false)
                         builtInZoomControls = false
                         displayZoomControls = false
                     }
-                    // ---------------------------
                     
-                    // नया लॉजिक: शुरुआत में इसे पूरी तरह अदृश्य (Invisible) रखें
                     alpha = 0f 
                     
                     webChromeClient = WebChromeClient()
                     
-                    // नया लॉजिक: पेज पूरा लोड होने के बाद ही इसे स्मूथली स्क्रीन पर लाएं
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
                             super.onPageFinished(view, url)
                             view?.animate()
                                 ?.alpha(1f)
-                                ?.setDuration(500) // 500ms का स्मूथ फेड-इन
+                                ?.setDuration(500)
                                 ?.setUpdateListener { updateSnapshot(0) }
                                 ?.start()
                         }
