@@ -1026,46 +1026,47 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             val url = input.text.toString().trim()
             if (url.isNotEmpty()) {
                 val finalUrl = if (!url.startsWith("http")) "https://$url" else url
-                val displayMetrics = resources.displayMetrics
-                val boxWidth = (displayMetrics.widthPixels * 0.85).toInt()
-                val boxHeight = (displayMetrics.heightPixels * 0.85).toInt()
+                
+                // 1. OBS Studio लॉजिक: वेबपेज को पूरा 1920x1080 (Full HD) कैनवस दें
+                val targetWebWidth = 1920
+                val targetWebHeight = 1080
                 
                 val webView = WebView(this).apply {
                     tag = "WEB_OVERLAY"
-                    layoutParams = RelativeLayout.LayoutParams(boxWidth, boxHeight).apply { 
+                    
+                    // WebView का असली साइज़ 1920x1080 फिक्स कर दें (HTML कभी नहीं सिकुड़ेगा)
+                    layoutParams = RelativeLayout.LayoutParams(targetWebWidth, targetWebHeight).apply { 
                         addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) 
                     }
                     
+                    // 2. Android ग्राफिक्स से उसे "फोटो की तरह" सिकोड़ें ताकि वह 85% स्क्रीन में फिट आ जाए
+                    val displayMetrics = resources.displayMetrics
+                    val screenWidth = displayMetrics.widthPixels.toFloat()
+                    val fitScale = (screenWidth * 0.85f) / targetWebWidth.toFloat()
+                    
+                    scaleX = fitScale
+                    scaleY = fitScale
+                    
+                    // --- पुरानी सेटिंग्स ---
                     setBackgroundColor(Color.TRANSPARENT)
-                    // हार्डवेयर एक्सेलेरेशन स्मूथ रेंडरिंग के लिए
                     setLayerType(View.LAYER_TYPE_HARDWARE, null)
                     
-                    // स्क्रॉलबार्स बंद करें ताकि ओवरले हिले नहीं
                     isVerticalScrollBarEnabled = false
                     isHorizontalScrollBarEnabled = false
                     
                     settings.apply {
                         javaScriptEnabled = true
                         domStorageEnabled = true
-                        
-                        // 1. डेस्कटॉप मोड (सबसे जरूरी): यह वेबपेज को मोबाइल की तरह सिकोड़ने से रोकेगा
                         userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
-                        
-                        // 2. लेआउट को चौड़े कैनवस पर फिक्स करने के लिए
                         useWideViewPort = true
                         loadWithOverviewMode = true
-                        
-                        // 3. सिस्टम फॉन्ट साइज़ को 100% पर लॉक करें ताकि टेक्स्ट लेआउट ना तोड़े
                         textZoom = 100 
-                        
-                        // 4. ज़ूम कंट्रोल्स पूरी तरह बंद करें (रिसाइज़िंग अब सिर्फ scaleX/scaleY से होगी)
                         setSupportZoom(false)
                         builtInZoomControls = false
                         displayZoomControls = false
                     }
                     
                     alpha = 0f 
-                    
                     webChromeClient = WebChromeClient()
                     
                     webViewClient = object : WebViewClient() {
