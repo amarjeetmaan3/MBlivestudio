@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.mblivestudio">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- ज़रूरी परमिशन्स (Permissions) -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -11,20 +9,16 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- कैमरा हार्डवेयर की रिक्वायरमेंट -->
     <uses-feature android:name="android.hardware.camera" android:required="true" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
     <application
         android:allowBackup="true"
-        android:icon="@mipmap/ic_launcher"
         android:label="M.B. Live Studio"
-        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.AppCompat.NoActionBar"
         android:usesCleartextTraffic="true">
 
-        <!-- MAIN ACTIVITY -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -32,13 +26,11 @@
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:screenOrientation="landscape">
             
-            <!-- ऐप को होम स्क्रीन से खोलने वाला डिफ़ॉल्ट इंटेंट -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- नया इंटेंट: Chrome से YouTube लॉगिन के बाद ऐप में वापस आने के लिए -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -47,7 +39,6 @@
             </intent-filter>
         </activity>
 
-        <!-- बैकग्राउंड में लाइव स्ट्रीम चालू रखने वाली सर्विस -->
         <service 
             android:name=".StreamingService"
             android:exported="false"
