@@ -477,7 +477,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         ivProfilePhoto.setOnClickListener { 
             if (myAccessToken == null) {
-                startChromeBrowserLogin()
+                startWebViewLogin()
             } else {
                 AlertDialog.Builder(this)
                     .setTitle("Account Options")
@@ -501,7 +501,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             
             if (myAccessToken == null) { 
                 Toast.makeText(this, "Please Sign In with YouTube first!", Toast.LENGTH_SHORT).show()
-                startChromeBrowserLogin()
+                startWebViewLogin()
                 return@setOnClickListener 
             }
             showGoLiveDialog()
@@ -1358,32 +1358,43 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // 1. ब्राउज़र में लॉगिन खोलना
-    private fun startChromeBrowserLogin() {
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun startWebViewLogin() {
         val clientId = "3754995309-8pm80fefu3f82qltvf2fs2fftvn6hfkl.apps.googleusercontent.com"
         val redirectUri = "http://localhost"
         val scope = "https://www.googleapis.com/auth/youtube"
         val authUrl = "https://accounts.google.com/o/oauth2/v2/auth?client_id=$clientId&redirect_uri=$redirectUri&response_type=code&scope=$scope"
-        
-        val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(authUrl))
-        intent.setPackage("com.android.chrome")
-        startActivity(intent)
-    }
 
-    // 2. ब्राउज़र से वापस आने पर डेटा (Token) पकड़ना
-    override fun onNewIntent(intent: Intent?) {
-        super.onNewIntent(intent)
-        val uri = intent?.data
-        if (uri != null && uri.toString().startsWith("http://localhost")) {
-            val code = uri.getQueryParameter("code")
-            if (code != null) {
-                val secret = "GOCSPX-" + "nPaaYwhXoex5L1qgUHg0xSVT97R7"
-                exchangeCodeForToken(code, "3754995309-8pm80fefu3f82qltvf2fs2fftvn6hfkl.apps.googleusercontent.com", secret, "http://localhost")
+        val dialog = android.app.Dialog(this)
+        val webView = WebView(this).apply {
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.userAgentString = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36"
+            
+            webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
+                    if (url.startsWith(redirectUri)) {
+                        val uri = android.net.Uri.parse(url)
+                        val code = uri.getQueryParameter("code")
+                        dialog.dismiss()
+                        if (code != null) {
+                            val secret = "GOCSPX-" + "nPaaYwhXoex5L1qgUHg0xSVT97R7"
+                            exchangeCodeForToken(code, clientId, secret, redirectUri)
+                        } else {
+                            Toast.makeText(this@MainActivity, "Login Failed", Toast.LENGTH_SHORT).show()
+                        }
+                        return true
+                    }
+                    return false
+                }
             }
+            loadUrl(authUrl)
         }
+        dialog.setContentView(webView)
+        dialog.window?.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
+        dialog.show()
     }
 
-    // 3. Token को प्रोसेस करना
     private fun exchangeCodeForToken(code: String, clientId: String, clientSecret: String, redirectUri: String) {
         Toast.makeText(this, "Logging in...", Toast.LENGTH_SHORT).show()
         Thread {
@@ -1409,7 +1420,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }.start()
     }
 
-    // 4. चैनल का डेटा और प्रोफाइल फोटो सेट करना
     private fun fetchChannelDetails() {
         try {
             val credential = com.google.api.client.googleapis.auth.oauth2.GoogleCredential().setAccessToken(myAccessToken)
