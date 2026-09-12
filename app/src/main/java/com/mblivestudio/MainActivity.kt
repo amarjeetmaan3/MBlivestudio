@@ -1423,13 +1423,17 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     // access token for the natively-signed-in account (no client secret needed, unlike
     // the old WebView flow), then lists ALL channels on that account — including Brand
     // Account channels — and shows a picker when there's more than one.
-    private fun fetchAndSelectYouTubeChannelNative(account: com.google.android.gms.auth.api.signin.GoogleSignInAccount) {
+   private fun fetchAndSelectYouTubeChannelNative(account: com.google.android.gms.auth.api.signin.GoogleSignInAccount) {
         Toast.makeText(this, "Fetching channels...", Toast.LENGTH_SHORT).show()
         Thread {
             try {
                 val googleAccount = account.account ?: throw IllegalStateException("No underlying Android account found")
+                
+                android.util.Log.d("YT_LOGIN", "Requesting token for account: ${googleAccount.name}")
                 val token = GoogleAuthUtil.getToken(this@MainActivity, googleAccount, "oauth2:https://www.googleapis.com/auth/youtube")
                 myAccessToken = token
+                
+                android.util.Log.d("YT_LOGIN", "Token received successfully. Fetching channels...")
                 val credential = com.google.api.client.googleapis.auth.oauth2.GoogleCredential().setAccessToken(token)
                 val youtube = YouTube.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), credential).setApplicationName("MBLiveStudio").build()
                 youtubeClient = youtube
@@ -1442,6 +1446,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 runOnUiThread {
                     if (channels.isNullOrEmpty()) {
                         Toast.makeText(this@MainActivity, "No channels found!", Toast.LENGTH_SHORT).show()
+                        android.util.Log.e("YT_LOGIN", "API call succeeded but returned 0 channels.")
                     } else if (channels.size == 1) {
                         selectedChannelId = channels[0].id
                         loadCustomProfilePhoto(channels[0].snippet.thumbnails.default.url)
@@ -1461,15 +1466,15 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     }
                 }
             } catch (e: com.google.android.gms.auth.UserRecoverableAuthException) {
+                android.util.Log.e("YT_LOGIN", "Recoverable Auth Exception (Needs Consent Screen):", e)
                 myAccessToken = null
                 runOnUiThread { 
-                    // यह Google की परमिशन स्क्रीन (Consent) खोलने का डायलॉग है
-                    startActivityForResult(e.intent, REQUEST_AUTHORIZATION)
+                    startActivityForResult(e.intent, REQUEST_AUTHORIZATION) 
                 }
             } catch (e: Exception) {
+                android.util.Log.e("YT_LOGIN", "Fatal Error fetching channels:", e)
                 myAccessToken = null
                 runOnUiThread { 
-                    // यह कोड असली एरर को आपकी स्क्रीन पर पॉपअप में दिखाएगा
                     AlertDialog.Builder(this@MainActivity)
                         .setTitle("Login Error")
                         .setMessage("Error detail:\n${e.message}\n\n(Take a screenshot of this)")
@@ -1477,7 +1482,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                         .show()
                 }
             }
-
+        }.start()
+    }
     @SuppressLint("SetJavaScriptEnabled")
     private fun startWebViewLogin() {
         val clientId = "3754995309-8pm80fefu3f82qltvf2fs2fftvn6hfkl.apps.googleusercontent.com"
