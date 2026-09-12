@@ -1027,7 +1027,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             if (url.isNotEmpty()) {
                 val finalUrl = if (!url.startsWith("http")) "https://$url" else url
                 
-                // 1. OBS Studio लॉजिक: 1920x1080 कैनवस
+                // 1920x1080 (OBS Standard Resolution)
                 val targetWebWidth = 1920
                 val targetWebHeight = 1080
                 
@@ -1038,18 +1038,19 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                         addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) 
                     }
                     
+                    // --- 100% FULL SCREEN FIX ---
                     val displayMetrics = resources.displayMetrics
-                    val screenWidth = displayMetrics.widthPixels.toFloat()
-                    val fitScale = (screenWidth * 0.85f) / targetWebWidth.toFloat()
+                    val screenW = displayMetrics.widthPixels.toFloat()
+                    val screenH = displayMetrics.heightPixels.toFloat()
+                    
+                    // 85% हटा दिया गया है। यह अब स्क्रीन की पूरी चौड़ाई और ऊंचाई के हिसाब से परफेक्ट स्केल करेगा।
+                    val fitScale = Math.min(screenW / targetWebWidth, screenH / targetWebHeight)
                     
                     scaleX = fitScale
                     scaleY = fitScale
+                    // ----------------------------
                     
                     setBackgroundColor(Color.TRANSPARENT)
-                    
-                    // 🚨 सबसे बड़ा फिक्स 🚨
-                    // इसे LAYER_TYPE_HARDWARE से LAYER_TYPE_SOFTWARE कर दिया गया है
-                    // ताकि Canvas.draw() क्रैश न हो और बाकी Logo/Text गायब न हों
                     setLayerType(View.LAYER_TYPE_SOFTWARE, null)
                     
                     isVerticalScrollBarEnabled = false
@@ -1085,6 +1086,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 }
                 
                 overlayContainer.addView(webView)
+                
+                // नोट: चूंकि यह फुल-स्क्रीन ब्रॉडकास्ट ग्राफ़िक्स है, इसे ड्रैग करना सही नहीं है।
+                // अगर आप इसे लॉक रखना चाहते हैं तो नीचे वाली लाइन हटा सकते हैं। 
+                // अभी के लिए मैंने इसे चालू रखा है।
                 makeDraggableAndScalable(webView)
                 selectedOverlay = webView
                 updateOverlayMenuButtonPosition() 
