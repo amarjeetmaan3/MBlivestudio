@@ -48,6 +48,7 @@ import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRende
 import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
 
+import com.google.android.gms.auth.GoogleAuthUtil
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
@@ -103,6 +104,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private val cropFrameViews = mutableListOf<View>()
 
     private var selectedOverlay: View? = null
+    private var selectedChannelId: String? = null
+    private var myAccessToken: String? = null
     
     // --- Audio & Bluetooth Controls ---
     private var isAudioMuted = false
@@ -231,7 +234,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         openGlView = findViewById(R.id.surfaceView)
         openGlView.holder.addCallback(this)
-        rtmpCamera = RtmpCamera2(openGlView, this)
+        rtmpCamera = RtmpCamera2(this, this) // headless — अब किसी View से बंधा नहीं
         imageFilterRender = ImageObjectFilterRender()
 
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -386,22 +389,20 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             } 
         }
 
-     // FEATURE 1: ADVANCED MIC TOGGLE (Icon Color Only)
-        btnMicToggle.setColorFilter(Color.parseColor("#4CAF50"), android.graphics.PorterDuff.Mode.SRC_IN)
+     // FEATURE 1: ADVANCED MIC TOGGLE
+        btnMicToggle.setImageResource(R.drawable.ic_mic_on)
+
         btnMicToggle.setOnClickListener {
-            if (isAudioMuted) {
-                // MIC ON (Green Icon)
-                rtmpCamera.enableAudio()
-                isAudioMuted = false
-                btnMicToggle.setImageResource(R.drawable.ic_mic_on)
-                btnMicToggle.setColorFilter(Color.parseColor("#4CAF50"), android.graphics.PorterDuff.Mode.SRC_IN)
-            } else {
-                // MIC OFF (Red Icon)
-                rtmpCamera.disableAudio()
-                isAudioMuted = true
-                btnMicToggle.setImageResource(R.drawable.ic_mic_off) 
-                btnMicToggle.setColorFilter(Color.parseColor("#E53935"), android.graphics.PorterDuff.Mode.SRC_IN)
-            }
+    if (isAudioMuted) {
+        rtmpCamera.enableAudio()
+        isAudioMuted = false
+        btnMicToggle.setImageResource(R.drawable.ic_mic_on)
+    } else {
+        rtmpCamera.disableAudio()
+        isAudioMuted = true
+        // Sirf test ke liye ON icon yahan bhi lagao
+        btnMicToggle.setImageResource(R.drawable.ic_mic_off) 
+    }
         }
 
         btnSwitchCamera.setOnClickListener {
@@ -493,19 +494,21 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (account != null) { connectedAccountEmail = account.email; applyAccountToHeader(account) }
 
         ivProfilePhoto.setOnClickListener { 
-            val acc = GoogleSignIn.getLastSignedInAccount(this)
-            if (acc == null) {
-                startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST) 
+            if (myAccessToken == null) {
+                startNativeGoogleSignIn()
             } else {
                 AlertDialog.Builder(this)
                     .setTitle("Account Options")
-                    .setMessage("Logged in as: ${acc.email}")
+                    .setMessage("You are logged in.")
                     .setPositiveButton("Logout / Switch Channel") { _, _ ->
-                        googleSignInClient.signOut().addOnCompleteListener {
-                            connectedAccountEmail = null
-                            ivProfilePhoto.setImageResource(android.R.drawable.sym_def_app_icon)
-                            Toast.makeText(this, "Logged out. You can now login with another channel.", Toast.LENGTH_LONG).show()
-                        }
+                        myAccessToken = null
+                        youtubeClient = null
+                        // NEW: sign out of Google too, not just clear the token — otherwise
+                        // the next sign-in silently reuses the same device account and the
+                        // account picker never shows up again.
+                        googleSignInClient.signOut()
+                        ivProfilePhoto.setImageResource(android.R.drawable.sym_def_app_icon)
+                        Toast.makeText(this, "Logged out. You can now login with another account/channel.", Toast.LENGTH_LONG).show()
                     }
                     .setNegativeButton("Cancel", null).show()
             }
@@ -516,9 +519,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnGoLive.setOnClickListener {
             if (rtmpCamera.isStreaming) { AlertDialog.Builder(this).setTitle("Stop Live Stream?").setMessage("This will end your broadcast on YouTube.").setPositiveButton("End Stream") { _, _ -> stopLiveStream() }.setNegativeButton("Cancel", null).show(); return@setOnClickListener }
             if (!rtmpCamera.isOnPreview) { tryStartCameraPreview(); Toast.makeText(this, "Camera starting, try LIVE again in a moment.", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
-            val currentAccount = GoogleSignIn.getLastSignedInAccount(this)
-            if (currentAccount == null) { Toast.makeText(this, "Please Sign In with YouTube first!", Toast.LENGTH_SHORT).show(); startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST); return@setOnClickListener }
-            if (!GoogleSignIn.hasPermissions(currentAccount, Scope("https://www.googleapis.com/auth/youtube"))) { GoogleSignIn.requestPermissions(this, REQUEST_AUTHORIZATION, currentAccount, Scope("https://www.googleapis.com/auth/youtube")); return@setOnClickListener }
+            
+            if (myAccessToken == null) { 
+                Toast.makeText(this, "Please Sign In with YouTube first!", Toast.LENGTH_SHORT).show()
+                startNativeGoogleSignIn()
+                return@setOnClickListener 
+            }
             showGoLiveDialog()
         }
 
@@ -682,6 +688,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             imageFilterRender.setScale(100f, 100f)
             imageFilterRender.setPosition(0f, 0f)
             rtmpCamera.glInterface.addFilter(imageFilterRender)
+            rtmpCamera.replaceView(openGlView)   // ← नई लाइन
             rtmpCamera.startPreview()
             updateSnapshot(1000)
         } else {
@@ -745,8 +752,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     override fun surfaceCreated(holder: SurfaceHolder) {}
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-        surfaceReady = true
+    surfaceReady = true
+    if (rtmpCamera.isOnPreview) {
+        try { rtmpCamera.replaceView(openGlView) } catch (e: Exception) {}
+    } else {
         tryStartCameraPreview()
+    }
     }
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         surfaceReady = false
@@ -1023,17 +1034,48 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             val url = input.text.toString().trim()
             if (url.isNotEmpty()) {
                 val finalUrl = if (!url.startsWith("http")) "https://$url" else url
-                val displayMetrics = resources.displayMetrics; val boxWidth = (displayMetrics.widthPixels * 0.85).toInt(); val boxHeight = (displayMetrics.heightPixels * 0.85).toInt()
+                val displayMetrics = resources.displayMetrics
+                val boxWidth = (displayMetrics.widthPixels * 0.85).toInt()
+                val boxHeight = (displayMetrics.heightPixels * 0.85).toInt()
+                
                 val webView = WebView(this).apply {
                     tag = "WEB_OVERLAY"
-                    layoutParams = RelativeLayout.LayoutParams(boxWidth, boxHeight).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) }
-                    setBackgroundColor(Color.TRANSPARENT); setLayerType(View.LAYER_TYPE_SOFTWARE, null); settings.javaScriptEnabled = true; settings.domStorageEnabled = true; settings.useWideViewPort = true; settings.loadWithOverviewMode = true; webViewClient = WebViewClient(); webChromeClient = WebChromeClient(); loadUrl(finalUrl)
+                    layoutParams = RelativeLayout.LayoutParams(boxWidth, boxHeight).apply { 
+                        addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) 
+                    }
+                    
+                    setBackgroundColor(Color.TRANSPARENT)
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.useWideViewPort = true
+                    settings.loadWithOverviewMode = true
+                    
+                    // नया लॉजिक: शुरुआत में इसे पूरी तरह अदृश्य (Invisible) रखें
+                    alpha = 0f 
+                    
+                    webChromeClient = WebChromeClient()
+                    
+                    // नया लॉजिक: पेज पूरा लोड होने के बाद ही इसे स्मूथली स्क्रीन पर लाएं
+                    webViewClient = object : WebViewClient() {
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            super.onPageFinished(view, url)
+                            view?.animate()
+                                ?.alpha(1f)
+                                ?.setDuration(500) // 500ms का स्मूथ फेड-इन
+                                ?.setUpdateListener { updateSnapshot(0) }
+                                ?.start()
+                        }
+                    }
+                    
+                    loadUrl(finalUrl)
                 }
-                overlayContainer.addView(webView); makeDraggableAndScalable(webView); selectedOverlay = webView; updateOverlayMenuButtonPosition(); 
+                
+                overlayContainer.addView(webView)
+                makeDraggableAndScalable(webView)
+                selectedOverlay = webView
+                updateOverlayMenuButtonPosition() 
                 
                 webSyncHandler.post(webSyncRunnable)
-                
-                overlayHandler.postDelayed({ updateSnapshot() }, 2000)
             }
         }.setNegativeButton("Cancel", null).show()
     }
@@ -1110,11 +1152,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         Thread {
             addQuota(150)
             try {
-                val credential = GoogleAccountCredential.usingOAuth2(this@MainActivity, listOf("https://www.googleapis.com/auth/youtube"))
-                val signInAccount = GoogleSignIn.getLastSignedInAccount(this@MainActivity)
-                if (signInAccount?.account != null) credential.selectedAccount = signInAccount.account else credential.selectedAccountName = connectedAccountEmail
+                if (myAccessToken == null) {
+                    runOnUiThread { Toast.makeText(this@MainActivity, "Please login first", Toast.LENGTH_SHORT).show(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true }
+                    return@Thread
+                }
+                val credential = com.google.api.client.googleapis.auth.oauth2.GoogleCredential().setAccessToken(myAccessToken)
                 val youtube = YouTube.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), HttpRequestInitializer { request -> credential.initialize(request); request.connectTimeout = 10000; request.readTimeout = 10000; request.numberOfRetries = 0 }).setApplicationName("MBLiveStudio").build()
                 youtubeClient = youtube
+                
                 runOnUiThread { btnGoLive.text = "2/3: ROOM..." }
 
                 val scheduleTime = if (pendingScheduleTimeMs > 0) DateTime(pendingScheduleTimeMs) else DateTime(System.currentTimeMillis())
@@ -1319,6 +1364,188 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onDisconnect() { StreamingService.stop(this@MainActivity); runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F")); try { rtmpCamera.stopPreview() } catch (e: Exception) {}; tryStartCameraPreview(); stopChatPolling(); stopStudioTimer() } }
     
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) { super.onRequestPermissionsResult(requestCode, permissions, grantResults); tryStartCameraPreview() }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        
+        if (resultCode == Activity.RESULT_OK && data != null) {
+            when (requestCode) {
+                // 1. Add Logo / Photo Overlay
+                PICK_IMAGE_REQUEST -> {
+                    try {
+                        val imageUri = data.data
+                        if (imageUri != null) {
+                            val inputStream = contentResolver.openInputStream(imageUri)
+                            val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+                            addImageOverlayToScreen(bitmap) 
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        Toast.makeText(this, "Failed to load image", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                
+                // 2. YouTube Thumbnail Picker
+                PICK_THUMBNAIL_REQUEST -> {
+                    pendingThumbnailUri = data.data
+                    thumbnailPreviewImageView?.setImageURI(pendingThumbnailUri)
+                }
+                
+                // 3. Google Sign-In Result — NEW: native sign-in restored, then fetch + pick channel
+               SIGN_IN_REQUEST -> {
+                    val task = com.google.android.gms.auth.api.signin.GoogleSignIn.getSignedInAccountFromIntent(data)
+                    try {
+                        val account = task.getResult(com.google.android.gms.common.api.ApiException::class.java)
+                        connectedAccountEmail = account?.email
+                        if (account != null) fetchAndSelectYouTubeChannelNative(account)
+                    } catch (e: com.google.android.gms.common.api.ApiException) {
+                        e.printStackTrace()
+                        Toast.makeText(this, "Sign-in failed", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
+    // NEW: launches Android's native Google account picker (uses accounts already
+    // logged into the device — no email/password typing, no WebView).
+    private fun startNativeGoogleSignIn() {
+        startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST)
+    }
+
+    // NEW: replaces the old WebView + fetchChannelDetails() flow. Gets a real OAuth
+    // access token for the natively-signed-in account (no client secret needed, unlike
+    // the old WebView flow), then lists ALL channels on that account — including Brand
+    // Account channels — and shows a picker when there's more than one.
+    private fun fetchAndSelectYouTubeChannelNative(account: com.google.android.gms.auth.api.signin.GoogleSignInAccount) {
+        Toast.makeText(this, "Fetching channels...", Toast.LENGTH_SHORT).show()
+        Thread {
+            try {
+                val token = GoogleAuthUtil.getToken(this@MainActivity, account.account, "oauth2:https://www.googleapis.com/auth/youtube")
+                myAccessToken = token
+                val credential = com.google.api.client.googleapis.auth.oauth2.GoogleCredential().setAccessToken(token)
+                val youtube = YouTube.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), credential).setApplicationName("MBLiveStudio").build()
+                youtubeClient = youtube
+
+                val request = youtube.channels().list("snippet")
+                request.mine = true
+                val response = request.execute()
+                val channels = response.items
+
+                runOnUiThread {
+                    if (channels.isNullOrEmpty()) {
+                        Toast.makeText(this@MainActivity, "No channels found!", Toast.LENGTH_SHORT).show()
+                    } else if (channels.size == 1) {
+                        selectedChannelId = channels[0].id
+                        loadCustomProfilePhoto(channels[0].snippet.thumbnails.default.url)
+                        Toast.makeText(this@MainActivity, "Logged in as ${channels[0].snippet.title}", Toast.LENGTH_SHORT).show()
+                    } else {
+                        val channelNames = channels.map { it.snippet.title }.toTypedArray()
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle("Select YouTube Channel")
+                            .setItems(channelNames) { _, which ->
+                                val selectedChannel = channels[which]
+                                selectedChannelId = selectedChannel.id
+                                loadCustomProfilePhoto(selectedChannel.snippet.thumbnails.default.url)
+                                Toast.makeText(this@MainActivity, "Selected: ${selectedChannel.snippet.title}", Toast.LENGTH_SHORT).show()
+                            }
+                            .setCancelable(false)
+                            .show()
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                myAccessToken = null
+                runOnUiThread { Toast.makeText(this@MainActivity, "Error fetching channels: ${e.message}", Toast.LENGTH_LONG).show() }
+            }
+        }.start()
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun startWebViewLogin() {
+        val clientId = "3754995309-8pm80fefu3f82qltvf2fs2fftvn6hfkl.apps.googleusercontent.com"
+        val redirectUri = "http://localhost"
+        val scope = "https://www.googleapis.com/auth/youtube"
+        val authUrl = "https://accounts.google.com/o/oauth2/v2/auth?client_id=$clientId&redirect_uri=$redirectUri&response_type=code&scope=$scope"
+
+        val dialog = android.app.Dialog(this)
+        val webView = WebView(this).apply {
+            settings.javaScriptEnabled = true
+            webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
+                    if (url.startsWith(redirectUri)) {
+                        val uri = android.net.Uri.parse(url)
+                        val code = uri.getQueryParameter("code")
+                        dialog.dismiss()
+                        if (code != null) exchangeCodeForToken(code, clientId, "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", redirectUri)
+                        else Toast.makeText(this@MainActivity, "Login Failed", Toast.LENGTH_SHORT).show()
+                        return true
+                    }
+                    return false
+                }
+            }
+            loadUrl(authUrl)
+        }
+        dialog.setContentView(webView)
+        dialog.window?.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
+        dialog.show()
+    }
+
+    private fun exchangeCodeForToken(code: String, clientId: String, clientSecret: String, redirectUri: String) {
+        Toast.makeText(this, "Logging in...", Toast.LENGTH_SHORT).show()
+        Thread {
+            try {
+                val tokenUrl = java.net.URL("https://oauth2.googleapis.com/token")
+                val connection = tokenUrl.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.doOutput = true
+                val postData = "code=$code&client_id=$clientId&client_secret=$clientSecret&redirect_uri=$redirectUri&grant_type=authorization_code"
+                connection.outputStream.write(postData.toByteArray(Charsets.UTF_8))
+
+                val inputStream = if (connection.responseCode == 200) connection.inputStream else connection.errorStream
+                val response = inputStream.bufferedReader().use { it.readText() }
+
+                if (connection.responseCode == 200) {
+                    val json = org.json.JSONObject(response)
+                    myAccessToken = json.getString("access_token")
+                    fetchChannelDetails()
+                } else {
+                    runOnUiThread { Toast.makeText(this@MainActivity, "Auth Error", Toast.LENGTH_SHORT).show() }
+                }
+            } catch (e: Exception) { e.printStackTrace() }
+        }.start()
+    }
+
+    private fun fetchChannelDetails() {
+        try {
+            val credential = com.google.api.client.googleapis.auth.oauth2.GoogleCredential().setAccessToken(myAccessToken)
+            val youtube = YouTube.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), credential).setApplicationName("MBLiveStudio").build()
+            youtubeClient = youtube
+            val request = youtube.channels().list("snippet")
+            request.mine = true
+            val response = request.execute()
+            val channel = response.items?.firstOrNull()
+
+            runOnUiThread {
+                if (channel != null) {
+                    Toast.makeText(this@MainActivity, "Welcome ${channel.snippet.title}", Toast.LENGTH_LONG).show()
+                    loadCustomProfilePhoto(channel.snippet.thumbnails.default.url)
+                }
+            }
+        } catch (e: Exception) { e.printStackTrace() }
+    }
+    
+    private fun loadCustomProfilePhoto(url: String) {
+        Thread {
+            try {
+                val input = java.net.URL(url).openStream()
+                val bmp = BitmapFactory.decodeStream(input)
+                input.close()
+                val circular = cropToCircle(bmp)
+                runOnUiThread { findViewById<ImageView>(R.id.ivProfilePhoto).setImageBitmap(circular) }
+            } catch (e: Exception) { e.printStackTrace() }
+        }.start()
+    }
     
     override fun onDestroy() {
         super.onDestroy()
