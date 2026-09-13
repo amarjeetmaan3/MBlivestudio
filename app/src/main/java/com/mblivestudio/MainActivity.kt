@@ -1027,13 +1027,24 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                         addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) 
                     }
                     
+                    // 🚨 FIX: pehle scale screen ke raw pixels (displayMetrics) se nikalta tha,
+                    // aur Math.min() se uniform-scale hoke center hota tha. Jab screen ka
+                    // aspect ratio 1920x1080 (16:9) se match nahi karta (jyadatar phones nahi
+                    // karte), to letterboxing aa jaati thi — WebView container ke asli size
+                    // se chhota render hota tha aur beech me center ho jaata tha. Isi wajah se
+                    // scorebug bottom edge se upar uth jaata tha (neeche khaali gap ban jaata).
+                    // Fix: overlayContainer (jo hi stream ke liye capture hota hai) ke asli
+                    // width/height par exact non-uniform stretch — isse WebView hamesha
+                    // overlayContainer ko poora bhar deta hai, koi gap nahi, koi shrink nahi,
+                    // aur CSS ka 1px-from-edge sahi 1px hi rehta hai.
+                    val containerW = overlayContainer.width.toFloat()
+                    val containerH = overlayContainer.height.toFloat()
                     val displayMetrics = resources.displayMetrics
-                    val screenW = displayMetrics.widthPixels.toFloat()
-                    val screenH = displayMetrics.heightPixels.toFloat()
-                    val fitScale = Math.min(screenW / targetWebWidth, screenH / targetWebHeight)
-                    
-                    scaleX = fitScale
-                    scaleY = fitScale
+                    val fallbackW = displayMetrics.widthPixels.toFloat()
+                    val fallbackH = displayMetrics.heightPixels.toFloat()
+
+                    scaleX = if (containerW > 0f) containerW / targetWebWidth else fallbackW / targetWebWidth
+                    scaleY = if (containerH > 0f) containerH / targetWebHeight else fallbackH / targetWebHeight
                     
                     setBackgroundColor(Color.TRANSPARENT)
                     setLayerType(View.LAYER_TYPE_SOFTWARE, null)
