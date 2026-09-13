@@ -390,16 +390,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnMicToggle.setImageResource(R.drawable.ic_mic_on)
 
         btnMicToggle.setOnClickListener {
-    if (isAudioMuted) {
-        rtmpCamera.enableAudio()
-        isAudioMuted = false
-        btnMicToggle.setImageResource(R.drawable.ic_mic_on)
-    } else {
-        rtmpCamera.disableAudio()
-        isAudioMuted = true
-        // Sirf test ke liye ON icon yahan bhi lagao
-        btnMicToggle.setImageResource(R.drawable.ic_mic_off) 
-    }
+            if (isAudioMuted) {
+                rtmpCamera.enableAudio()
+                isAudioMuted = false
+                btnMicToggle.setImageResource(R.drawable.ic_mic_on)
+            } else {
+                rtmpCamera.disableAudio()
+                isAudioMuted = true
+                // Sirf test ke liye ON icon yahan bhi lagao
+                btnMicToggle.setImageResource(R.drawable.ic_mic_off) 
+            }
         }
 
         btnSwitchCamera.setOnClickListener {
@@ -753,12 +753,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         surfaceReady = false
-        // NEW: do NOT stop the stream here anymore. Screen lock / app background
-        // destroys this Surface, but RootEncoder's StreamBase keeps the camera +
-        // encoder pipeline running independently once actively streaming
-        // (stopPreview() is a no-op while isStreaming == true). Only tear the
-        // camera down here if we were merely previewing (not live yet) — that
-        // avoids camera-in-use conflicts with other apps while not streaming.
         if (!rtmpCamera.isStreaming && rtmpCamera.isOnPreview) rtmpCamera.stopPreview()
     }
 
@@ -1019,56 +1013,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         AlertDialog.Builder(this).setTitle("Update Scoreboard").setView(layout).setPositiveButton("Show") { _, _ -> scoreMainText.text = mainInput.text.toString(); scoreSubText.text = subInput.text.toString(); dragScoreboard.visibility = View.VISIBLE; updateSnapshot() }.setNegativeButton("Cancel", null).show()
     }
 
-@SuppressLint("SetJavaScriptEnabled")
-    private fun showAddWebDialog() {
-        val input = EditText(this).apply { hint = "https://..." }
-        AlertDialog.Builder(this).setTitle("Add Web Overlay").setView(input).setPositiveButton("Add") { _, _ ->
-            val url = input.text.toString().trim()
-            if (url.isNotEmpty()) {
-                val finalUrl = if (!url.startsWith("http")) "https://$url" else url
-                
-                // 1920x1080 (OBS Standard Resolution)
-                val targetWebWidth = 1920
-                val targetWebHeight = 1080
-                
-                val webView = WebView(this).apply {
-                    tag = "WEB_OVERLAY"
-                    
-                    layoutParams = RelativeLayout.LayoutParams(targetWebWidth, targetWebHeight).apply { 
-                        addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) 
-                    }
-                    
-                    // --- 100% FULL SCREEN FIX ---
-                    val displayMetrics = resources.displayMetrics
-                    val screenW = displayMetrics.widthPixels.toFloat()
-                    val screenH = displayMetrics.heightPixels.toFloat()
-                    
-                    // 85% हटा दिया गया है। यह अब स्क्रीन की पूरी चौड़ाई और ऊंचाई के हिसाब से परफेक्ट स्केल करेगा।
-                    val fitScale = Math.min(screenW / targetWebWidth, screenH / targetWebHeight)
-                    
-                    scaleX = fitScale
-                    scaleY = fitScale
-                    // ----------------------------
-                    
-                    setBackgroundColor(Color.TRANSPARENT)
-                    setLayerType(View.LAYER_TYPE_SOFTWARE, null)
-                    
-                    isVerticalScrollBarEnabled = false
-                    isHorizontalScrollBarEnabled = false
-                    
-                    settings.apply {
-                        javaScriptEnabled = true
-                        domStorageEnabled = true
-                        userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
-                        useWideViewPort = true
-                        loadWithOverviewMode = true
-                        textZoom = 100 
-                        setSupportZoom(false)
-                        builtInZoomControls = false
-                        displayZoomControls = false
-                    }
-                    
-@SuppressLint("SetJavaScriptEnabled")
+    @SuppressLint("SetJavaScriptEnabled")
     private fun showAddWebDialog() {
         val input = EditText(this).apply { hint = "https://..." }
         AlertDialog.Builder(this).setTitle("Add Web Overlay").setView(input).setPositiveButton("Add") { _, _ ->
