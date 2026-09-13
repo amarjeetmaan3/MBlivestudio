@@ -1068,6 +1068,54 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                         displayZoomControls = false
                     }
                     
+@SuppressLint("SetJavaScriptEnabled")
+    private fun showAddWebDialog() {
+        val input = EditText(this).apply { hint = "https://..." }
+        AlertDialog.Builder(this).setTitle("Add Web Overlay").setView(input).setPositiveButton("Add") { _, _ ->
+            val url = input.text.toString().trim()
+            if (url.isNotEmpty()) {
+                val finalUrl = if (!url.startsWith("http")) "https://$url" else url
+                
+                val targetWebHeight = 1080
+                
+                // --- 100% FULL SCREEN EDGE-TO-EDGE FIX ---
+                val displayMetrics = resources.displayMetrics
+                val screenW = displayMetrics.widthPixels.toFloat()
+                val screenH = displayMetrics.heightPixels.toFloat()
+                
+                // नया लॉजिक: फोन की स्क्रीन जितनी चौड़ी होगी, वेबव्यू भी उतना ही चौड़ा हो जाएगा
+                val targetWebWidth = ((screenW / screenH) * targetWebHeight).toInt()
+                
+                val webView = WebView(this).apply {
+                    tag = "WEB_OVERLAY"
+                    
+                    layoutParams = RelativeLayout.LayoutParams(targetWebWidth, targetWebHeight).apply { 
+                        addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) 
+                    }
+                    
+                    // अब सिर्फ ऊंचाई (Height) के हिसाब से स्केल करेंगे, चौड़ाई अपने आप कोने तक फैल जाएगी
+                    val fitScale = screenH / targetWebHeight.toFloat()
+                    scaleX = fitScale
+                    scaleY = fitScale
+                    
+                    setBackgroundColor(Color.TRANSPARENT)
+                    setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+                    
+                    isVerticalScrollBarEnabled = false
+                    isHorizontalScrollBarEnabled = false
+                    
+                    settings.apply {
+                        javaScriptEnabled = true
+                        domStorageEnabled = true
+                        userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+                        useWideViewPort = true
+                        loadWithOverviewMode = true
+                        textZoom = 100 
+                        setSupportZoom(false)
+                        builtInZoomControls = false
+                        displayZoomControls = false
+                    }
+                    
                     alpha = 0f 
                     webChromeClient = WebChromeClient()
                     
@@ -1086,10 +1134,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 }
                 
                 overlayContainer.addView(webView)
-                
-                // नोट: चूंकि यह फुल-स्क्रीन ब्रॉडकास्ट ग्राफ़िक्स है, इसे ड्रैग करना सही नहीं है।
-                // अगर आप इसे लॉक रखना चाहते हैं तो नीचे वाली लाइन हटा सकते हैं। 
-                // अभी के लिए मैंने इसे चालू रखा है।
                 makeDraggableAndScalable(webView)
                 selectedOverlay = webView
                 updateOverlayMenuButtonPosition() 
