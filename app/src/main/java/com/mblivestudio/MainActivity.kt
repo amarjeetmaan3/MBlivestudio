@@ -1018,22 +1018,20 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             if (url.isNotEmpty()) {
                 val finalUrl = if (!url.startsWith("http")) "https://$url" else url
                 
+            val targetWebWidth = 1920
                 val targetWebHeight = 1080
-                
-                val displayMetrics = resources.displayMetrics
-                val screenW = displayMetrics.widthPixels.toFloat()
-                val screenH = displayMetrics.heightPixels.toFloat()
-                
-                val targetWebWidth = ((screenW / screenH) * targetWebHeight).toInt()
                 
                 val webView = WebView(this).apply {
                     tag = "WEB_OVERLAY"
-                    
                     layoutParams = RelativeLayout.LayoutParams(targetWebWidth, targetWebHeight).apply { 
                         addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) 
                     }
                     
-                    val fitScale = screenH / targetWebHeight.toFloat()
+                    val displayMetrics = resources.displayMetrics
+                    val screenW = displayMetrics.widthPixels.toFloat()
+                    val screenH = displayMetrics.heightPixels.toFloat()
+                    val fitScale = Math.min(screenW / targetWebWidth, screenH / targetWebHeight)
+                    
                     scaleX = fitScale
                     scaleY = fitScale
                     
@@ -1046,7 +1044,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     settings.apply {
                         javaScriptEnabled = true
                         domStorageEnabled = true
-                        userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
                         useWideViewPort = true
                         loadWithOverviewMode = true
                         textZoom = 100 
@@ -1057,29 +1054,20 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     
                     alpha = 0f 
                     webChromeClient = WebChromeClient()
-                    
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
                             super.onPageFinished(view, url)
-                            view?.animate()
-                                ?.alpha(1f)
-                                ?.setDuration(500)
-                                ?.setUpdateListener { updateSnapshot(0) }
-                                ?.start()
+                            view?.animate()?.alpha(1f)?.setDuration(500)?.setUpdateListener { updateSnapshot(0) }?.start()
                         }
                     }
-                    
                     loadUrl(finalUrl)
                 }
                 
                 overlayContainer.addView(webView)
-                
-                // 🚨 BUG FIX: वेबव्यू को ड्रैग होने से रोकने के लिए लाइन हटा दी गई है 🚨
-                // makeDraggableAndScalable(webView) 
-                
+                // 🚨 ड्रैग ऑप्शन वापस चालू कर दिया गया है 🚨
+                makeDraggableAndScalable(webView) 
                 selectedOverlay = webView
                 updateOverlayMenuButtonPosition() 
-                
                 webSyncHandler.post(webSyncRunnable)
             }
         }.setNegativeButton("Cancel", null).show()
