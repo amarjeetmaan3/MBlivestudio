@@ -1079,7 +1079,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 }
                 
                 overlayContainer.addView(webView)
-                makeDraggableAndScalable(webView)
+                //makeDraggableAndScalable(webView)
                 selectedOverlay = webView
                 updateOverlayMenuButtonPosition() 
                 
