@@ -231,7 +231,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         openGlView = findViewById(R.id.surfaceView)
         openGlView.holder.addCallback(this)
-        rtmpCamera = RtmpCamera2(this, this) // headless — अब किसी View से बंधा नहीं
+        rtmpCamera = RtmpCamera2(this, this)
         imageFilterRender = ImageObjectFilterRender()
 
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -386,7 +386,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             } 
         }
 
-     // FEATURE 1: ADVANCED MIC TOGGLE
         btnMicToggle.setImageResource(R.drawable.ic_mic_on)
 
         btnMicToggle.setOnClickListener {
@@ -397,7 +396,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             } else {
                 rtmpCamera.disableAudio()
                 isAudioMuted = true
-                // Sirf test ke liye ON icon yahan bhi lagao
                 btnMicToggle.setImageResource(R.drawable.ic_mic_off) 
             }
         }
@@ -480,7 +478,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1)
         }
-        // NEW: needed so the background-streaming StreamingService can show its notification
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 3)
         }
@@ -680,7 +677,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             imageFilterRender.setScale(100f, 100f)
             imageFilterRender.setPosition(0f, 0f)
             rtmpCamera.glInterface.addFilter(imageFilterRender)
-            rtmpCamera.replaceView(openGlView)   // ← नई लाइन
+            rtmpCamera.replaceView(openGlView)
             rtmpCamera.startPreview()
             updateSnapshot(1000)
         } else {
@@ -1023,12 +1020,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 
                 val targetWebHeight = 1080
                 
-                // --- 100% FULL SCREEN EDGE-TO-EDGE FIX ---
                 val displayMetrics = resources.displayMetrics
                 val screenW = displayMetrics.widthPixels.toFloat()
                 val screenH = displayMetrics.heightPixels.toFloat()
                 
-                // नया लॉजिक: फोन की स्क्रीन जितनी चौड़ी होगी, वेबव्यू भी उतना ही चौड़ा हो जाएगा
                 val targetWebWidth = ((screenW / screenH) * targetWebHeight).toInt()
                 
                 val webView = WebView(this).apply {
@@ -1038,7 +1033,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                         addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) 
                     }
                     
-                    // अब सिर्फ ऊंचाई (Height) के हिसाब से स्केल करेंगे, चौड़ाई अपने आप कोने तक फैल जाएगी
                     val fitScale = screenH / targetWebHeight.toFloat()
                     scaleX = fitScale
                     scaleY = fitScale
@@ -1079,7 +1073,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 }
                 
                 overlayContainer.addView(webView)
-                //makeDraggableAndScalable(webView)
+                
+                // 🚨 BUG FIX: वेबव्यू को ड्रैग होने से रोकने के लिए लाइन हटा दी गई है 🚨
+                // makeDraggableAndScalable(webView) 
+                
                 selectedOverlay = webView
                 updateOverlayMenuButtonPosition() 
                 
@@ -1375,7 +1372,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         
         if (resultCode == Activity.RESULT_OK && data != null) {
             when (requestCode) {
-                // 1. Add Logo / Photo Overlay
                 PICK_IMAGE_REQUEST -> {
                     try {
                         val imageUri = data.data
@@ -1389,14 +1385,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                         Toast.makeText(this, "Failed to load image", Toast.LENGTH_SHORT).show()
                     }
                 }
-                
-                // 2. YouTube Thumbnail Picker
                 PICK_THUMBNAIL_REQUEST -> {
                     pendingThumbnailUri = data.data
                     thumbnailPreviewImageView?.setImageURI(pendingThumbnailUri)
                 }
-                
-                // 3. Google Sign-In Result
                 SIGN_IN_REQUEST -> {
                     val task = com.google.android.gms.auth.api.signin.GoogleSignIn.getSignedInAccountFromIntent(data)
                     try {
