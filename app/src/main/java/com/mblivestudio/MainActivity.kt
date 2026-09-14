@@ -258,6 +258,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         tvCommentsFeed = findViewById(R.id.tvCommentsFeed)
         commentsScrollView = findViewById(R.id.commentsScrollView)
         tvStreamChatOverlay = findViewById(R.id.tvStreamChatOverlay)
+        tvStreamChatOverlay.setOnTouchListener(null)
+        makeDraggableAndScalable(tvStreamChatOverlay)
         
         val popupSettings: LinearLayout = findViewById(R.id.popupSettings)
         val btnSettings: ImageButton = findViewById(R.id.btnSettings)
@@ -709,16 +711,19 @@ if (!aReady) try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) {}
         }
     }
 
+        private var refreshQueued = false
+
     private fun updateSnapshot(delay: Long = 100) {
-        if (!rtmpCamera.isOnPreview || overlayContainer.width == 0 || overlayContainer.height == 0 || pendingRefresh) return
+        if (!rtmpCamera.isOnPreview || overlayContainer.width == 0 || overlayContainer.height == 0) return
+        if (pendingRefresh) { refreshQueued = true; return }
         pendingRefresh = true
         overlayHandler.postDelayed({
             try {
                 val w = overlayContainer.width
                 val h = overlayContainer.height
-                
+
                 useBufferA = !useBufferA
-                
+
                 if (useBufferA) {
                     if (bitmapA == null || bitmapA!!.isRecycled || bitmapA!!.width != w || bitmapA!!.height != h) {
                         bitmapA?.recycle()
@@ -738,10 +743,11 @@ if (!aReady) try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) {}
                     overlayContainer.draw(canvasB!!)
                     imageFilterRender.setImage(bitmapB!!)
                 }
-            } catch (e: Exception) { 
-                e.printStackTrace() 
+            } catch (e: Exception) {
+                e.printStackTrace()
             } finally {
                 pendingRefresh = false
+                if (refreshQueued) { refreshQueued = false; updateSnapshot(0) }
             }
         }, delay)
     }
@@ -1276,7 +1282,7 @@ if (!aReady) try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) {}
                         tvCommentsFeed.text = (tvCommentsFeed.text.toString().lines() + newLines).takeLast(30).joinToString("\n")
                         commentsScrollView.post { commentsScrollView.fullScroll(View.FOCUS_DOWN) }
                         streamChatHistory.addAll(newLines); if (streamChatHistory.size > 50) streamChatHistory.subList(0, streamChatHistory.size - 50).clear()
-                        refreshChatOverlayText(); updateSnapshot()
+                        refreshChatOverlayText(); updateSnapshot(500)
                     }
                 }
                 val youtubeDelay = response.pollingIntervalMillis ?: 5000L
