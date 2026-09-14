@@ -527,7 +527,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private fun registerAudioDeviceMonitoring() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
         audioDeviceCallback = object : AudioDeviceCallback() {
-            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) { updateDetectedMicRoute(false) }
+                        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+                val btAdded = addedDevices.any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && it.type == AudioDeviceInfo.TYPE_BLE_HEADSET) }
+                if (btAdded && !isBluetoothMicActive) {
+                    toggleBluetoothMic(findViewById(R.id.btnBluetoothMic))
+                }
+                updateDetectedMicRoute(false)
+            }
             override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
                 if (removedDevices.any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && it.type == AudioDeviceInfo.TYPE_BLE_HEADSET) } && isBluetoothMicActive) {
                     isBluetoothMicActive = false
@@ -643,10 +649,27 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         findViewById<ImageButton>(R.id.btnBluetoothMic).clearColorFilter()
     }
 
-    private fun restartCameraForAudioChange(delayMs: Long) {
-        if (!rtmpCamera.isOnPreview || rtmpCamera.isStreaming) return
+       private fun restartCameraForAudioChange(delayMs: Long) {
+        if (rtmpCamera.isStreaming) {
+            Handler(Looper.getMainLooper()).postDelayed({ switchAudioLive() }, delayMs)
+            return
+        }
+        if (!rtmpCamera.isOnPreview) return
         try { rtmpCamera.stopPreview() } catch (e: Exception) {}
         Handler(Looper.getMainLooper()).postDelayed({ tryStartCameraPreview() }, delayMs)
+    }
+
+    private fun switchAudioLive() {
+        if (!rtmpCamera.isStreaming) return
+        var aReady = false
+        if (isBluetoothMicActive) {
+            try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.VOICE_COMMUNICATION, 32 * 1024, 16000, false, false, false) } catch (e: Exception) {}
+        } else {
+            try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.MIC, 64 * 1024, 16000, false, false, false) } catch (e: Exception) {}
+        }
+        if (!aReady) {
+            runOnUiThread { Toast.makeText(this, "Mic switch live nahi hui, stream restart karo.", Toast.LENGTH_SHORT).show() }
+        }
     }
 
     private fun tryStartCameraPreview() {
@@ -668,8 +691,8 @@ var aReady = false
 if (isBluetoothMicActive) {
     try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.VOICE_COMMUNICATION, 32 * 1024, 16000, false, false, false) } catch (e: Exception) {}
 } else {
-    try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.MIC, 192 * 1024, 44100, true, false, false) } catch (e: Exception) {}
-    if (!aReady) try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.MIC, 192 * 1024, 44100, false, false, false) } catch (e: Exception) {}
+    try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.MIC, 64 * 1024, 16000, false, false, false) } catch (e: Exception) {}
+    if (!aReady) try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.MIC, 192 * 1024, 44100, true, false, false) } catch (e: Exception) {}
 }
 if (!aReady) try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) {}
         if (isSuccess && aReady) {
