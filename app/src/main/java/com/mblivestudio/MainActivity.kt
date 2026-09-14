@@ -662,15 +662,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (!isSuccess) try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) {}
 
         var aReady = false
-        if (isBluetoothMicActive) {
-            try { aReady = rtmpCamera.prepareAudio(32 * 1024, 16000, false, false, false) } catch (e: Exception) {}
-        } else {
-            val useEchoCanceler = detectedMicRoute == MicRoute.PHONE
-            try { aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, true, useEchoCanceler, true) } catch (e: Exception) {}
-            if (!aReady) try { aReady = rtmpCamera.prepareAudio(128 * 1024, 44100, false, useEchoCanceler, true) } catch (e: Exception) {}
-        }
-        if (!aReady) try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) {}
-
+if (isBluetoothMicActive) {
+    try { aReady = rtmpCamera.prepareAudio(32 * 1024, 16000, false, false, false) } catch (e: Exception) {}
+} else {
+    try { aReady = rtmpCamera.prepareAudio(192 * 1024, 44100, true, false, false) } catch (e: Exception) {}
+    if (!aReady) try { aReady = rtmpCamera.prepareAudio(192 * 1024, 44100, false, false, false) } catch (e: Exception) {}
+}
+if (!aReady) try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) {}
         if (isSuccess && aReady) {
             cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f)
             rtmpCamera.glInterface.setFilter(cameraLayoutFilter)
