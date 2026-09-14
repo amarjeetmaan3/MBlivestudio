@@ -141,10 +141,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private var canvasB: Canvas? = null
     private var useBufferA = true
 
-    // ROCK-SOLID SPORTS BROADCASTING STANDARD (720p, 3 Mbps)
+    // ROCK-SOLID SPORTS BROADCASTING STANDARD
     private var streamWidth = 1280
     private var streamHeight = 720
     private var streamBitrate = 3_000_000
+    private var streamFps = 30 // Added FPS variable
 
     private var pendingTitle: String = ""
     private var pendingDesc: String = ""
@@ -444,6 +445,17 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
         }
 
+        // Add Video Quality Settings Button Listener
+        val btnVideoQuality = findViewById<Button>(resources.getIdentifier("btnVideoQuality", "id", packageName))
+        if (btnVideoQuality != null) {
+            btnVideoQuality.setOnClickListener {
+                findViewById<LinearLayout>(R.id.popupSettings).visibility = View.GONE
+                showVideoQualityDialog()
+            }
+        } else {
+            // Log or handle missing button - you might need to add this button to your layout XML
+        }
+
         // FEATURE 4: SMOOTH ZOOM CONTROL
         var currentTouchEvent: MotionEvent? = null
         val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
@@ -524,6 +536,71 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         makeDraggableAndScalable(dragScoreboard)
         makeStudioPanelDraggable(commentsPanel)
+    }
+
+    private fun showVideoQualityDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(50, 40, 50, 40)
+        }
+
+        // 1. Resolution Spinner
+        val resOptions = arrayOf("720p (HD)", "1080p (Full HD)")
+        val resSpinner = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, resOptions) }
+        resSpinner.setSelection(if (streamWidth == 1920 || streamHeight == 1920) 1 else 0)
+
+        // 2. FPS Spinner
+        val fpsOptions = arrayOf("24 FPS", "30 FPS", "60 FPS")
+        val fpsSpinner = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, fpsOptions) }
+        fpsSpinner.setSelection(when(streamFps) { 24 -> 0; 60 -> 2; else -> 1 })
+
+        // 3. Bitrate Spinner
+        val bitOptions = arrayOf("2 Mbps", "3 Mbps", "4 Mbps", "6 Mbps", "8 Mbps", "10 Mbps")
+        val bitValues = intArrayOf(2_000_000, 3_000_000, 4_000_000, 6_000_000, 8_000_000, 10_000_000)
+        val bitSpinner = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, bitOptions) }
+        
+        val currentBitIndex = bitValues.indexOf(streamBitrate).let { if (it == -1) 1 else it }
+        bitSpinner.setSelection(currentBitIndex)
+
+        layout.addView(TextView(this).apply { text = "Select Resolution:"; setPadding(0, 20, 0, 5); setTextColor(Color.GRAY) })
+        layout.addView(resSpinner)
+        layout.addView(TextView(this).apply { text = "Select Frame Rate (FPS):"; setPadding(0, 30, 0, 5); setTextColor(Color.GRAY) })
+        layout.addView(fpsSpinner)
+        layout.addView(TextView(this).apply { text = "Select Bitrate:"; setPadding(0, 30, 0, 5); setTextColor(Color.GRAY) })
+        layout.addView(bitSpinner)
+
+        AlertDialog.Builder(this)
+            .setTitle("⚙️ Video Quality")
+            .setView(layout)
+            .setPositiveButton("Apply & Restart Camera") { _, _ ->
+                // Update Resolution
+                val isPortrait = streamHeight > streamWidth
+                if (resSpinner.selectedItemPosition == 0) { // 720p
+                    streamWidth = if (isPortrait) 720 else 1280
+                    streamHeight = if (isPortrait) 1280 else 720
+                } else { // 1080p
+                    streamWidth = if (isPortrait) 1080 else 1920
+                    streamHeight = if (isPortrait) 1920 else 1080
+                }
+
+                // Update FPS & Bitrate
+                streamFps = fpsOptions[fpsSpinner.selectedItemPosition].split(" ")[0].toInt()
+                streamBitrate = bitValues[bitSpinner.selectedItemPosition]
+
+                Toast.makeText(this, "Applying $streamFps FPS & Quality...", Toast.LENGTH_SHORT).show()
+
+                // Apply immediately by restarting camera
+                if (rtmpCamera.isOnPreview) {
+                    rtmpCamera.stopPreview()
+                    surfaceReady = false // Reset surface state temporarily
+                    Handler(Looper.getMainLooper()).postDelayed({ 
+                        surfaceReady = true 
+                        tryStartCameraPreview() 
+                    }, 400)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun registerAudioDeviceMonitoring() {
@@ -685,7 +762,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             listOf(Triple(streamWidth, streamHeight, streamBitrate), Triple(720, 1280, 3_000_000), Triple(480, 854, 1_500_000), Triple(480, 640, 1_000_000))
         
         for (res in fallback) {
-            try { if (rtmpCamera.prepareVideo(res.first, res.second, 30, res.third, 2, 0)) { isSuccess = true; break } } catch (e: Exception) {}
+            try { if (rtmpCamera.prepareVideo(res.first, res.second, streamFps, res.third, 2, 0)) { isSuccess = true; break } } catch (e: Exception) {}
         }
         if (!isSuccess) try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) {}
 
