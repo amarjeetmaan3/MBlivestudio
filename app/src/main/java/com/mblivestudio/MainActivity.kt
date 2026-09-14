@@ -1406,9 +1406,20 @@ if (!aReady) try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) {}
             }
         }
     }
-    
+
+    override fun onPause() {
+    super.onPause()
+    if (!rtmpCamera.isStreaming) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
+}
+
+override fun onResume() {
+    super.onResume()
+    if (!rtmpCamera.isStreaming && surfaceReady) tryStartCameraPreview()
+}
+
     override fun onDestroy() {
         super.onDestroy()
+                if (!rtmpCamera.isStreaming) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
         overlayHandler.removeCallbacksAndMessages(null); chatHandler.removeCallbacksAndMessages(null); timerHandler.removeCallbacksAndMessages(null)
         tickerHandler.removeCallbacksAndMessages(null)
         webSyncHandler.removeCallbacksAndMessages(null)
