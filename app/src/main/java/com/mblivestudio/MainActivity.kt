@@ -23,6 +23,8 @@ import android.graphics.Typeface
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.media.MediaRecorder
+import com.pedro.encoder.input.audio.MicrophoneMode
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -232,6 +234,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         openGlView = findViewById(R.id.surfaceView)
         openGlView.holder.addCallback(this)
         rtmpCamera = RtmpCamera2(this, this)
+        rtmpCamera.setMicrophoneMode(MicrophoneMode.SYNC)
         imageFilterRender = ImageObjectFilterRender()
 
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -661,12 +664,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
         if (!isSuccess) try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) {}
 
-        var aReady = false
+var aReady = false
 if (isBluetoothMicActive) {
-    try { aReady = rtmpCamera.prepareAudio(32 * 1024, 16000, false, false, false) } catch (e: Exception) {}
+    try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.VOICE_COMMUNICATION, 32 * 1024, 16000, false, false, false) } catch (e: Exception) {}
 } else {
-    try { aReady = rtmpCamera.prepareAudio(192 * 1024, 44100, true, false, false) } catch (e: Exception) {}
-    if (!aReady) try { aReady = rtmpCamera.prepareAudio(192 * 1024, 44100, false, false, false) } catch (e: Exception) {}
+    try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.MIC, 192 * 1024, 44100, true, false, false) } catch (e: Exception) {}
+    if (!aReady) try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.MIC, 192 * 1024, 44100, false, false, false) } catch (e: Exception) {}
 }
 if (!aReady) try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) {}
         if (isSuccess && aReady) {
