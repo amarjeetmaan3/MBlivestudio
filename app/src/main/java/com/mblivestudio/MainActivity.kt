@@ -726,7 +726,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    private var refreshQueued = false
+        private var refreshQueued = false
 
     private fun updateSnapshot(delay: Long = 100) {
         if (!rtmpCamera.isOnPreview || overlayContainer.width == 0 || overlayContainer.height == 0) return
@@ -1193,7 +1193,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val spinner = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, privacyOptions); setSelection(privacyOptions.indexOfFirst { it.equals(pendingPrivacy, ignoreCase = true) }.coerceAtLeast(1)) }
         
         // --- ADVANCED QUALITY UI INTEGRATION ---
-        val sectionTitle = TextView(this).apply { text = "\nSTREAM QUALITY"; textColor = Color.parseColor("#03A9F4"); textStyle = Typeface.BOLD; paddingBottom = 10 }
+        val sectionTitle = TextView(this).apply { 
+            text = "\nSTREAM QUALITY"
+            setTextColor(Color.parseColor("#03A9F4"))
+            setTypeface(null, Typeface.BOLD)
+            setPadding(0, 0, 0, 10)
+        }
         
         val resOptions = arrayOf("720p (HD)", "1080p (Full HD)")
         val resSpinner = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, resOptions) }
@@ -1390,6 +1395,59 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 if (chatPollingActive) chatHandler.postDelayed({ pollChatOnce() }, 10000L)
             }
         }.start()
+    }
+
+    private fun startStudioTimer() { 
+        liveStartTimeMillis = System.currentTimeMillis()
+        timerRunning = true
+        tvLiveTimer.visibility = View.VISIBLE
+        timerHandler.post(timerRunnable) 
+    }
+    
+    private fun stopStudioTimer() { 
+        timerRunning = false
+        timerHandler.removeCallbacksAndMessages(null)
+        tvLiveTimer.visibility = View.GONE
+        tvLiveTimer.text = "00:00:00" 
+    }
+
+    private fun addImageOverlayToScreen(bitmap: Bitmap) {
+        val imageView = ImageView(this).apply { setImageBitmap(bitmap); layoutParams = RelativeLayout.LayoutParams(300, 300).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) } }
+        overlayContainer.addView(imageView); makeDraggableAndScalable(imageView); selectedOverlay = imageView; updateOverlayMenuButtonPosition(); updateSnapshot()
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun makeDraggableAndScalable(view: View) {
+        val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() { override fun onScale(detector: ScaleGestureDetector): Boolean { if (view is WebView) return false; view.scaleX *= detector.scaleFactor; view.scaleY *= detector.scaleFactor; return true } })
+        var localDX = 0f; var localDY = 0f
+        view.setOnTouchListener { v, event ->
+            if (currentMode != "DRAG") return@setOnTouchListener false
+            scaleGestureDetector.onTouchEvent(event)
+            if (!scaleGestureDetector.isInProgress) {
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> { 
+                        localDX = v.x - event.rawX; localDY = v.y - event.rawY
+                        selectedOverlay = v
+                        updateOverlayMenuButtonPosition() 
+                    }
+                    MotionEvent.ACTION_MOVE -> { 
+                        v.x = event.rawX + localDX
+                        v.y = event.rawY + localDY
+                        updateOverlayMenuButtonPosition()
+                        updateSnapshot(50) 
+                    }
+                    MotionEvent.ACTION_UP -> { updateSnapshot() }
+                }
+            }
+            if (v is EditText) v.onTouchEvent(event)
+            true
+        }
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun makeStudioPanelDraggable(view: View) {
+        var dX = 0f; var dY = 0f
+        view.setOnTouchListener { v, event -> when (event.actionMasked) { MotionEvent.ACTION_DOWN -> { dX = v.x - event.rawX; dY = v.y - event.rawY }; MotionEvent.ACTION_MOVE -> { v.x = event.rawX + dX; v.y = event.rawY + dY } }; true }
     }
 
     override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "🔥 YOU ARE LIVE!", Toast.LENGTH_LONG).show(); startStudioTimer() } }
