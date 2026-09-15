@@ -1477,17 +1477,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (!rtmpCamera.isStreaming && surfaceReady) tryStartCameraPreview()
     }
 
-    override fun onDestroy() {
+   override fun onDestroy() {
         super.onDestroy()
         if (!rtmpCamera.isStreaming) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
         
         stopRenderLoop() // ADVANCED FIX: Stop Choreographer gracefully
         
-        overlayHandler.removeCallbacksAndMessages(null)
         chatHandler.removeCallbacksAndMessages(null)
         timerHandler.removeCallbacksAndMessages(null)
-        tickerHandler.removeCallbacksAndMessages(null)
-        webSyncHandler.removeCallbacksAndMessages(null)
         
         bitmapA?.let { if (!it.isRecycled) it.recycle() }
         bitmapA = null
