@@ -37,6 +37,7 @@ import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.SurfaceHolder
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.webkit.WebChromeClient
@@ -228,17 +229,27 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Remove the status-bar inset without changing the existing camera
-        // preview scaling/layout. The previous layout was already correct;
-        // only the remaining top black strip needed to be removed.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         setContentView(R.layout.activity_main)
 
         openGlView = findViewById(R.id.surfaceView)
+
+        // Keep the camera preview truly edge-to-edge.
+        // The camera surface must occupy the complete available activity area;
+        // all studio controls/overlays remain drawn above it.
+        openGlView.layoutParams = openGlView.layoutParams.apply {
+            width = ViewGroup.LayoutParams.MATCH_PARENT
+            height = ViewGroup.LayoutParams.MATCH_PARENT
+            if (this is ViewGroup.MarginLayoutParams) {
+                leftMargin = 0
+                topMargin = 0
+                rightMargin = 0
+                bottomMargin = 0
+            }
+        }
+        openGlView.x = 0f
+        openGlView.y = 0f
         openGlView.holder.addCallback(this)
         rtmpCamera = GenericStream(
             this,
@@ -252,6 +263,19 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         registerAudioDeviceMonitoring()
 
         overlayContainer = findViewById(R.id.overlayContainer)
+        overlayContainer.layoutParams = overlayContainer.layoutParams.apply {
+            width = ViewGroup.LayoutParams.MATCH_PARENT
+            height = ViewGroup.LayoutParams.MATCH_PARENT
+            if (this is ViewGroup.MarginLayoutParams) {
+                leftMargin = 0
+                topMargin = 0
+                rightMargin = 0
+                bottomMargin = 0
+            }
+        }
+        overlayContainer.x = 0f
+        overlayContainer.y = 0f
+
         dragScoreboard = findViewById(R.id.dragScoreboard)
         scoreMainText = findViewById(R.id.scoreMainText)
         scoreSubText = findViewById(R.id.scoreSubText)
