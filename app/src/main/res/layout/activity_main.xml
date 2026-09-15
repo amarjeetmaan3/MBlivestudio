@@ -284,29 +284,19 @@
                 <Switch android:id="@+id/switchChatSync" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Fetch Chat API" android:textColor="#FFF" android:checked="true" android:layout_marginBottom="8dp"/>
                 <Switch android:id="@+id/switchViewerSync" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Fetch Viewers API" android:textColor="#FFF" android:checked="true" android:layout_marginBottom="8dp"/>
                 <Switch android:id="@+id/switchShowQuota" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Show API Quota UI" android:textColor="#FFF" android:checked="true" android:layout_marginBottom="8dp"/>
-                <Switch android:id="@+id/switchShowViewers" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Show Viewer Count UI" android:textColor="#FFF" android:checked="true" android:layout_marginBottom="8dp"/>
-
-                <Button
-                    android:id="@+id/btnVideoQuality"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Video Quality Settings"
-                    android:textColor="#FFFFFF"
-                    android:backgroundTint="#424242"
-                    android:layout_marginBottom="24dp"/>
+                <Switch android:id="@+id/switchShowViewers" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Show Viewer Count UI" android:textColor="#FFF" android:checked="true" android:layout_marginBottom="24dp"/>
 
                 <Button android:id="@+id/btnCloseSettings" android:layout_width="match_parent" android:layout_height="wrap_content" android:backgroundTint="#E53935" android:text="CLOSE SETTINGS" android:textColor="#FFF"/>
             </LinearLayout>
         </ScrollView>
     </LinearLayout>
 
-    <!-- Studio-Only Comments Panel -->
+    <!-- Studio-Only Comments Panel (Now Floating/Draggable) -->
     <LinearLayout
         android:id="@+id/commentsPanel"
         android:layout_width="260dp"
         android:layout_height="180dp"
-        android:layout_alignParentBottom="true"
-        android:layout_alignParentLeft="true"
+        <!-- Removed alignParentBottom and alignParentLeft to allow free dragging -->
         android:orientation="vertical"
         android:background="#A6000000"
         android:padding="6dp"
