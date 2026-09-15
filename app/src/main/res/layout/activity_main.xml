@@ -163,7 +163,7 @@
             android:textStyle="bold" />
     </LinearLayout>
 
-    <!-- LEFT SIDE QUICK ACTIONS (Camera, Mic, Bluetooth, Orientation) -->
+    <!-- LEFT SIDE QUICK ACTIONS -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -174,44 +174,13 @@
         android:background="@drawable/bg_pill_menu"
         android:paddingVertical="8dp">
 
-        <ImageButton
-            android:id="@+id/btnSwitchCamera"
-            android:layout_width="52dp"
-            android:layout_height="52dp"
-            android:background="@android:color/transparent"
-            android:src="@drawable/ic_camera_flip"
-            android:scaleType="centerInside"
-            android:padding="14dp" />
-
-        <ImageButton
-            android:id="@+id/btnMicToggle"
-            android:layout_width="52dp"
-            android:layout_height="52dp"
-            android:background="@android:color/transparent"
-            android:src="@drawable/ic_mic_on"
-            android:scaleType="centerInside"
-            android:padding="14dp" />
-
-        <ImageButton
-            android:id="@+id/btnBluetoothMic"
-            android:layout_width="52dp"
-            android:layout_height="52dp"
-            android:background="@android:color/transparent"
-            android:src="@drawable/ic_bluetooth"
-            android:scaleType="centerInside"
-            android:padding="14dp" />
-            
-        <ImageButton
-            android:id="@+id/btnOrientation"
-            android:layout_width="52dp"
-            android:layout_height="52dp"
-            android:background="@android:color/transparent"
-            android:src="@android:drawable/ic_menu_always_landscape_portrait"
-            android:scaleType="centerInside"
-            android:padding="14dp" />
+        <ImageButton android:id="@+id/btnSwitchCamera" android:layout_width="52dp" android:layout_height="52dp" android:background="@android:color/transparent" android:src="@drawable/ic_camera_flip" android:scaleType="centerInside" android:padding="14dp" />
+        <ImageButton android:id="@+id/btnMicToggle" android:layout_width="52dp" android:layout_height="52dp" android:background="@android:color/transparent" android:src="@drawable/ic_mic_on" android:scaleType="centerInside" android:padding="14dp" />
+        <ImageButton android:id="@+id/btnBluetoothMic" android:layout_width="52dp" android:layout_height="52dp" android:background="@android:color/transparent" android:src="@drawable/ic_bluetooth" android:scaleType="centerInside" android:padding="14dp" />
+        <ImageButton android:id="@+id/btnOrientation" android:layout_width="52dp" android:layout_height="52dp" android:background="@android:color/transparent" android:src="@android:drawable/ic_menu_always_landscape_portrait" android:scaleType="centerInside" android:padding="14dp" />
     </LinearLayout>
 
-    <!-- RIGHT SIDE MENU (Live Text, Delete, Settings) -->
+    <!-- RIGHT SIDE MENU -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -241,7 +210,7 @@
         <Button android:id="@+id/btnZoomIn" android:layout_width="52dp" android:layout_height="52dp" android:background="@android:color/transparent" android:text="+" android:textSize="24sp" android:textColor="#FFF" />
     </LinearLayout>
 
-    <!-- NEW MASTER SETTINGS POPUP -->
+    <!-- MASTER SETTINGS POPUP -->
     <LinearLayout
         android:id="@+id/popupSettings"
         android:layout_width="wrap_content"
@@ -291,18 +260,28 @@
         </ScrollView>
     </LinearLayout>
 
-    <!-- Studio-Only Comments Panel (Now Floating/Draggable) -->
+    <!-- Studio-Only Comments Panel (Freely Draggable with Handle) -->
     <LinearLayout
         android:id="@+id/commentsPanel"
         android:layout_width="260dp"
-        android:layout_height="180dp"
+        android:layout_height="220dp"
         android:orientation="vertical"
         android:background="#A6000000"
         android:padding="6dp"
         android:layout_margin="16dp"
         android:visibility="gone">
         
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="LIVE CHAT" android:textColor="#03A9F4" android:textStyle="bold" android:textSize="12sp" android:layout_marginBottom="4dp"/>
+        <TextView 
+            android:id="@+id/tvChatDragHandle"
+            android:layout_width="match_parent" 
+            android:layout_height="wrap_content" 
+            android:text="≡ LIVE CHAT (Drag Me)" 
+            android:textColor="#03A9F4" 
+            android:textStyle="bold" 
+            android:textSize="14sp" 
+            android:padding="8dp"
+            android:background="#55000000"
+            android:layout_marginBottom="4dp"/>
         
         <ScrollView android:id="@+id/commentsScrollView" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
             <TextView android:id="@+id/tvCommentsFeed" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="#FFFFFF" android:textSize="12sp" />
