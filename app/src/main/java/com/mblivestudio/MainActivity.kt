@@ -996,11 +996,15 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
             btnRow.addView(btnTitleBg); btnRow.addView(btnTickerBg); btnRow.addView(btnTextColor)
         } else {
-            val btnTextColor = Button(this).apply { text = "Apply to Text"; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
-            val btnBgColor = Button(this).apply { text = "Apply to Background"; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
+            val btnTextColor = Button(this).apply { text = "Text Color"; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
+            val btnBgColor = Button(this).apply { text = "Background Color"; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
+            val btnTransparentBg = Button(this).apply { text = "Transparent BG"; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) } // नया ट्रांसपेरेंट बटन
+            
             btnTextColor.setOnClickListener { (target as? TextView)?.setTextColor(Color.rgb(r, g, b)); updateSnapshot(); dialog.dismiss() }
             btnBgColor.setOnClickListener { (target as? TextView)?.setBackgroundColor(Color.rgb(r, g, b)); updateSnapshot(); dialog.dismiss() }
-            btnRow.addView(btnTextColor); btnRow.addView(btnBgColor)
+            btnTransparentBg.setOnClickListener { (target as? TextView)?.setBackgroundColor(Color.TRANSPARENT); updateSnapshot(); dialog.dismiss() }
+            
+            btnRow.addView(btnTextColor); btnRow.addView(btnBgColor); btnRow.addView(btnTransparentBg)
         }
         
         container.addView(btnRow)
