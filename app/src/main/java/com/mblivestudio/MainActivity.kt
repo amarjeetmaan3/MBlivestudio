@@ -34,7 +34,6 @@ import android.text.Editable
 import android.text.InputType
 import android.text.TextUtils
 import android.text.TextWatcher
-import android.view.Choreographer
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.SurfaceHolder
@@ -131,6 +130,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private val MAX_RETRIES = 3
     private var generatedRtmpUrl: String? = null
 
+    private val overlayHandler = Handler(Looper.getMainLooper())
+    private var pendingRefresh = false
     private var surfaceReady = false
 
     // Double Buffering
@@ -140,52 +141,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private var canvasB: Canvas? = null
     private var useBufferA = true
 
-    // --- ADVANCED GPU-SYNC RENDER LOOP ---
-    private var isRendering = false
-    private val renderFrameCallback = object : Choreographer.FrameCallback {
-        override fun doFrame(frameTimeNanos: Long) {
-            if (!isRendering || overlayContainer.width == 0 || overlayContainer.height == 0) return
-            
-            try {
-                val w = overlayContainer.width
-                val h = overlayContainer.height
-                useBufferA = !useBufferA
-
-                val currentBitmap = if (useBufferA) {
-                    if (bitmapA == null || bitmapA!!.isRecycled || bitmapA!!.width != w || bitmapA!!.height != h) {
-                        bitmapA?.recycle()
-                        bitmapA = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-                        canvasA = Canvas(bitmapA!!)
-                    }
-                    bitmapA!!
-                } else {
-                    if (bitmapB == null || bitmapB!!.isRecycled || bitmapB!!.width != w || bitmapB!!.height != h) {
-                        bitmapB?.recycle()
-                        bitmapB = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-                        canvasB = Canvas(bitmapB!!)
-                    }
-                    bitmapB!!
-                }
-
-                currentBitmap.eraseColor(Color.TRANSPARENT)
-                val canvas = if (useBufferA) canvasA!! else canvasB!!
-                overlayContainer.draw(canvas)
-                imageFilterRender.setImage(currentBitmap)
-
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-            
-            if (isRendering) {
-                Choreographer.getInstance().postFrameCallback(this)
-            }
-        }
-    }
-
-    // ADVANCED VIDEO QUALITY SETTINGS
+    // Quality Variables
     private var streamWidth = 1280
     private var streamHeight = 720
-    private var streamBitrate = 4_000_000 
+    private var streamBitrate = 3_000_000
     private var streamFps = 30 
 
     private var pendingTitle: String = ""
@@ -224,13 +183,33 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
+    private val tickerHandler = Handler(Looper.getMainLooper())
+    private val tickerRunnable = object : Runnable {
+        override fun run() {
+            updateSnapshot(50) 
+            tickerHandler.postDelayed(this, 100)
+        }
+    }
+
+    private val webSyncHandler = Handler(Looper.getMainLooper())
+    private val webSyncRunnable = object : Runnable {
+        override fun run() {
+            updateSnapshot(100)
+            webSyncHandler.postDelayed(this, 1000)
+        }
+    }
+
     override fun attachBaseContext(newBase: Context?) {
         super.attachBaseContext(newBase)
         System.setProperty("java.net.preferIPv4Stack", "true")
         System.setProperty("java.net.preferIPv6Addresses", "false")
     }
 
-    // FEATURE 3: IMMERSIVE FULL SCREEN MODE
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        updateSnapshot()
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
@@ -282,6 +261,17 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         tvStreamChatOverlay.setOnTouchListener(null)
         makeDraggableAndScalable(tvStreamChatOverlay)
         
+        // --- DRAG HANDLE FIX FOR COMMENTS PANEL ---
+        val tvChatDragHandle: TextView = findViewById(R.id.tvChatDragHandle)
+        var cDx = 0f; var cDy = 0f
+        tvChatDragHandle.setOnTouchListener { _, event -> 
+            when (event.actionMasked) { 
+                MotionEvent.ACTION_DOWN -> { cDx = commentsPanel.x - event.rawX; cDy = commentsPanel.y - event.rawY }
+                MotionEvent.ACTION_MOVE -> { commentsPanel.x = event.rawX + cDx; commentsPanel.y = event.rawY + cDy } 
+            }
+            true 
+        }
+
         val popupSettings: LinearLayout = findViewById(R.id.popupSettings)
         val btnSettings: ImageButton = findViewById(R.id.btnSettings)
         val btnCloseSettings: Button = findViewById(R.id.btnCloseSettings)
@@ -344,6 +334,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 makeDraggableAndScalable(it) 
             }
             updateOverlayMenuButtonPosition()
+            updateSnapshot()
         }
 
         val btnSwitchCamera: ImageButton = findViewById(R.id.btnSwitchCamera)
@@ -360,17 +351,19 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             popupSettings.visibility = View.GONE
             if (tvStreamChatOverlay.visibility == View.VISIBLE) {
                 tvStreamChatOverlay.visibility = View.GONE
+                updateSnapshot()
             } else {
                 tvStreamChatOverlay.visibility = View.VISIBLE
                 tvStreamChatOverlay.bringToFront()
                 refreshChatOverlayText()
+                updateSnapshot()
             }
         }
 
         findViewById<Button>(R.id.btnAddText).setOnClickListener { popupSettings.visibility = View.GONE; showAddTextDialog() }
         findViewById<Button>(R.id.btnAddWebOverlay).setOnClickListener { popupSettings.visibility = View.GONE; showAddWebDialog() }
         findViewById<Button>(R.id.btnAddLogo).setOnClickListener { popupSettings.visibility = View.GONE; val intent = Intent(Intent.ACTION_GET_CONTENT); intent.type = "image/*"; startActivityForResult(intent, PICK_IMAGE_REQUEST) }
-        findViewById<Button>(R.id.btnToggleScore).setOnClickListener { popupSettings.visibility = View.GONE; if (dragScoreboard.visibility == View.VISIBLE) { dragScoreboard.visibility = View.GONE; } else { showScoreboardDialog() } }
+        findViewById<Button>(R.id.btnToggleScore).setOnClickListener { popupSettings.visibility = View.GONE; if (dragScoreboard.visibility == View.VISIBLE) { dragScoreboard.visibility = View.GONE; updateSnapshot() } else { showScoreboardDialog() } }
         findViewById<Button>(R.id.btnAddLowerThird).setOnClickListener { popupSettings.visibility = View.GONE; showAddLowerThirdDialog() }
         
         findViewById<ImageButton>(R.id.btnLayoutFull).setOnClickListener { applyCameraLayout(floatArrayOf(0f,0f,1f,1f)); popupSettings.visibility = View.GONE }
@@ -393,6 +386,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
             target?.let { 
                 if (it != dragScoreboard) { 
+                    if (it.tag == "LOWER_THIRD") tickerHandler.removeCallbacks(tickerRunnable)
+                    if (it.tag == "WEB_OVERLAY") webSyncHandler.removeCallbacks(webSyncRunnable)
                     if (it is EditText) {
                         it.clearFocus()
                         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
@@ -401,6 +396,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     overlayContainer.removeView(it)
                     if (selectedOverlay == it) selectedOverlay = null
                     updateOverlayMenuButtonPosition()
+                    updateSnapshot() 
                 } 
             } 
         }
@@ -438,11 +434,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 Toast.makeText(this, "Stop stream to change orientation", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
+            
             val temp = streamWidth
             streamWidth = streamHeight
             streamHeight = temp
 
-            if (rtmpCamera.isOnPreview) { rtmpCamera.stopPreview() }
+            if (rtmpCamera.isOnPreview) {
+                rtmpCamera.stopPreview()
+            }
             surfaceReady = false
 
             if (streamWidth > streamHeight) {
@@ -532,10 +531,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
 
         makeDraggableAndScalable(dragScoreboard)
-        makeStudioPanelDraggable(commentsPanel)
-
-        // START HIGH-PERFORMANCE RENDER LOOP
-        startRenderLoop()
     }
 
     private fun registerAudioDeviceMonitoring() {
@@ -691,24 +686,15 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return
 
         var isSuccess = false
-        val iFrameInterval = 1 
-
-        try { 
-            if (rtmpCamera.prepareVideo(streamWidth, streamHeight, streamFps, streamBitrate, iFrameInterval, 0)) { 
-                isSuccess = true 
-            } 
-        } catch (e: Exception) {}
-
-        if (!isSuccess) {
-            val fallback = if (streamWidth >= streamHeight)
-                listOf(Triple(1280, 720, 3_000_000), Triple(854, 480, 1_500_000))
-            else
-                listOf(Triple(720, 1280, 3_000_000), Triple(480, 854, 1_500_000))
-            
-            for (res in fallback) {
-                try { if (rtmpCamera.prepareVideo(res.first, res.second, 30, res.third, iFrameInterval, 0)) { isSuccess = true; break } } catch (e: Exception) {}
-            }
+        val fallback = if (streamWidth >= streamHeight)
+            listOf(Triple(streamWidth, streamHeight, streamBitrate), Triple(1280, 720, 3_000_000), Triple(854, 480, 1_500_000), Triple(640, 480, 1_000_000))
+        else
+            listOf(Triple(streamWidth, streamHeight, streamBitrate), Triple(720, 1280, 3_000_000), Triple(480, 854, 1_500_000), Triple(480, 640, 1_000_000))
+        
+        for (res in fallback) {
+            try { if (rtmpCamera.prepareVideo(res.first, res.second, streamFps, res.third, 2, 0)) { isSuccess = true; break } } catch (e: Exception) {}
         }
+        if (!isSuccess) try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) {}
 
         var aReady = false
         if (isBluetoothMicActive) {
@@ -727,21 +713,51 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             rtmpCamera.glInterface.addFilter(imageFilterRender)
             rtmpCamera.replaceView(openGlView)
             rtmpCamera.startPreview()
+            updateSnapshot(1000)
         } else {
             Toast.makeText(this, "CAMERA ERROR: Encoder not supported.", Toast.LENGTH_LONG).show()
         }
     }
 
-    private fun startRenderLoop() {
-        if (!isRendering) {
-            isRendering = true
-            Choreographer.getInstance().postFrameCallback(renderFrameCallback)
-        }
-    }
+    private var refreshQueued = false
 
-    private fun stopRenderLoop() {
-        isRendering = false
-        Choreographer.getInstance().removeFrameCallback(renderFrameCallback)
+    private fun updateSnapshot(delay: Long = 100) {
+        if (!rtmpCamera.isOnPreview || overlayContainer.width == 0 || overlayContainer.height == 0) return
+        if (pendingRefresh) { refreshQueued = true; return }
+        pendingRefresh = true
+        overlayHandler.postDelayed({
+            try {
+                val w = overlayContainer.width
+                val h = overlayContainer.height
+
+                useBufferA = !useBufferA
+
+                if (useBufferA) {
+                    if (bitmapA == null || bitmapA!!.isRecycled || bitmapA!!.width != w || bitmapA!!.height != h) {
+                        bitmapA?.recycle()
+                        bitmapA = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                        canvasA = Canvas(bitmapA!!)
+                    }
+                    bitmapA!!.eraseColor(Color.TRANSPARENT)
+                    overlayContainer.draw(canvasA!!)
+                    imageFilterRender.setImage(bitmapA!!)
+                } else {
+                    if (bitmapB == null || bitmapB!!.isRecycled || bitmapB!!.width != w || bitmapB!!.height != h) {
+                        bitmapB?.recycle()
+                        bitmapB = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                        canvasB = Canvas(bitmapB!!)
+                    }
+                    bitmapB!!.eraseColor(Color.TRANSPARENT)
+                    overlayContainer.draw(canvasB!!)
+                    imageFilterRender.setImage(bitmapB!!)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                pendingRefresh = false
+                if (refreshQueued) { refreshQueued = false; updateSnapshot(0) }
+            }
+        }, delay)
     }
 
     private fun sendSyntheticZoomEvent(action: Int, pointerDistance: Float, delta: Float) {
@@ -763,12 +779,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     override fun surfaceCreated(holder: SurfaceHolder) {}
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-        surfaceReady = true
-        if (rtmpCamera.isOnPreview) {
-            try { rtmpCamera.replaceView(openGlView) } catch (e: Exception) {}
-        } else {
-            tryStartCameraPreview()
-        }
+    surfaceReady = true
+    if (rtmpCamera.isOnPreview) {
+        try { rtmpCamera.replaceView(openGlView) } catch (e: Exception) {}
+    } else {
+        tryStartCameraPreview()
+    }
     }
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         surfaceReady = false
@@ -823,8 +839,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     target.layoutParams.width = newW; target.layoutParams.height = newH; target.requestLayout()
                     if (wMult < 0) target.x = startX + (startW - newW); if (hMult < 0) target.y = startY + (startH - newH)
                     updateHandlePos(); if (target == tvStreamChatOverlay) refreshChatOverlayText()
-                    root.post { resizeHandles.forEach { (it.tag as? ()->Unit)?.invoke() } }
+                    root.post { resizeHandles.forEach { (it.tag as? ()->Unit)?.invoke() } }; updateSnapshot()
                 }
+                MotionEvent.ACTION_UP -> updateSnapshot()
             }
             true
         }
@@ -855,7 +872,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             val fillScale = maxOf(target.width.toFloat() / bmpW, target.height.toFloat() / bmpH)
             target.scaleType = ImageView.ScaleType.MATRIX
             var scale = fillScale; var transX = (target.width - bmpW * scale) / 2f; var transY = (target.height - bmpH * scale) / 2f
-            fun clampAndApply() { transX = transX.coerceIn(target.width - bmpW * scale, 0f); transY = transY.coerceIn(target.height - bmpH * scale, 0f); val matrix = android.graphics.Matrix(); matrix.postScale(scale, scale); matrix.postTranslate(transX, transY); target.imageMatrix = matrix }
+            fun clampAndApply() { transX = transX.coerceIn(target.width - bmpW * scale, 0f); transY = transY.coerceIn(target.height - bmpH * scale, 0f); val matrix = android.graphics.Matrix(); matrix.postScale(scale, scale); matrix.postTranslate(transX, transY); target.imageMatrix = matrix; updateSnapshot() }
             clampAndApply()
             val scaleDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() { override fun onScale(d: ScaleGestureDetector): Boolean { scale = (scale * d.scaleFactor).coerceIn(fillScale, fillScale * 4f); clampAndApply(); return true } })
             var dX = 0f; var dY = 0f
@@ -866,6 +883,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     when (event.actionMasked) {
                         MotionEvent.ACTION_DOWN -> { dX = transX - event.rawX; dY = transY - event.rawY }
                         MotionEvent.ACTION_MOVE -> { transX = event.rawX + dX; transY = event.rawY + dY; clampAndApply() }
+                        MotionEvent.ACTION_UP -> updateSnapshot()
                     }
                 }
                 true
@@ -878,7 +896,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         AlertDialog.Builder(this).setTitle("Add Text Overlay").setView(input).setPositiveButton("Add") { _, _ -> 
             if (input.text.toString().trim().isNotEmpty()) {
                 val textView = TextView(this).apply { text = input.text.toString().trim(); setTextColor(Color.YELLOW); textSize = 30f; setTypeface(null, Typeface.BOLD); layoutParams = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) } }
-                overlayContainer.addView(textView); makeDraggableAndScalable(textView); selectedOverlay = textView; updateOverlayMenuButtonPosition()
+                overlayContainer.addView(textView); makeDraggableAndScalable(textView); selectedOverlay = textView; updateOverlayMenuButtonPosition(); updateSnapshot()
             }
         }.setNegativeButton("Cancel", null).show()
     }
@@ -920,7 +938,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 overlayContainer.addView(wrapper)
                 makeDraggableAndScalable(wrapper)
                 selectedOverlay = wrapper
+                
+                tickerHandler.post(tickerRunnable)
+                
                 updateOverlayMenuButtonPosition()
+                updateSnapshot()
             }.setNegativeButton("Cancel", null).show()
     }
 
@@ -958,22 +980,22 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             val btnTickerBg = Button(this).apply { text = "Ticker BG"; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
             val btnTextColor = Button(this).apply { text = "Text Color"; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
             
-            btnTitleBg.setOnClickListener { (target.getChildAt(0) as? TextView)?.setBackgroundColor(Color.rgb(r, g, b)); dialog.dismiss() }
-            btnTickerBg.setOnClickListener { (target.getChildAt(1) as? TextView)?.setBackgroundColor(Color.rgb(r, g, b)); dialog.dismiss() }
+            btnTitleBg.setOnClickListener { (target.getChildAt(0) as? TextView)?.setBackgroundColor(Color.rgb(r, g, b)); updateSnapshot(); dialog.dismiss() }
+            btnTickerBg.setOnClickListener { (target.getChildAt(1) as? TextView)?.setBackgroundColor(Color.rgb(r, g, b)); updateSnapshot(); dialog.dismiss() }
             btnTextColor.setOnClickListener { 
                 (target.getChildAt(0) as? TextView)?.setTextColor(Color.rgb(r, g, b))
                 (target.getChildAt(1) as? TextView)?.setTextColor(Color.rgb(r, g, b))
-                dialog.dismiss() 
+                updateSnapshot(); dialog.dismiss() 
             }
             btnRow.addView(btnTitleBg); btnRow.addView(btnTickerBg); btnRow.addView(btnTextColor)
         } else {
             val btnTextColor = Button(this).apply { text = "Text Color"; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
             val btnBgColor = Button(this).apply { text = "Bg Color"; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
-            val btnTransparentBg = Button(this).apply { text = "No Bg"; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) } 
+            val btnTransparentBg = Button(this).apply { text = "No Bg"; layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
             
-            btnTextColor.setOnClickListener { (target as? TextView)?.setTextColor(Color.rgb(r, g, b)); dialog.dismiss() }
-            btnBgColor.setOnClickListener { (target as? TextView)?.setBackgroundColor(Color.rgb(r, g, b)); dialog.dismiss() }
-            btnTransparentBg.setOnClickListener { (target as? TextView)?.setBackgroundColor(Color.TRANSPARENT); dialog.dismiss() }
+            btnTextColor.setOnClickListener { (target as? TextView)?.setTextColor(Color.rgb(r, g, b)); updateSnapshot(); dialog.dismiss() }
+            btnBgColor.setOnClickListener { (target as? TextView)?.setBackgroundColor(Color.rgb(r, g, b)); updateSnapshot(); dialog.dismiss() }
+            btnTransparentBg.setOnClickListener { (target as? TextView)?.setBackgroundColor(Color.TRANSPARENT); updateSnapshot(); dialog.dismiss() }
             
             btnRow.addView(btnTextColor); btnRow.addView(btnBgColor); btnRow.addView(btnTransparentBg)
         }
@@ -1003,13 +1025,21 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                         selectedOverlay = null
                         updateOverlayMenuButtonPosition()
                     }
+                    updateSnapshot()
                 }
             }
+
+            addTextChangedListener(object : TextWatcher { 
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { updateSnapshot() }
+                override fun afterTextChanged(s: Editable?) {} 
+            })
         }
         overlayContainer.addView(liveEditText)
         makeDraggableAndScalable(liveEditText)
         selectedOverlay = liveEditText
         updateOverlayMenuButtonPosition()
+        updateSnapshot()
         liveEditText.requestFocus()
         (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(liveEditText, InputMethodManager.SHOW_IMPLICIT)
     }
@@ -1019,7 +1049,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val mainInput = EditText(this).apply { hint = "Main Score (IND 245/3)" }
         val subInput = EditText(this).apply { hint = "Sub Score (Target: 312)" }
         layout.addView(mainInput); layout.addView(subInput)
-        AlertDialog.Builder(this).setTitle("Update Scoreboard").setView(layout).setPositiveButton("Show") { _, _ -> scoreMainText.text = mainInput.text.toString(); scoreSubText.text = subInput.text.toString(); dragScoreboard.visibility = View.VISIBLE }.setNegativeButton("Cancel", null).show()
+        AlertDialog.Builder(this).setTitle("Update Scoreboard").setView(layout).setPositiveButton("Show") { _, _ -> scoreMainText.text = mainInput.text.toString(); scoreSubText.text = subInput.text.toString(); dragScoreboard.visibility = View.VISIBLE; updateSnapshot() }.setNegativeButton("Cancel", null).show()
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -1030,7 +1060,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             if (url.isNotEmpty()) {
                 val finalUrl = if (!url.startsWith("http")) "https://$url" else url
                 
-                val targetWebWidth = 1920
+            val targetWebWidth = 1920
                 val targetWebHeight = 1080
                 
                 val webView = WebView(this).apply {
@@ -1049,6 +1079,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     scaleY = if (containerH > 0f) containerH / targetWebHeight else fallbackH / targetWebHeight
                     
                     setBackgroundColor(Color.TRANSPARENT)
+                    setLayerType(View.LAYER_TYPE_SOFTWARE, null)
                     
                     isVerticalScrollBarEnabled = false
                     isHorizontalScrollBarEnabled = false
@@ -1069,7 +1100,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
                             super.onPageFinished(view, url)
-                            view?.animate()?.alpha(1f)?.setDuration(500)?.start()
+                            view?.animate()?.alpha(1f)?.setDuration(500)?.setUpdateListener { updateSnapshot(0) }?.start()
                         }
                     }
                     loadUrl(finalUrl)
@@ -1079,12 +1110,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 makeDraggableAndScalable(webView) 
                 selectedOverlay = webView
                 updateOverlayMenuButtonPosition() 
+                webSyncHandler.post(webSyncRunnable)
             }
         }.setNegativeButton("Cancel", null).show()
     }
 
     private fun applyAccountToHeader(account: com.google.android.gms.auth.api.signin.GoogleSignInAccount) {
-        account.photoUrl?.let { url -> Thread { try { val input = java.net.URL(url.toString()).openStream(); val bmp = BitmapFactory.decodeStream(input); input.close(); val circular = cropToCircle(bmp); runOnUiThread { if(!isDestroyed) findViewById<ImageView>(R.id.ivProfilePhoto).setImageBitmap(circular) } } catch (e: Exception) { e.printStackTrace() } }.start() }
+        account.photoUrl?.let { url -> Thread { try { val input = java.net.URL(url.toString()).openStream(); val bmp = BitmapFactory.decodeStream(input); input.close(); val circular = cropToCircle(bmp); runOnUiThread { findViewById<ImageView>(R.id.ivProfilePhoto).setImageBitmap(circular) } } catch (e: Exception) { e.printStackTrace() } }.start() }
     }
 
     private fun cropToCircle(bitmap: Bitmap): Bitmap {
@@ -1145,6 +1177,123 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             try { StreamingService.start(this@MainActivity); rtmpCamera.startStream(rtmpUrl); startChatPolling(chatId) } catch (e: Exception) { StreamingService.stop(this@MainActivity); Toast.makeText(this, "Stream Error", Toast.LENGTH_LONG).show(); btnGoLive.text = "GO LIVE" }
         }
         dialog.show()
+    }
+
+    private fun createYouTubeBroadcast() {
+        btnGoLive.text = "1/3: API..."; btnGoLive.isEnabled = false
+        val finalTitle = pendingTitle.trim().ifEmpty { "Live from M.B. Live Studio" }
+        val finalDesc = pendingDesc.trim().ifEmpty { "Streaming via Android App" }
+        val privacyInput = pendingPrivacy
+        Thread {
+            addQuota(150)
+            try {
+                val credential = GoogleAccountCredential.usingOAuth2(this@MainActivity, listOf("https://www.googleapis.com/auth/youtube"))
+                val signInAccount = GoogleSignIn.getLastSignedInAccount(this@MainActivity)
+                if (signInAccount?.account != null) credential.selectedAccount = signInAccount.account else credential.selectedAccountName = connectedAccountEmail
+                val youtube = YouTube.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), HttpRequestInitializer { request -> credential.initialize(request); request.connectTimeout = 10000; request.readTimeout = 10000; request.numberOfRetries = 0 }).setApplicationName("MBLiveStudio").build()
+                youtubeClient = youtube
+                runOnUiThread { btnGoLive.text = "2/3: ROOM..." }
+
+                val scheduleTime = if (pendingScheduleTimeMs > 0) DateTime(pendingScheduleTimeMs) else DateTime(System.currentTimeMillis())
+                val broadcastSnippet = LiveBroadcastSnippet().apply { title = finalTitle; description = finalDesc; scheduledStartTime = scheduleTime }
+                val broadcastStatus = LiveBroadcastStatus().apply { privacyStatus = privacyInput; selfDeclaredMadeForKids = false }
+                val broadcastContentDetails = LiveBroadcastContentDetails().apply { enableAutoStart = true; latencyPreference = "ultraLow" }
+                val broadcast = youtube.liveBroadcasts().insert("snippet,status,contentDetails", LiveBroadcast().apply { snippet = broadcastSnippet; status = broadcastStatus; contentDetails = broadcastContentDetails }).execute()
+
+                val bId = broadcast.id
+                val liveChatId = broadcast.snippet?.liveChatId ?: ""
+                pendingThumbnailUri?.let { uri -> try { val stream = contentResolver.openInputStream(uri); if (stream != null) { youtube.thumbnails().set(bId, InputStreamContent("image/jpeg", stream)).execute() } } catch (e: Exception) { e.printStackTrace() } }
+                runOnUiThread { btnGoLive.text = "3/3: KEY..." }
+
+                val stream2 = youtube.liveStreams().insert("snippet,cdn", LiveStream().apply { snippet = LiveStreamSnippet().apply { title = "$finalTitle - Key" }; cdn = CdnSettings().apply { ingestionType = "rtmp"; resolution = "variable"; frameRate = "variable" } }).execute()
+                youtube.liveBroadcasts().bind(bId, "id,contentDetails").apply { streamId = stream2.id }.execute()
+
+                val ingestionUrl = stream2.cdn.ingestionInfo.ingestionAddress
+                var resolvedIp: String? = null
+                try { val host = if (ingestionUrl.contains("b.rtmp")) "b.rtmp.youtube.com" else "a.rtmp.youtube.com"; resolvedIp = InetAddress.getAllByName(host).firstOrNull { it is Inet4Address }?.hostAddress } catch (e: Exception) { e.printStackTrace() }
+                val finalUrl = if (resolvedIp != null && ingestionUrl.contains("a.rtmp.youtube.com")) ingestionUrl.replace("a.rtmp.youtube.com", resolvedIp) + "/" + stream2.cdn.ingestionInfo.streamName else ingestionUrl.replace("a.rtmp", "b.rtmp") + "/" + stream2.cdn.ingestionInfo.streamName
+                
+                val shareLink = "https://youtu.be/$bId"
+                saveStreamLocally(finalTitle, bId, liveChatId, finalUrl)
+
+                runOnUiThread {
+                    btnGoLive.text = "GO LIVE"
+                    btnGoLive.isEnabled = true
+                    showStreamReadyDialog(finalTitle, shareLink, finalUrl, bId, liveChatId)
+                }
+            } catch (e: Exception) { e.printStackTrace(); runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; Toast.makeText(this@MainActivity, "Timeout/API Error: ${e.message}", Toast.LENGTH_LONG).show() } }
+        }.start()
+    }
+
+    private fun stopLiveStream() {
+        btnGoLive.isEnabled = false; btnGoLive.text = "STOPPING..."
+        Thread {
+            currentBroadcastId?.let { broadcastId -> 
+                try { youtubeClient?.liveBroadcasts()?.transition("complete", broadcastId, "status")?.execute() } catch (e: Exception) { e.printStackTrace() }
+                removeSavedStream(broadcastId)
+                currentBroadcastId = null 
+            }
+            try { rtmpCamera.stopStream() } catch (e: Exception) {}
+            StreamingService.stop(this@MainActivity)
+            runOnUiThread {
+                btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
+                Toast.makeText(this@MainActivity, "Stream Ended Permanently.", Toast.LENGTH_SHORT).show()
+                generatedRtmpUrl = null; stopChatPolling(); stopStudioTimer()
+            }
+        }.start()
+    }
+
+    private fun startChatPolling(liveChatId: String) { currentLiveChatId = liveChatId; chatNextPageToken = null; chatPollingActive = true; pollChatOnce(); pollViewersOnce() }
+    private fun stopChatPolling() { chatPollingActive = false; chatHandler.removeCallbacksAndMessages(null); currentLiveChatId = null; runOnUiThread { tvViewerCount.visibility = View.GONE } }
+
+    private fun pollViewersOnce() {
+        if (!chatPollingActive || currentBroadcastId == null) return
+        if (!switchViewerSync.isChecked) { chatHandler.postDelayed({ pollViewersOnce() }, 5000L); return }
+        val youtube = youtubeClient ?: return
+        Thread {
+            addQuota(1)
+            try {
+                val response = youtube.videos().list("liveStreamingDetails").setId(currentBroadcastId).execute()
+                val details = response.items?.firstOrNull()?.liveStreamingDetails
+                val viewers = details?.concurrentViewers?.toString() ?: "0"
+                runOnUiThread { 
+                    tvViewerCount.text = "👁️ $viewers"
+                    if (switchShowViewers.isChecked) tvViewerCount.visibility = View.VISIBLE 
+                }
+            } catch (e: Exception) { e.printStackTrace() }
+            if (chatPollingActive) chatHandler.postDelayed({ pollViewersOnce() }, 5000L)
+        }.start()
+    }
+
+    private fun pollChatOnce() {
+        if (!chatPollingActive) return
+        if (!switchChatSync.isChecked) { chatHandler.postDelayed({ pollChatOnce() }, 5000L); return }
+        val chatId = currentLiveChatId ?: return
+        val youtube = youtubeClient ?: return
+        Thread {
+            addQuota(1)
+            try {
+                val request = youtube.liveChatMessages().list(chatId, "snippet,authorDetails")
+                chatNextPageToken?.let { request.pageToken = it }
+                val response = request.execute()
+                chatNextPageToken = response.nextPageToken
+                val newLines = response.items.orEmpty().mapNotNull { msg -> val author = msg.authorDetails?.displayName ?: "Viewer"; val text = msg.snippet?.displayMessage ?: return@mapNotNull null; "$author: $text" }
+                if (newLines.isNotEmpty()) {
+                    runOnUiThread {
+                        tvCommentsFeed.text = (tvCommentsFeed.text.toString().lines() + newLines).takeLast(30).joinToString("\n")
+                        commentsScrollView.post { commentsScrollView.fullScroll(View.FOCUS_DOWN) }
+                        streamChatHistory.addAll(newLines); if (streamChatHistory.size > 50) streamChatHistory.subList(0, streamChatHistory.size - 50).clear()
+                        refreshChatOverlayText(); updateSnapshot(500)
+                    }
+                }
+                val youtubeDelay = response.pollingIntervalMillis ?: 5000L
+                val finalDelay = if (youtubeDelay > 5000L) youtubeDelay else 5000L
+                if (chatPollingActive) chatHandler.postDelayed({ pollChatOnce() }, finalDelay)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                if (chatPollingActive) chatHandler.postDelayed({ pollChatOnce() }, 10000L)
+            }
+        }.start()
     }
 
     private fun showGoLiveDialog() {
@@ -1239,133 +1388,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         dialog.show()
     }
 
-    private fun createYouTubeBroadcast() {
-        btnGoLive.text = "1/3: API..."; btnGoLive.isEnabled = false
-        val finalTitle = pendingTitle.trim().ifEmpty { "Live from M.B. Live Studio" }
-        val finalDesc = pendingDesc.trim().ifEmpty { "Streaming via Android App" }
-        val privacyInput = pendingPrivacy
-        Thread {
-            addQuota(150)
-            try {
-                val credential = GoogleAccountCredential.usingOAuth2(this@MainActivity, listOf("https://www.googleapis.com/auth/youtube"))
-                val signInAccount = GoogleSignIn.getLastSignedInAccount(this@MainActivity)
-                if (signInAccount?.account != null) credential.selectedAccount = signInAccount.account else credential.selectedAccountName = connectedAccountEmail
-                val youtube = YouTube.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), HttpRequestInitializer { request -> credential.initialize(request); request.connectTimeout = 10000; request.readTimeout = 10000; request.numberOfRetries = 0 }).setApplicationName("MBLiveStudio").build()
-                youtubeClient = youtube
-                runOnUiThread { if(!isDestroyed) btnGoLive.text = "2/3: ROOM..." }
-
-                val scheduleTime = if (pendingScheduleTimeMs > 0) DateTime(pendingScheduleTimeMs) else DateTime(System.currentTimeMillis())
-                val broadcastSnippet = LiveBroadcastSnippet().apply { title = finalTitle; description = finalDesc; scheduledStartTime = scheduleTime }
-                val broadcastStatus = LiveBroadcastStatus().apply { privacyStatus = privacyInput; selfDeclaredMadeForKids = false }
-                val broadcastContentDetails = LiveBroadcastContentDetails().apply { enableAutoStart = true; latencyPreference = "ultraLow" }
-                val broadcast = youtube.liveBroadcasts().insert("snippet,status,contentDetails", LiveBroadcast().apply { snippet = broadcastSnippet; status = broadcastStatus; contentDetails = broadcastContentDetails }).execute()
-
-                val bId = broadcast.id
-                val liveChatId = broadcast.snippet?.liveChatId ?: ""
-                pendingThumbnailUri?.let { uri -> try { val stream = contentResolver.openInputStream(uri); if (stream != null) { youtube.thumbnails().set(bId, InputStreamContent("image/jpeg", stream)).execute() } } catch (e: Exception) { e.printStackTrace() } }
-                runOnUiThread { if(!isDestroyed) btnGoLive.text = "3/3: KEY..." }
-
-                val stream2 = youtube.liveStreams().insert("snippet,cdn", LiveStream().apply { snippet = LiveStreamSnippet().apply { title = "$finalTitle - Key" }; cdn = CdnSettings().apply { ingestionType = "rtmp"; resolution = "variable"; frameRate = "variable" } }).execute()
-                youtube.liveBroadcasts().bind(bId, "id,contentDetails").apply { streamId = stream2.id }.execute()
-
-                val ingestionUrl = stream2.cdn.ingestionInfo.ingestionAddress
-                var resolvedIp: String? = null
-                try { val host = if (ingestionUrl.contains("b.rtmp")) "b.rtmp.youtube.com" else "a.rtmp.youtube.com"; resolvedIp = InetAddress.getAllByName(host).firstOrNull { it is Inet4Address }?.hostAddress } catch (e: Exception) { e.printStackTrace() }
-                val finalUrl = if (resolvedIp != null && ingestionUrl.contains("a.rtmp.youtube.com")) ingestionUrl.replace("a.rtmp.youtube.com", resolvedIp) + "/" + stream2.cdn.ingestionInfo.streamName else ingestionUrl.replace("a.rtmp", "b.rtmp") + "/" + stream2.cdn.ingestionInfo.streamName
-                
-                val shareLink = "https://youtu.be/$bId"
-                saveStreamLocally(finalTitle, bId, liveChatId, finalUrl)
-
-                runOnUiThread {
-                    if(!isDestroyed) {
-                        btnGoLive.text = "GO LIVE"
-                        btnGoLive.isEnabled = true
-                        showStreamReadyDialog(finalTitle, shareLink, finalUrl, bId, liveChatId)
-                    }
-                }
-            } catch (e: Exception) { e.printStackTrace(); runOnUiThread { if(!isDestroyed) { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; Toast.makeText(this@MainActivity, "Timeout/API Error: ${e.message}", Toast.LENGTH_LONG).show() } } }
-        }.start()
-    }
-
-    private fun stopLiveStream() {
-        btnGoLive.isEnabled = false; btnGoLive.text = "STOPPING..."
-        Thread {
-            currentBroadcastId?.let { broadcastId -> 
-                try { youtubeClient?.liveBroadcasts()?.transition("complete", broadcastId, "status")?.execute() } catch (e: Exception) { e.printStackTrace() }
-                removeSavedStream(broadcastId)
-                currentBroadcastId = null 
-            }
-            try { rtmpCamera.stopStream() } catch (e: Exception) {}
-            StreamingService.stop(this@MainActivity)
-            runOnUiThread {
-                if(!isDestroyed) {
-                    btnGoLive.text = "GO LIVE"
-                    btnGoLive.isEnabled = true
-                    btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
-                    Toast.makeText(this@MainActivity, "Stream Ended Permanently.", Toast.LENGTH_SHORT).show()
-                    generatedRtmpUrl = null; stopChatPolling(); stopStudioTimer()
-                }
-            }
-        }.start()
-    }
-
-    private fun startChatPolling(liveChatId: String) { currentLiveChatId = liveChatId; chatNextPageToken = null; chatPollingActive = true; pollChatOnce(); pollViewersOnce() }
-    private fun stopChatPolling() { chatPollingActive = false; chatHandler.removeCallbacksAndMessages(null); currentLiveChatId = null; runOnUiThread { if(!isDestroyed) tvViewerCount.visibility = View.GONE } }
-
-    private fun pollViewersOnce() {
-        if (!chatPollingActive || currentBroadcastId == null) return
-        if (!switchViewerSync.isChecked) { chatHandler.postDelayed({ pollViewersOnce() }, 5000L); return }
-        val youtube = youtubeClient ?: return
-        Thread {
-            addQuota(1)
-            try {
-                val response = youtube.videos().list("liveStreamingDetails").setId(currentBroadcastId).execute()
-                val details = response.items?.firstOrNull()?.liveStreamingDetails
-                val viewers = details?.concurrentViewers?.toString() ?: "0"
-                runOnUiThread { 
-                    if(!isDestroyed) {
-                        tvViewerCount.text = "👁️ $viewers"
-                        if (switchShowViewers.isChecked) tvViewerCount.visibility = View.VISIBLE 
-                    }
-                }
-            } catch (e: Exception) { e.printStackTrace() }
-            if (chatPollingActive) chatHandler.postDelayed({ pollViewersOnce() }, 5000L)
-        }.start()
-    }
-
-    private fun pollChatOnce() {
-        if (!chatPollingActive) return
-        if (!switchChatSync.isChecked) { chatHandler.postDelayed({ pollChatOnce() }, 5000L); return }
-        val chatId = currentLiveChatId ?: return
-        val youtube = youtubeClient ?: return
-        Thread {
-            addQuota(1)
-            try {
-                val request = youtube.liveChatMessages().list(chatId, "snippet,authorDetails")
-                chatNextPageToken?.let { request.pageToken = it }
-                val response = request.execute()
-                chatNextPageToken = response.nextPageToken
-                val newLines = response.items.orEmpty().mapNotNull { msg -> val author = msg.authorDetails?.displayName ?: "Viewer"; val text = msg.snippet?.displayMessage ?: return@mapNotNull null; "$author: $text" }
-                if (newLines.isNotEmpty()) {
-                    runOnUiThread {
-                        if(!isDestroyed) {
-                            tvCommentsFeed.text = (tvCommentsFeed.text.toString().lines() + newLines).takeLast(30).joinToString("\n")
-                            commentsScrollView.post { commentsScrollView.fullScroll(View.FOCUS_DOWN) }
-                            streamChatHistory.addAll(newLines); if (streamChatHistory.size > 50) streamChatHistory.subList(0, streamChatHistory.size - 50).clear()
-                            refreshChatOverlayText()
-                        }
-                    }
-                }
-                val youtubeDelay = response.pollingIntervalMillis ?: 5000L
-                val finalDelay = if (youtubeDelay > 5000L) youtubeDelay else 5000L
-                if (chatPollingActive) chatHandler.postDelayed({ pollChatOnce() }, finalDelay)
-            } catch (e: Exception) {
-                e.printStackTrace()
-                if (chatPollingActive) chatHandler.postDelayed({ pollChatOnce() }, 10000L)
-            }
-        }.start()
-    }
-
     private fun startStudioTimer() { 
         liveStartTimeMillis = System.currentTimeMillis()
         timerRunning = true
@@ -1382,7 +1404,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     private fun addImageOverlayToScreen(bitmap: Bitmap) {
         val imageView = ImageView(this).apply { setImageBitmap(bitmap); layoutParams = RelativeLayout.LayoutParams(300, 300).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) } }
-        overlayContainer.addView(imageView); makeDraggableAndScalable(imageView); selectedOverlay = imageView; updateOverlayMenuButtonPosition()
+        overlayContainer.addView(imageView); makeDraggableAndScalable(imageView); selectedOverlay = imageView; updateOverlayMenuButtonPosition(); updateSnapshot()
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -1403,18 +1425,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                         v.x = event.rawX + localDX
                         v.y = event.rawY + localDY
                         updateOverlayMenuButtonPosition()
+                        updateSnapshot(50) 
                     }
+                    MotionEvent.ACTION_UP -> { updateSnapshot() }
                 }
             }
             if (v is EditText) v.onTouchEvent(event)
             true
         }
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun makeStudioPanelDraggable(view: View) {
-        var dX = 0f; var dY = 0f
-        view.setOnTouchListener { v, event -> when (event.actionMasked) { MotionEvent.ACTION_DOWN -> { dX = v.x - event.rawX; dY = v.y - event.rawY }; MotionEvent.ACTION_MOVE -> { v.x = event.rawX + dX; v.y = event.rawY + dY } }; true }
     }
 
     override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "🔥 YOU ARE LIVE!", Toast.LENGTH_LONG).show(); startStudioTimer() } }
@@ -1477,14 +1495,15 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (!rtmpCamera.isStreaming && surfaceReady) tryStartCameraPreview()
     }
 
-   override fun onDestroy() {
+    override fun onDestroy() {
         super.onDestroy()
         if (!rtmpCamera.isStreaming) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
         
-        stopRenderLoop() // ADVANCED FIX: Stop Choreographer gracefully
-        
+        overlayHandler.removeCallbacksAndMessages(null)
         chatHandler.removeCallbacksAndMessages(null)
         timerHandler.removeCallbacksAndMessages(null)
+        tickerHandler.removeCallbacksAndMessages(null)
+        webSyncHandler.removeCallbacksAndMessages(null)
         
         bitmapA?.let { if (!it.isRecycled) it.recycle() }
         bitmapA = null
@@ -1507,9 +1526,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     
     override fun onNewBitrate(bitrate: Long) {
         if (rtmpCamera.isStreaming) {
-            val minSafeBitrate = 1_500_000L 
-            val finalBitrate = if (bitrate < minSafeBitrate) minSafeBitrate else bitrate
-            try { rtmpCamera.setVideoBitrateOnFly(finalBitrate.toInt()) } catch (e: Exception) {}
+            try { rtmpCamera.setVideoBitrateOnFly(bitrate.toInt()) } catch (e: Exception) {}
         }
     }
 }
