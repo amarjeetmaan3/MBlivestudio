@@ -296,7 +296,6 @@
         android:id="@+id/commentsPanel"
         android:layout_width="260dp"
         android:layout_height="180dp"
-        <!-- Removed alignParentBottom and alignParentLeft to allow free dragging -->
         android:orientation="vertical"
         android:background="#A6000000"
         android:padding="6dp"
