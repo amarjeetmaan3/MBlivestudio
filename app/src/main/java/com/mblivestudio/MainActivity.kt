@@ -231,6 +231,21 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+
+        // Force the activity content to use the entire physical display.
+        // This prevents system-bar insets from creating any top, bottom or side gap.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+        }
+        window.decorView.systemUiVisibility = (
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or View.SYSTEM_UI_FLAG.LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG.LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG.LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG.HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG.FULLSCREEN
+        )
+
         setContentView(R.layout.activity_main)
 
         openGlView = findViewById(R.id.surfaceView)
