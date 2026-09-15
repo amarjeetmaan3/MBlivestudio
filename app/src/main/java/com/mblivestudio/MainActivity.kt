@@ -24,7 +24,6 @@ import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.MediaRecorder
-import com.pedro.encoder.input.audio.MicrophoneMode
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -47,7 +46,9 @@ import android.widget.*
 import com.mblivestudio.filters.CameraLayoutFilterRender
 import com.pedro.common.ConnectChecker
 import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
-import com.pedro.library.rtmp.RtmpCamera2
+import com.pedro.library.generic.GenericStream
+import com.pedro.encoder.input.sources.audio.MicrophoneSource
+import com.pedro.encoder.input.sources.video.Camera2Source
 import com.pedro.library.view.OpenGlView
 
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -71,7 +72,7 @@ import java.util.Calendar
 
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
-    private lateinit var rtmpCamera: RtmpCamera2
+    private lateinit var rtmpCamera: GenericStream
     private lateinit var openGlView: OpenGlView
     private lateinit var overlayContainer: RelativeLayout
     private lateinit var imageFilterRender: ImageObjectFilterRender
@@ -233,8 +234,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         openGlView = findViewById(R.id.surfaceView)
         openGlView.holder.addCallback(this)
-        rtmpCamera = RtmpCamera2(this, this)
-        rtmpCamera.setMicrophoneMode(MicrophoneMode.SYNC)
+        rtmpCamera = GenericStream(
+            this,
+            this,
+            Camera2Source(this),
+            MicrophoneSource(MediaRecorder.AudioSource.MIC)
+        )
         imageFilterRender = ImageObjectFilterRender()
 
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -405,26 +410,26 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         btnMicToggle.setOnClickListener {
             if (isAudioMuted) {
-                rtmpCamera.enableAudio()
+                microphoneSource()?.unMute()
                 isAudioMuted = false
                 btnMicToggle.setImageResource(R.drawable.ic_mic_on)
             } else {
-                rtmpCamera.disableAudio()
+                microphoneSource()?.mute()
                 isAudioMuted = true
                 btnMicToggle.setImageResource(R.drawable.ic_mic_off) 
             }
         }
 
         btnSwitchCamera.setOnClickListener {
-            rtmpCamera.switchCamera()
-            if (!rtmpCamera.isStreaming) {
-                try { rtmpCamera.stopPreview(); tryStartCameraPreview() } catch (e: Exception) {}
+            try {
+                (rtmpCamera.videoSource as? Camera2Source)?.switchCamera()
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
 
         btnBluetoothMic.clearColorFilter()
         btnBluetoothMic.setOnClickListener {
-            if (rtmpCamera.isStreaming) { Toast.makeText(this, "Stop the stream before switching mic source.", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) { requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 2); return@setOnClickListener }
             toggleBluetoothMic(btnBluetoothMic)
         }
@@ -457,7 +462,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
                 currentTouchEvent?.let { event ->
-                    try { rtmpCamera.setZoom(event, detector.scaleFactor) } catch (e: Exception) {}
+                    try { (rtmpCamera.videoSource as? Camera2Source)?.setZoom(event, detector.scaleFactor) } catch (e: Exception) {}
                 }
                 return true
             }
@@ -668,16 +673,53 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         Handler(Looper.getMainLooper()).postDelayed({ tryStartCameraPreview() }, delayMs)
     }
 
+    private fun microphoneSource(): MicrophoneSource? =
+        rtmpCamera.audioSource as? MicrophoneSource
+
+    @SuppressLint("MissingPermission")
+    private fun findPhoneMic(): AudioDeviceInfo? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return null
+        return audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
+            .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun findBluetoothMic(): AudioDeviceInfo? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return null
+        return audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS).firstOrNull {
+            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && it.type == AudioDeviceInfo.TYPE_BLE_HEADSET)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun applyCurrentMicrophoneDevice(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
+        val source = microphoneSource() ?: return false
+        val preferred = if (isBluetoothMicActive) findBluetoothMic() else findPhoneMic()
+        return try {
+            source.setPreferredDevice(preferred)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
     private fun switchAudioLive() {
         if (!rtmpCamera.isStreaming) return
-        var aReady = false
-        if (isBluetoothMicActive) {
-            try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.VOICE_COMMUNICATION, 32 * 1024, 16000, false, false, false) } catch (e: Exception) {}
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        if (applyCurrentMicrophoneDevice()) {
+            runOnUiThread {
+                Toast.makeText(
+                    this,
+                    if (isBluetoothMicActive) "Bluetooth mic active" else "Phone mic active",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
         } else {
-            try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.MIC, 64 * 1024, 16000, false, false, false) } catch (e: Exception) {}
-        }
-        if (!aReady) {
-            runOnUiThread { Toast.makeText(this, "Mic switch live nahi hui, stream restart karo.", Toast.LENGTH_SHORT).show() }
+            runOnUiThread {
+                Toast.makeText(this, "Mic route could not be changed.", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -692,27 +734,22 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             listOf(Triple(streamWidth, streamHeight, streamBitrate), Triple(720, 1280, 3_000_000), Triple(480, 854, 1_500_000), Triple(480, 640, 1_000_000))
         
         for (res in fallback) {
-            try { if (rtmpCamera.prepareVideo(res.first, res.second, streamFps, res.third, 2, 0)) { isSuccess = true; break } } catch (e: Exception) {}
+            try { if (rtmpCamera.prepareVideo(res.first, res.second, res.third, streamFps, 2, 0)) { isSuccess = true; break } } catch (e: Exception) {}
         }
-        if (!isSuccess) try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) {}
-
         var aReady = false
-        if (isBluetoothMicActive) {
-            try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.VOICE_COMMUNICATION, 32 * 1024, 16000, false, false, false) } catch (e: Exception) {}
-        } else {
-            try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.MIC, 64 * 1024, 16000, false, false, false) } catch (e: Exception) {}
-            if (!aReady) try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.MIC, 192 * 1024, 44100, true, false, false) } catch (e: Exception) {}
-        }
-        if (!aReady) try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) {}
+        try {
+            aReady = rtmpCamera.prepareAudio(16000, false, 64 * 1024, false, false)
+            if (!aReady) aReady = rtmpCamera.prepareAudio(44100, true, 192 * 1024, true, false)
+        } catch (e: Exception) {}
         
         if (isSuccess && aReady) {
+            applyCurrentMicrophoneDevice()
             cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f)
-            rtmpCamera.glInterface.setFilter(cameraLayoutFilter)
+            rtmpCamera.getGlInterface().setFilter(cameraLayoutFilter)
             imageFilterRender.setScale(100f, 100f)
             imageFilterRender.setPosition(0f, 0f)
-            rtmpCamera.glInterface.addFilter(imageFilterRender)
-            rtmpCamera.replaceView(openGlView)
-            rtmpCamera.startPreview()
+            rtmpCamera.getGlInterface().addFilter(imageFilterRender)
+            rtmpCamera.startPreview(openGlView)
             updateSnapshot(1000)
         } else {
             Toast.makeText(this, "CAMERA ERROR: Encoder not supported.", Toast.LENGTH_LONG).show()
@@ -768,7 +805,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         coords[0].x = 0f; coords[0].y = 0f
         coords[1].x = pointerDistance; coords[1].y = 0f
         val event = MotionEvent.obtain(now, now, action, 2, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
-        try { rtmpCamera.setZoom(event, delta) } catch (e: Exception) {}
+        try { (rtmpCamera.videoSource as? Camera2Source)?.setZoom(event, delta) } catch (e: Exception) {}
         event.recycle()
     }
 
@@ -781,14 +818,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
     surfaceReady = true
     if (rtmpCamera.isOnPreview) {
-        try { rtmpCamera.replaceView(openGlView) } catch (e: Exception) {}
+        try { rtmpCamera.getGlInterface().setPreviewResolution(width, height) } catch (e: Exception) {}
     } else {
         tryStartCameraPreview()
     }
     }
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         surfaceReady = false
-        if (!rtmpCamera.isStreaming && rtmpCamera.isOnPreview) rtmpCamera.stopPreview()
+        if (rtmpCamera.isOnPreview) {
+            try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+        }
     }
 
     private fun loadQuota() {
