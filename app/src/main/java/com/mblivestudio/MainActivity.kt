@@ -46,6 +46,7 @@ import android.widget.*
 import com.mblivestudio.filters.CameraLayoutFilterRender
 import com.pedro.common.ConnectChecker
 import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
+import com.pedro.encoder.utils.gl.AspectRatioMode
 import com.pedro.library.generic.GenericStream
 import com.pedro.encoder.input.sources.audio.MicrophoneSource
 import com.pedro.encoder.input.sources.video.Camera2Source
@@ -746,6 +747,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             applyCurrentMicrophoneDevice()
             cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f)
             rtmpCamera.getGlInterface().setFilter(cameraLayoutFilter)
+            // Keep the preview full-screen like the original studio preview.
+            // NONE uses the complete OpenGlView area instead of adding black gutters.
+            rtmpCamera.getGlInterface().setAspectRatioMode(AspectRatioMode.NONE)
             imageFilterRender.setScale(100f, 100f)
             imageFilterRender.setPosition(0f, 0f)
             rtmpCamera.getGlInterface().addFilter(imageFilterRender)
