@@ -816,12 +816,15 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     override fun surfaceCreated(holder: SurfaceHolder) {}
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-    surfaceReady = true
-    if (rtmpCamera.isOnPreview) {
-        try { rtmpCamera.getGlInterface().setPreviewResolution(width, height) } catch (e: Exception) {}
-    } else {
-        tryStartCameraPreview()
-    }
+        surfaceReady = true
+        // Keep the preview using RootEncoder's normal preview sizing.
+        // Do not force the GL preview resolution to the SurfaceView size here:
+        // the overlay bitmap uses the activity's overlayContainer coordinate space,
+        // and forcing a different preview aspect/viewport creates visible offsets
+        // between the camera preview and the composited overlay.
+        if (!rtmpCamera.isOnPreview) {
+            tryStartCameraPreview()
+        }
     }
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         surfaceReady = false
