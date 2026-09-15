@@ -46,10 +46,10 @@ import android.widget.*
 import com.mblivestudio.filters.CameraLayoutFilterRender
 import com.pedro.common.ConnectChecker
 import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
-import com.pedro.encoder.utils.gl.AspectRatioMode
 import com.pedro.library.generic.GenericStream
 import com.pedro.encoder.input.sources.audio.MicrophoneSource
 import com.pedro.encoder.input.sources.video.Camera2Source
+import com.pedro.encoder.utils.gl.AspectRatioMode
 import com.pedro.library.view.OpenGlView
 
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -229,11 +229,32 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // True edge-to-edge fullscreen. The camera preview must start at the
+        // very top of the physical display, with no status/navigation bar inset.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+        }
+        window.decorView.systemUiVisibility = (
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+            or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+            or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+            or View.SYSTEM_UI_FLAG_FULLSCREEN
+        )
+
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         setContentView(R.layout.activity_main)
 
         openGlView = findViewById(R.id.surfaceView)
+        // Fill the complete OpenGL preview area. Unlike Adjust, this crops
+        // the excess camera area instead of creating black gutters.
+        openGlView.setAspectRatioMode(AspectRatioMode.Fill)
         openGlView.holder.addCallback(this)
         rtmpCamera = GenericStream(
             this,
@@ -747,9 +768,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             applyCurrentMicrophoneDevice()
             cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f)
             rtmpCamera.getGlInterface().setFilter(cameraLayoutFilter)
-            // Keep the preview full-screen like the original studio preview.
-            // NONE uses the complete OpenGlView area instead of adding black gutters.
-            rtmpCamera.getGlInterface().setAspectRatioMode(AspectRatioMode.NONE)
             imageFilterRender.setScale(100f, 100f)
             imageFilterRender.setPosition(0f, 0f)
             rtmpCamera.getGlInterface().addFilter(imageFilterRender)
@@ -820,15 +838,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     override fun surfaceCreated(holder: SurfaceHolder) {}
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-        surfaceReady = true
-        // Keep the preview using RootEncoder's normal preview sizing.
-        // Do not force the GL preview resolution to the SurfaceView size here:
-        // the overlay bitmap uses the activity's overlayContainer coordinate space,
-        // and forcing a different preview aspect/viewport creates visible offsets
-        // between the camera preview and the composited overlay.
-        if (!rtmpCamera.isOnPreview) {
-            tryStartCameraPreview()
-        }
+    surfaceReady = true
+    if (rtmpCamera.isOnPreview) {
+        try { rtmpCamera.getGlInterface().setPreviewResolution(width, height) } catch (e: Exception) {}
+    } else {
+        tryStartCameraPreview()
+    }
     }
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         surfaceReady = false
