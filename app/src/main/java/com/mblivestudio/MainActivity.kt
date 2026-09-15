@@ -141,11 +141,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private var canvasB: Canvas? = null
     private var useBufferA = true
 
-    // ROCK-SOLID SPORTS BROADCASTING STANDARD
+    // ADVANCED VIDEO QUALITY SETTINGS (Default values)
     private var streamWidth = 1280
     private var streamHeight = 720
-    private var streamBitrate = 3_000_000
-    private var streamFps = 30 // Added FPS variable
+    private var streamBitrate = 4_000_000 // 4 Mbps Default
+    private var streamFps = 30 // 30 FPS Default
 
     private var pendingTitle: String = ""
     private var pendingDesc: String = ""
@@ -445,17 +445,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
         }
 
-        // Add Video Quality Settings Button Listener
-        val btnVideoQuality = findViewById<Button>(resources.getIdentifier("btnVideoQuality", "id", packageName))
-        if (btnVideoQuality != null) {
-            btnVideoQuality.setOnClickListener {
-                findViewById<LinearLayout>(R.id.popupSettings).visibility = View.GONE
-                showVideoQualityDialog()
-            }
-        } else {
-            // Log or handle missing button - you might need to add this button to your layout XML
-        }
-
         // FEATURE 4: SMOOTH ZOOM CONTROL
         var currentTouchEvent: MotionEvent? = null
         val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
@@ -536,71 +525,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         makeDraggableAndScalable(dragScoreboard)
         makeStudioPanelDraggable(commentsPanel)
-    }
-
-    private fun showVideoQualityDialog() {
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(50, 40, 50, 40)
-        }
-
-        // 1. Resolution Spinner
-        val resOptions = arrayOf("720p (HD)", "1080p (Full HD)")
-        val resSpinner = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, resOptions) }
-        resSpinner.setSelection(if (streamWidth == 1920 || streamHeight == 1920) 1 else 0)
-
-        // 2. FPS Spinner
-        val fpsOptions = arrayOf("24 FPS", "30 FPS", "60 FPS")
-        val fpsSpinner = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, fpsOptions) }
-        fpsSpinner.setSelection(when(streamFps) { 24 -> 0; 60 -> 2; else -> 1 })
-
-        // 3. Bitrate Spinner
-        val bitOptions = arrayOf("2 Mbps", "3 Mbps", "4 Mbps", "6 Mbps", "8 Mbps", "10 Mbps")
-        val bitValues = intArrayOf(2_000_000, 3_000_000, 4_000_000, 6_000_000, 8_000_000, 10_000_000)
-        val bitSpinner = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, bitOptions) }
-        
-        val currentBitIndex = bitValues.indexOf(streamBitrate).let { if (it == -1) 1 else it }
-        bitSpinner.setSelection(currentBitIndex)
-
-        layout.addView(TextView(this).apply { text = "Select Resolution:"; setPadding(0, 20, 0, 5); setTextColor(Color.GRAY) })
-        layout.addView(resSpinner)
-        layout.addView(TextView(this).apply { text = "Select Frame Rate (FPS):"; setPadding(0, 30, 0, 5); setTextColor(Color.GRAY) })
-        layout.addView(fpsSpinner)
-        layout.addView(TextView(this).apply { text = "Select Bitrate:"; setPadding(0, 30, 0, 5); setTextColor(Color.GRAY) })
-        layout.addView(bitSpinner)
-
-        AlertDialog.Builder(this)
-            .setTitle("⚙️ Video Quality")
-            .setView(layout)
-            .setPositiveButton("Apply & Restart Camera") { _, _ ->
-                // Update Resolution
-                val isPortrait = streamHeight > streamWidth
-                if (resSpinner.selectedItemPosition == 0) { // 720p
-                    streamWidth = if (isPortrait) 720 else 1280
-                    streamHeight = if (isPortrait) 1280 else 720
-                } else { // 1080p
-                    streamWidth = if (isPortrait) 1080 else 1920
-                    streamHeight = if (isPortrait) 1920 else 1080
-                }
-
-                // Update FPS & Bitrate
-                streamFps = fpsOptions[fpsSpinner.selectedItemPosition].split(" ")[0].toInt()
-                streamBitrate = bitValues[bitSpinner.selectedItemPosition]
-
-                Toast.makeText(this, "Applying $streamFps FPS & Quality...", Toast.LENGTH_SHORT).show()
-
-                // Apply immediately by restarting camera
-                if (rtmpCamera.isOnPreview) {
-                    rtmpCamera.stopPreview()
-                    surfaceReady = false // Reset surface state temporarily
-                    Handler(Looper.getMainLooper()).postDelayed({ 
-                        surfaceReady = true 
-                        tryStartCameraPreview() 
-                    }, 400)
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
     }
 
     private fun registerAudioDeviceMonitoring() {
@@ -756,24 +680,38 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return
 
         var isSuccess = false
-        val fallback = if (streamWidth >= streamHeight)
-            listOf(Triple(streamWidth, streamHeight, streamBitrate), Triple(1280, 720, 3_000_000), Triple(854, 480, 1_500_000), Triple(640, 480, 1_000_000))
-        else
-            listOf(Triple(streamWidth, streamHeight, streamBitrate), Triple(720, 1280, 3_000_000), Triple(480, 854, 1_500_000), Triple(480, 640, 1_000_000))
-        
-        for (res in fallback) {
-            try { if (rtmpCamera.prepareVideo(res.first, res.second, streamFps, res.third, 2, 0)) { isSuccess = true; break } } catch (e: Exception) {}
-        }
-        if (!isSuccess) try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) {}
+        // ADVANCED QUALITY FIX #1: Set Keyframe (I-Frame) Interval to 1 second instead of 2. 
+        // This forces a full picture refresh every second, completely removing "dabbe" (pixelation) during fast camera motion.
+        val iFrameInterval = 1 
 
-var aReady = false
-if (isBluetoothMicActive) {
-    try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.VOICE_COMMUNICATION, 32 * 1024, 16000, false, false, false) } catch (e: Exception) {}
-} else {
-    try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.MIC, 64 * 1024, 16000, false, false, false) } catch (e: Exception) {}
-    if (!aReady) try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.MIC, 192 * 1024, 44100, true, false, false) } catch (e: Exception) {}
-}
-if (!aReady) try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) {}
+        // ADVANCED QUALITY FIX #2: Force the EXACT user-selected settings first, bypassing standard fallbacks.
+        try { 
+            if (rtmpCamera.prepareVideo(streamWidth, streamHeight, streamFps, streamBitrate, iFrameInterval, 0)) { 
+                isSuccess = true 
+            } 
+        } catch (e: Exception) {}
+
+        // ONLY fallback if the hardware physically rejects the specific resolution/FPS (e.g. cheap phone can't do 1080p 60fps)
+        if (!isSuccess) {
+            val fallback = if (streamWidth >= streamHeight)
+                listOf(Triple(1280, 720, 3_000_000), Triple(854, 480, 1_500_000))
+            else
+                listOf(Triple(720, 1280, 3_000_000), Triple(480, 854, 1_500_000))
+            
+            for (res in fallback) {
+                try { if (rtmpCamera.prepareVideo(res.first, res.second, 30, res.third, iFrameInterval, 0)) { isSuccess = true; break } } catch (e: Exception) {}
+            }
+        }
+
+        var aReady = false
+        if (isBluetoothMicActive) {
+            try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.VOICE_COMMUNICATION, 32 * 1024, 16000, false, false, false) } catch (e: Exception) {}
+        } else {
+            try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.MIC, 64 * 1024, 16000, false, false, false) } catch (e: Exception) {}
+            if (!aReady) try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.MIC, 192 * 1024, 44100, true, false, false) } catch (e: Exception) {}
+        }
+        if (!aReady) try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) {}
+        
         if (isSuccess && aReady) {
             cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f)
             rtmpCamera.glInterface.setFilter(cameraLayoutFilter)
@@ -788,7 +726,7 @@ if (!aReady) try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) {}
         }
     }
 
-        private var refreshQueued = false
+    private var refreshQueued = false
 
     private fun updateSnapshot(delay: Long = 100) {
         if (!rtmpCamera.isOnPreview || overlayContainer.width == 0 || overlayContainer.height == 0) return
@@ -1134,16 +1072,6 @@ if (!aReady) try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) {}
                         addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) 
                     }
                     
-                    // 🚨 FIX: pehle scale screen ke raw pixels (displayMetrics) se nikalta tha,
-                    // aur Math.min() se uniform-scale hoke center hota tha. Jab screen ka
-                    // aspect ratio 1920x1080 (16:9) se match nahi karta (jyadatar phones nahi
-                    // karte), to letterboxing aa jaati thi — WebView container ke asli size
-                    // se chhota render hota tha aur beech me center ho jaata tha. Isi wajah se
-                    // scorebug bottom edge se upar uth jaata tha (neeche khaali gap ban jaata).
-                    // Fix: overlayContainer (jo hi stream ke liye capture hota hai) ke asli
-                    // width/height par exact non-uniform stretch — isse WebView hamesha
-                    // overlayContainer ko poora bhar deta hai, koi gap nahi, koi shrink nahi,
-                    // aur CSS ka 1px-from-edge sahi 1px hi rehta hai.
                     val containerW = overlayContainer.width.toFloat()
                     val containerH = overlayContainer.height.toFloat()
                     val displayMetrics = resources.displayMetrics
@@ -1182,7 +1110,6 @@ if (!aReady) try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) {}
                 }
                 
                 overlayContainer.addView(webView)
-                // 🚨 ड्रैग ऑप्शन वापस चालू कर दिया गया है 🚨
                 makeDraggableAndScalable(webView) 
                 selectedOverlay = webView
                 updateOverlayMenuButtonPosition() 
@@ -1251,6 +1178,99 @@ if (!aReady) try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) {}
             generatedRtmpUrl = rtmpUrl
             btnGoLive.text = "CONNECTING..."
             try { StreamingService.start(this@MainActivity); rtmpCamera.startStream(rtmpUrl); startChatPolling(chatId) } catch (e: Exception) { StreamingService.stop(this@MainActivity); Toast.makeText(this, "Stream Error", Toast.LENGTH_LONG).show(); btnGoLive.text = "GO LIVE" }
+        }
+        dialog.show()
+    }
+
+    private fun showGoLiveDialog() {
+        pendingScheduleTimeMs = 0L 
+        val padding = (16 * resources.displayMetrics.density).toInt()
+        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(padding, padding, padding, padding) }
+        
+        val etTitle = EditText(this).apply { hint = "Broadcast Title"; setText(pendingTitle) }
+        val etDesc = EditText(this).apply { hint = "Description"; setText(pendingDesc) }
+        val privacyOptions = arrayOf("Public", "Unlisted", "Private")
+        val spinner = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, privacyOptions); setSelection(privacyOptions.indexOfFirst { it.equals(pendingPrivacy, ignoreCase = true) }.coerceAtLeast(1)) }
+        
+        // --- ADVANCED QUALITY UI INTEGRATION ---
+        val sectionTitle = TextView(this).apply { text = "\nSTREAM QUALITY"; textColor = Color.parseColor("#03A9F4"); textStyle = Typeface.BOLD; paddingBottom = 10 }
+        
+        val resOptions = arrayOf("720p (HD)", "1080p (Full HD)")
+        val resSpinner = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, resOptions) }
+        resSpinner.setSelection(if (streamWidth == 1920 || streamHeight == 1920) 1 else 0)
+
+        val fpsOptions = arrayOf("24 FPS", "30 FPS", "60 FPS")
+        val fpsSpinner = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, fpsOptions) }
+        fpsSpinner.setSelection(when(streamFps) { 24 -> 0; 60 -> 2; else -> 1 })
+
+        val bitOptions = arrayOf("2 Mbps", "3 Mbps", "4 Mbps", "6 Mbps", "8 Mbps", "10 Mbps")
+        val bitValues = intArrayOf(2_000_000, 3_000_000, 4_000_000, 6_000_000, 8_000_000, 10_000_000)
+        val bitSpinner = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, bitOptions) }
+        val currentBitIndex = bitValues.indexOf(streamBitrate).let { if (it == -1) 1 else it }
+        bitSpinner.setSelection(currentBitIndex)
+        // ----------------------------------------
+
+        val btnTime = Button(this).apply { text = "SCHEDULE (OPTIONAL)" }
+        val thumbPreview = ImageView(this).apply { layoutParams = LinearLayout.LayoutParams((140 * resources.displayMetrics.density).toInt(), (90 * resources.displayMetrics.density).toInt()).apply { gravity = android.view.Gravity.CENTER_HORIZONTAL }; scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(Color.parseColor("#333333")); pendingThumbnailUri?.let { setImageURI(it) } }
+        thumbnailPreviewImageView = thumbPreview
+        val thumbWrapper = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER; addView(thumbPreview) }
+        val btnThumbnail = Button(this).apply { text = "CHOOSE THUMBNAIL" }
+        val btnConfirmLive = Button(this).apply { text = "CREATE STREAM"; setBackgroundColor(Color.parseColor("#D32F2F")); setTextColor(Color.WHITE) }
+
+        btnTime.setOnClickListener {
+            val c = Calendar.getInstance()
+            DatePickerDialog(this, { _, y, m, d ->
+                TimePickerDialog(this, { _, h, min ->
+                    val sel = Calendar.getInstance().apply { set(y, m, d, h, min, 0) }
+                    pendingScheduleTimeMs = sel.timeInMillis
+                    btnTime.text = "Scheduled: ${java.text.SimpleDateFormat("dd MMM, HH:mm", java.util.Locale.US).format(sel.time)}"
+                }, c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), false).show()
+            }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
+        }
+
+        listOf(etTitle, etDesc, spinner, sectionTitle, 
+               TextView(this).apply { text = "Resolution:" }, resSpinner, 
+               TextView(this).apply { text = "Frame Rate:" }, fpsSpinner, 
+               TextView(this).apply { text = "Bitrate:" }, bitSpinner, 
+               btnTime, thumbWrapper, btnThumbnail, btnConfirmLive).forEach { 
+            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.bottomMargin = (8 * resources.displayMetrics.density).toInt()
+            it.layoutParams = lp
+            container.addView(it) 
+        }
+
+        val dialog = AlertDialog.Builder(this).setTitle("Setup Broadcast").setView(ScrollView(this).apply { addView(container) }).setNegativeButton("Cancel", null).create()
+
+        btnThumbnail.setOnClickListener { val intent = Intent(Intent.ACTION_GET_CONTENT); intent.type = "image/*"; startActivityForResult(intent, PICK_THUMBNAIL_REQUEST) }
+        
+        btnConfirmLive.setOnClickListener {
+            // 1. Save standard broadcast info
+            pendingTitle = etTitle.text.toString(); pendingDesc = etDesc.text.toString(); pendingPrivacy = spinner.selectedItem.toString().lowercase()
+            
+            // 2. Lock in Advanced Quality Settings
+            val isPortrait = streamHeight > streamWidth
+            if (resSpinner.selectedItemPosition == 0) { // 720p
+                streamWidth = if (isPortrait) 720 else 1280
+                streamHeight = if (isPortrait) 1280 else 720
+            } else { // 1080p
+                streamWidth = if (isPortrait) 1080 else 1920
+                streamHeight = if (isPortrait) 1920 else 1080
+            }
+            streamFps = fpsOptions[fpsSpinner.selectedItemPosition].split(" ")[0].toInt()
+            streamBitrate = bitValues[bitSpinner.selectedItemPosition]
+
+            dialog.dismiss()
+            retryCount = 0
+            
+            // 3. Restart Camera with new robust settings BEFORE starting the API call
+            if (rtmpCamera.isOnPreview) {
+                rtmpCamera.stopPreview()
+            }
+            surfaceReady = true 
+            tryStartCameraPreview()
+            
+            // 4. Proceed to YouTube API
+            createYouTubeBroadcast()
         }
         dialog.show()
     }
@@ -1372,97 +1392,6 @@ if (!aReady) try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) {}
         }.start()
     }
 
-    private fun showGoLiveDialog() {
-        pendingScheduleTimeMs = 0L 
-        val padding = (16 * resources.displayMetrics.density).toInt()
-        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(padding, padding, padding, padding) }
-        val etTitle = EditText(this).apply { hint = "Broadcast Title"; setText(pendingTitle) }
-        val etDesc = EditText(this).apply { hint = "Description"; setText(pendingDesc) }
-        val privacyOptions = arrayOf("Public", "Unlisted", "Private")
-        val spinner = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, privacyOptions); setSelection(privacyOptions.indexOfFirst { it.equals(pendingPrivacy, ignoreCase = true) }.coerceAtLeast(1)) }
-        
-        val btnTime = Button(this).apply { text = "SCHEDULE (OPTIONAL)" }
-        val thumbPreview = ImageView(this).apply { layoutParams = LinearLayout.LayoutParams((140 * resources.displayMetrics.density).toInt(), (90 * resources.displayMetrics.density).toInt()).apply { gravity = android.view.Gravity.CENTER_HORIZONTAL }; scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(Color.parseColor("#333333")); pendingThumbnailUri?.let { setImageURI(it) } }
-        thumbnailPreviewImageView = thumbPreview
-        val thumbWrapper = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER; addView(thumbPreview) }
-        val btnThumbnail = Button(this).apply { text = "CHOOSE THUMBNAIL" }
-        val btnConfirmLive = Button(this).apply { text = "CREATE STREAM"; setBackgroundColor(Color.parseColor("#D32F2F")); setTextColor(Color.WHITE) }
-
-        btnTime.setOnClickListener {
-            val c = Calendar.getInstance()
-            DatePickerDialog(this, { _, y, m, d ->
-                TimePickerDialog(this, { _, h, min ->
-                    val sel = Calendar.getInstance().apply { set(y, m, d, h, min, 0) }
-                    pendingScheduleTimeMs = sel.timeInMillis
-                    btnTime.text = "Scheduled: ${java.text.SimpleDateFormat("dd MMM, HH:mm", java.util.Locale.US).format(sel.time)}"
-                }, c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), false).show()
-            }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
-        }
-
-        listOf(etTitle, etDesc, spinner, btnTime, thumbWrapper, btnThumbnail, btnConfirmLive).forEach { val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT); lp.bottomMargin = (8 * resources.displayMetrics.density).toInt(); it.layoutParams = lp; container.addView(it) }
-        val dialog = AlertDialog.Builder(this).setTitle("Setup Broadcast").setView(ScrollView(this).apply { addView(container) }).setNegativeButton("Cancel", null).create()
-
-        btnThumbnail.setOnClickListener { val intent = Intent(Intent.ACTION_GET_CONTENT); intent.type = "image/*"; startActivityForResult(intent, PICK_THUMBNAIL_REQUEST) }
-        btnConfirmLive.setOnClickListener {
-            pendingTitle = etTitle.text.toString(); pendingDesc = etDesc.text.toString(); pendingPrivacy = spinner.selectedItem.toString().lowercase()
-            dialog.dismiss(); retryCount = 0; createYouTubeBroadcast()
-        }
-        dialog.show()
-    }
-
-    private fun startStudioTimer() { 
-        liveStartTimeMillis = System.currentTimeMillis()
-        timerRunning = true
-        tvLiveTimer.visibility = View.VISIBLE
-        timerHandler.post(timerRunnable) 
-    }
-    
-    private fun stopStudioTimer() { 
-        timerRunning = false
-        timerHandler.removeCallbacksAndMessages(null)
-        tvLiveTimer.visibility = View.GONE
-        tvLiveTimer.text = "00:00:00" 
-    }
-
-    private fun addImageOverlayToScreen(bitmap: Bitmap) {
-        val imageView = ImageView(this).apply { setImageBitmap(bitmap); layoutParams = RelativeLayout.LayoutParams(300, 300).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) } }
-        overlayContainer.addView(imageView); makeDraggableAndScalable(imageView); selectedOverlay = imageView; updateOverlayMenuButtonPosition(); updateSnapshot()
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun makeDraggableAndScalable(view: View) {
-        val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() { override fun onScale(detector: ScaleGestureDetector): Boolean { if (view is WebView) return false; view.scaleX *= detector.scaleFactor; view.scaleY *= detector.scaleFactor; return true } })
-        var localDX = 0f; var localDY = 0f
-        view.setOnTouchListener { v, event ->
-            if (currentMode != "DRAG") return@setOnTouchListener false
-            scaleGestureDetector.onTouchEvent(event)
-            if (!scaleGestureDetector.isInProgress) {
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { 
-                        localDX = v.x - event.rawX; localDY = v.y - event.rawY
-                        selectedOverlay = v
-                        updateOverlayMenuButtonPosition() 
-                    }
-                    MotionEvent.ACTION_MOVE -> { 
-                        v.x = event.rawX + localDX
-                        v.y = event.rawY + localDY
-                        updateOverlayMenuButtonPosition()
-                        updateSnapshot(50) 
-                    }
-                    MotionEvent.ACTION_UP -> { updateSnapshot() }
-                }
-            }
-            if (v is EditText) v.onTouchEvent(event)
-            true
-        }
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun makeStudioPanelDraggable(view: View) {
-        var dX = 0f; var dY = 0f
-        view.setOnTouchListener { v, event -> when (event.actionMasked) { MotionEvent.ACTION_DOWN -> { dX = v.x - event.rawX; dY = v.y - event.rawY }; MotionEvent.ACTION_MOVE -> { v.x = event.rawX + dX; v.y = event.rawY + dY } }; true }
-    }
-
     override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "🔥 YOU ARE LIVE!", Toast.LENGTH_LONG).show(); startStudioTimer() } }
     
     override fun onConnectionFailed(reason: String) {
@@ -1514,18 +1443,18 @@ if (!aReady) try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) {}
     }
 
     override fun onPause() {
-    super.onPause()
-    if (!rtmpCamera.isStreaming) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
-}
+        super.onPause()
+        if (!rtmpCamera.isStreaming) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
+    }
 
-override fun onResume() {
-    super.onResume()
-    if (!rtmpCamera.isStreaming && surfaceReady) tryStartCameraPreview()
-}
+    override fun onResume() {
+        super.onResume()
+        if (!rtmpCamera.isStreaming && surfaceReady) tryStartCameraPreview()
+    }
 
     override fun onDestroy() {
         super.onDestroy()
-                if (!rtmpCamera.isStreaming) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
+        if (!rtmpCamera.isStreaming) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
         overlayHandler.removeCallbacksAndMessages(null); chatHandler.removeCallbacksAndMessages(null); timerHandler.removeCallbacksAndMessages(null)
         tickerHandler.removeCallbacksAndMessages(null)
         webSyncHandler.removeCallbacksAndMessages(null)
@@ -1551,7 +1480,10 @@ override fun onResume() {
     
     override fun onNewBitrate(bitrate: Long) {
         if (rtmpCamera.isStreaming) {
-            try { rtmpCamera.setVideoBitrateOnFly(bitrate.toInt()) } catch (e: Exception) {}
+            // ADVANCED FIX: Bitrate Floor. Prevent auto-drop from ruining the quality into a pixelated mess.
+            val minSafeBitrate = 1_500_000L // Never drop below 1.5 Mbps
+            val finalBitrate = if (bitrate < minSafeBitrate) minSafeBitrate else bitrate
+            try { rtmpCamera.setVideoBitrateOnFly(finalBitrate.toInt()) } catch (e: Exception) {}
         }
     }
 }
