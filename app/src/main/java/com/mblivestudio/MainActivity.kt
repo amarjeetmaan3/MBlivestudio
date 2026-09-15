@@ -49,7 +49,6 @@ import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRende
 import com.pedro.library.generic.GenericStream
 import com.pedro.encoder.input.sources.audio.MicrophoneSource
 import com.pedro.encoder.input.sources.video.Camera2Source
-import com.pedro.encoder.utils.gl.AspectRatioMode
 import com.pedro.library.view.OpenGlView
 
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -230,31 +229,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // True edge-to-edge fullscreen. The camera preview must start at the
-        // very top of the physical display, with no status/navigation bar inset.
+        // Remove the status-bar inset without changing the existing camera
+        // preview scaling/layout. The previous layout was already correct;
+        // only the remaining top black strip needed to be removed.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-        window.statusBarColor = Color.TRANSPARENT
-        window.navigationBarColor = Color.TRANSPARENT
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            window.setDecorFitsSystemWindows(false)
-        }
-        window.decorView.systemUiVisibility = (
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-            or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-            or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-            or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-            or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-            or View.SYSTEM_UI_FLAG_FULLSCREEN
-        )
 
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         setContentView(R.layout.activity_main)
 
         openGlView = findViewById(R.id.surfaceView)
-        // Fill the complete OpenGL preview area. Unlike Adjust, this crops
-        // the excess camera area instead of creating black gutters.
-        openGlView.setAspectRatioMode(AspectRatioMode.Fill)
         openGlView.holder.addCallback(this)
         rtmpCamera = GenericStream(
             this,
