@@ -24,6 +24,7 @@ import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.MediaRecorder
+import com.pedro.encoder.input.audio.MicrophoneMode
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -46,10 +47,7 @@ import android.widget.*
 import com.mblivestudio.filters.CameraLayoutFilterRender
 import com.pedro.common.ConnectChecker
 import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
-import com.pedro.encoder.utils.gl.AspectRatioMode
-import com.pedro.library.generic.GenericStream
-import com.pedro.encoder.input.sources.audio.MicrophoneSource
-import com.pedro.encoder.input.sources.video.Camera2Source
+import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
 
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -68,11 +66,12 @@ import com.google.api.services.youtube.YouTube
 import com.google.api.services.youtube.model.*
 import java.net.Inet4Address
 import java.net.InetAddress
+import java.net.URL
 import java.util.Calendar
 
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
-    private lateinit var rtmpCamera: GenericStream
+    private lateinit var rtmpCamera: RtmpCamera2
     private lateinit var openGlView: OpenGlView
     private lateinit var overlayContainer: RelativeLayout
     private lateinit var imageFilterRender: ImageObjectFilterRender
@@ -229,29 +228,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        // SENSOR_LANDSCAPE (orientation family) ki jagah exact LANDSCAPE lock karne se
-        // Android 12L+ large screens (tablet/foldable) par OS khud letterbox laga deta hai.
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        
-        // Notch Fix
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-        }
-        
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         setContentView(R.layout.activity_main)
 
         openGlView = findViewById(R.id.surfaceView)
         openGlView.holder.addCallback(this)
-        
-        rtmpCamera = GenericStream(
-            this,
-            this,
-            Camera2Source(this),
-            MicrophoneSource(MediaRecorder.AudioSource.MIC)
-        )
-        // Ensure Fill Mode so no black strips appear
-        openGlView.setAspectRatioMode(AspectRatioMode.Fill)
-        
+        rtmpCamera = RtmpCamera2(this, this)
+        rtmpCamera.setMicrophoneMode(MicrophoneMode.SYNC)
         imageFilterRender = ImageObjectFilterRender()
 
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -421,23 +404,21 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnMicToggle.setImageResource(R.drawable.ic_mic_on)
 
         btnMicToggle.setOnClickListener {
-            val mic = rtmpCamera.audioSource as? MicrophoneSource
             if (isAudioMuted) {
-                mic?.unMute()
+                rtmpCamera.enableAudio()
                 isAudioMuted = false
                 btnMicToggle.setImageResource(R.drawable.ic_mic_on)
             } else {
-                mic?.mute()
+                rtmpCamera.disableAudio()
                 isAudioMuted = true
                 btnMicToggle.setImageResource(R.drawable.ic_mic_off) 
             }
         }
 
         btnSwitchCamera.setOnClickListener {
-            try {
-                (rtmpCamera.videoSource as? Camera2Source)?.switchCamera()
-            } catch (e: Exception) {
-                e.printStackTrace()
+            rtmpCamera.switchCamera()
+            if (!rtmpCamera.isStreaming) {
+                try { rtmpCamera.stopPreview(); tryStartCameraPreview() } catch (e: Exception) {}
             }
         }
 
@@ -459,15 +440,15 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             streamHeight = temp
 
             if (rtmpCamera.isOnPreview) {
-                try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+                rtmpCamera.stopPreview()
             }
             surfaceReady = false
 
             if (streamWidth > streamHeight) {
-                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
                 Toast.makeText(this, "Landscape Mode Locked", Toast.LENGTH_SHORT).show()
             } else {
-                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                 Toast.makeText(this, "Portrait Mode Locked", Toast.LENGTH_SHORT).show()
             }
         }
@@ -476,7 +457,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
                 currentTouchEvent?.let { event ->
-                    try { (rtmpCamera.videoSource as? Camera2Source)?.setZoom(event, detector.scaleFactor) } catch (e: Exception) {}
+                    try { rtmpCamera.setZoom(event, detector.scaleFactor) } catch (e: Exception) {}
                 }
                 return true
             }
@@ -687,50 +668,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         Handler(Looper.getMainLooper()).postDelayed({ tryStartCameraPreview() }, delayMs)
     }
 
-    @SuppressLint("MissingPermission")
-    private fun findPhoneMic(): AudioDeviceInfo? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return null
-        return audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
-            .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC }
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun findBluetoothMic(): AudioDeviceInfo? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return null
-        return audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS).firstOrNull {
-            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && it.type == AudioDeviceInfo.TYPE_BLE_HEADSET)
-        }
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun applyCurrentMicrophoneDevice(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
-        val source = rtmpCamera.audioSource as? MicrophoneSource ?: return false
-        val preferred = if (isBluetoothMicActive) findBluetoothMic() else findPhoneMic()
-        return try {
-            source.setPreferredDevice(preferred)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            false
-        }
-    }
-
     private fun switchAudioLive() {
         if (!rtmpCamera.isStreaming) return
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
-        if (applyCurrentMicrophoneDevice()) {
-            runOnUiThread {
-                Toast.makeText(
-                    this,
-                    if (isBluetoothMicActive) "Bluetooth mic active" else "Phone mic active",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
+        var aReady = false
+        if (isBluetoothMicActive) {
+            try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.VOICE_COMMUNICATION, 32 * 1024, 16000, false, false, false) } catch (e: Exception) {}
         } else {
-            runOnUiThread {
-                Toast.makeText(this, "Mic route could not be changed.", Toast.LENGTH_SHORT).show()
-            }
+            try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.MIC, 64 * 1024, 16000, false, false, false) } catch (e: Exception) {}
+        }
+        if (!aReady) {
+            runOnUiThread { Toast.makeText(this, "Mic switch live nahi hui, stream restart karo.", Toast.LENGTH_SHORT).show() }
         }
     }
 
@@ -745,44 +692,27 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             listOf(Triple(streamWidth, streamHeight, streamBitrate), Triple(720, 1280, 3_000_000), Triple(480, 854, 1_500_000), Triple(480, 640, 1_000_000))
         
         for (res in fallback) {
-            try {
-                if (rtmpCamera.prepareVideo(res.first, res.second, streamFps, res.third, 1, 0)) {
-                    streamWidth = res.first
-                    streamHeight = res.second
-                    streamBitrate = res.third
-                    isSuccess = true
-                    break
-                }
-            } catch (e: Exception) {}
+            try { if (rtmpCamera.prepareVideo(res.first, res.second, streamFps, res.third, 2, 0)) { isSuccess = true; break } } catch (e: Exception) {}
         }
+        if (!isSuccess) try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) {}
+
         var aReady = false
-        try {
-            aReady = rtmpCamera.prepareAudio(16000, false, 64 * 1024, false, false)
-            if (!aReady) aReady = rtmpCamera.prepareAudio(44100, true, 192 * 1024, true, false)
-        } catch (e: Exception) {}
+        if (isBluetoothMicActive) {
+            try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.VOICE_COMMUNICATION, 32 * 1024, 16000, false, false, false) } catch (e: Exception) {}
+        } else {
+            try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.MIC, 64 * 1024, 16000, false, false, false) } catch (e: Exception) {}
+            if (!aReady) try { aReady = rtmpCamera.prepareAudio(MediaRecorder.AudioSource.MIC, 192 * 1024, 44100, true, false, false) } catch (e: Exception) {}
+        }
+        if (!aReady) try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) {}
         
         if (isSuccess && aReady) {
-            applyCurrentMicrophoneDevice()
-            // NOTE: rect ko yahan force reset nahi karte — jo layout (full/split/corner) user ne
-            // pehle se choose kiya hai, wahi cameraLayoutFilter instance me preserved rehta hai.
             cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f)
-            rtmpCamera.getGlInterface().setFilter(cameraLayoutFilter)
-            
+            rtmpCamera.glInterface.setFilter(cameraLayoutFilter)
             imageFilterRender.setScale(100f, 100f)
             imageFilterRender.setPosition(0f, 0f)
-            rtmpCamera.getGlInterface().addFilter(imageFilterRender)
-            
-            rtmpCamera.startPreview(openGlView)
-            // startPreview() internally resets aspect ratio mode, so Fill must be re-applied AFTER this call
-            openGlView.setAspectRatioMode(AspectRatioMode.Fill)
-            
-            openGlView.post {
-                try {
-                    rtmpCamera.getGlInterface().setPreviewResolution(openGlView.width, openGlView.height)
-                    openGlView.setAspectRatioMode(AspectRatioMode.Fill)
-                } catch (e: Exception) {}
-            }
-            
+            rtmpCamera.glInterface.addFilter(imageFilterRender)
+            rtmpCamera.replaceView(openGlView)
+            rtmpCamera.startPreview()
             updateSnapshot(1000)
         } else {
             Toast.makeText(this, "CAMERA ERROR: Encoder not supported.", Toast.LENGTH_LONG).show()
@@ -797,9 +727,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         pendingRefresh = true
         overlayHandler.postDelayed({
             try {
-                // Stable file jaisa: bitmap container ke actual on-screen size ka, koi scale/crop nahi.
-                // imageFilterRender GL level par ise poore frame par stretch kar deta hai (setScale/setPosition),
-                // isliye device ki screen ratio se koi fark nahi padta.
                 val w = overlayContainer.width
                 val h = overlayContainer.height
 
@@ -841,7 +768,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         coords[0].x = 0f; coords[0].y = 0f
         coords[1].x = pointerDistance; coords[1].y = 0f
         val event = MotionEvent.obtain(now, now, action, 2, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
-        try { (rtmpCamera.videoSource as? Camera2Source)?.setZoom(event, delta) } catch (e: Exception) {}
+        try { rtmpCamera.setZoom(event, delta) } catch (e: Exception) {}
         event.recycle()
     }
 
@@ -851,22 +778,17 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {}
-    
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-        openGlView.setAspectRatioMode(AspectRatioMode.Fill)
-        surfaceReady = true
-        if (rtmpCamera.isOnPreview) {
-            try { rtmpCamera.getGlInterface().setPreviewResolution(width, height) } catch (e: Exception) {}
-        } else {
-            tryStartCameraPreview()
-        }
+    surfaceReady = true
+    if (rtmpCamera.isOnPreview) {
+        try { rtmpCamera.replaceView(openGlView) } catch (e: Exception) {}
+    } else {
+        tryStartCameraPreview()
     }
-    
+    }
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         surfaceReady = false
-        if (rtmpCamera.isOnPreview) {
-            try { rtmpCamera.stopPreview() } catch (e: Exception) {}
-        }
+        if (!rtmpCamera.isStreaming && rtmpCamera.isOnPreview) rtmpCamera.stopPreview()
     }
 
     private fun loadQuota() {
@@ -883,7 +805,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         runOnUiThread { updateQuotaUI() }
     }
 
-    private fun updateQuotaUI() { tvApiQuota.text = "⚙️ $dailyQuotaUsed/10K" }
+    private fun updateQuotaUI() { tvApiQuota.text = "âš™ï¸ $dailyQuotaUsed/10K" }
 
     private fun refreshChatOverlayText() {
         if (tvStreamChatOverlay.visibility != View.VISIBLE) return
@@ -1239,7 +1161,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         
         val btnCopy = Button(this).apply { text = "COPY LINK"; layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT) }
         val btnShare = Button(this).apply { text = "SHARE LINK"; layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT) }
-        val btnStart = Button(this).apply { text = "▶ START CAMERA"; setBackgroundColor(Color.parseColor("#4CAF50")); setTextColor(Color.WHITE); layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin=40 } }
+        val btnStart = Button(this).apply { text = "â–¶ START CAMERA"; setBackgroundColor(Color.parseColor("#4CAF50")); setTextColor(Color.WHITE); layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin=40 } }
         container.addView(btnCopy); container.addView(btnShare); container.addView(btnStart)
 
         val scrollContainer = ScrollView(this).apply { addView(container) }
@@ -1335,7 +1257,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 val details = response.items?.firstOrNull()?.liveStreamingDetails
                 val viewers = details?.concurrentViewers?.toString() ?: "0"
                 runOnUiThread { 
-                    tvViewerCount.text = "👁️ $viewers"
+                    tvViewerCount.text = "ðŸ‘ï¸ $viewers"
                     if (switchShowViewers.isChecked) tvViewerCount.visibility = View.VISIBLE 
                 }
             } catch (e: Exception) { e.printStackTrace() }
@@ -1513,7 +1435,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "🔥 YOU ARE LIVE!", Toast.LENGTH_LONG).show(); startStudioTimer() } }
+    override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "ðŸ”¥ YOU ARE LIVE!", Toast.LENGTH_LONG).show(); startStudioTimer() } }
     
     override fun onConnectionFailed(reason: String) {
         if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { retryCount++; runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }; Thread { Thread.sleep(2000); try { rtmpCamera.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} }.start() } else { StreamingService.stop(this@MainActivity); runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show(); stopChatPolling(); stopStudioTimer() } }
@@ -1565,33 +1487,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     override fun onPause() {
         super.onPause()
-        if (rtmpCamera.isStreaming) {
-            try { (rtmpCamera.videoSource as? Camera2Source)?.stop() } catch (e: Exception) {}
-        } else {
-            if (rtmpCamera.isOnPreview) {
-                try { rtmpCamera.stopPreview() } catch (e: Exception) {}
-            }
-        }
+        if (!rtmpCamera.isStreaming) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
     }
 
-   override fun onResume() {
+    override fun onResume() {
         super.onResume()
-        if (rtmpCamera.isStreaming) {
-            if (surfaceReady) {
-                try { 
-                    // GenericStream खुद कैमरे का सोर्स हैंडल करता है, 
-                    // हमें बस प्रीव्यू को दोबारा सेट करना है।
-                    rtmpCamera.startPreview(openGlView)
-                    // startPreview() internally resets aspect ratio mode, so Fill must be re-applied AFTER this call
-                    openGlView.setAspectRatioMode(AspectRatioMode.Fill)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-        } else if (surfaceReady) {
-            tryStartCameraPreview()
-        }
+        if (!rtmpCamera.isStreaming && surfaceReady) tryStartCameraPreview()
     }
+
     override fun onDestroy() {
         super.onDestroy()
         if (!rtmpCamera.isStreaming) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
