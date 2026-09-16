@@ -71,7 +71,17 @@ internal fun MainActivity.createYouTubeBroadcast() {
             val scheduleTime = if (pendingScheduleTimeMs > 0) DateTime(pendingScheduleTimeMs) else DateTime(System.currentTimeMillis())
             val broadcastSnippet = LiveBroadcastSnippet().apply { title = finalTitle; description = finalDesc; scheduledStartTime = scheduleTime }
             val broadcastStatus = LiveBroadcastStatus().apply { privacyStatus = privacyInput; selfDeclaredMadeForKids = false }
-            val broadcastContentDetails = LiveBroadcastContentDetails().apply { enableAutoStart = true; latencyPreference = "low" }
+            // फिक्स 3: enableAutoStart तभी भरोसेमंद तरीके से काम करता है जब monitor stream
+            // (टेस्टिंग-ओनली प्रीव्यू) बंद हो। इसे बंद न करने पर broadcast अक्सर "Upcoming"/testing
+            // पर अटका रह जाता है और असली दर्शकों तक कभी "Live" नहीं जाता।
+            // enableAutoStop=true जोड़ा ताकि RTMP डिसकनेक्ट होने पर YouTube साइड भी अपने आप
+            // broadcast खत्म कर दे (बिना यूज़र के stopLiveStream दबाए एक-दो मिनट में)।
+            val broadcastContentDetails = LiveBroadcastContentDetails().apply {
+                enableAutoStart = true
+                enableAutoStop = true
+                latencyPreference = "low"
+                monitorStream = MonitorStreamInfo().apply { enableMonitorStream = false }
+            }
             val broadcast = youtube.liveBroadcasts().insert("snippet,status,contentDetails", LiveBroadcast().apply { snippet = broadcastSnippet; status = broadcastStatus; contentDetails = broadcastContentDetails }).execute()
 
             val bId = broadcast.id
@@ -81,6 +91,7 @@ internal fun MainActivity.createYouTubeBroadcast() {
 
             val stream2 = youtube.liveStreams().insert("snippet,cdn", LiveStream().apply { snippet = LiveStreamSnippet().apply { title = "$finalTitle - Key" }; cdn = CdnSettings().apply { ingestionType = "rtmp"; resolution = "variable"; frameRate = "variable" } }).execute()
             youtube.liveBroadcasts().bind(bId, "id,contentDetails").apply { streamId = stream2.id }.execute()
+            currentStreamId = stream2.id
 
             val ingestionUrl = stream2.cdn.ingestionInfo.ingestionAddress
             val finalUrl = ingestionUrl + "/" + stream2.cdn.ingestionInfo.streamName  
@@ -106,12 +117,80 @@ internal fun MainActivity.stopLiveStream() {
             removeSavedStream(broadcastId)
             currentBroadcastId = null 
         }
+        currentStreamId = null
         try { rtmpCamera.stopStream() } catch (e: Exception) {}
         StreamingService.stop(activity)
         runOnUiThread {
             btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
             Toast.makeText(activity, "Stream Ended Permanently.", Toast.LENGTH_SHORT).show()
             generatedRtmpUrl = null; stopChatPolling(); stopStudioTimer()
+        }
+    }.start()
+}
+
+/**
+ * फिक्स 3 (असली फिक्स — "Upcoming पर अटकी स्ट्रीम" वाली मेजर बग):
+ *
+ * पहले कोड सिर्फ यह मान लेता था कि RTMP कनेक्शन सफल होते ही (onConnectionSuccess)
+ * YouTube अपने आप broadcast को "Upcoming" से "Live" में बदल देगा, क्योंकि
+ * contentDetails.enableAutoStart = true सेट था। असलियत में एनकोडर सिर्फ इतना बता पाता
+ * है कि वह YouTube के इनजेस्ट सर्वर से जुड़ गया — यह गारंटी नहीं देता कि YouTube का बैकएंड
+ * उस वीडियो/ऑडियो डेटा को "स्वस्थ" (healthy) मान चुका है और असली दर्शकों को दिखाना शुरू
+ * कर चुका है। जब भी किसी वजह से यह ऑटो-ट्रांज़िशन ट्रिगर नहीं होता, broadcast हमेशा के
+ * लिए "Upcoming"/"testing" स्टेटस में अटका रह जाता है — बिना किसी एरर के — इसलिए दिखने में
+ * लगता है कि "स्ट्रीम YouTube तक जा ही नहीं रही"।
+ *
+ * Google के आधिकारिक "Life of a Broadcast" डॉक्यूमेंटेशन के मुताबिक, सही/गारंटीशुदा तरीका
+ * यह है: पहले लाइव स्ट्रीम के status.streamStatus के "active" होने का इंतज़ार करो
+ * (इसका मतलब है YouTube को वाकई हेल्दी वीडियो डेटा मिलना शुरू हो गया है), फिर एक्सप्लिसिट
+ * तरीके से liveBroadcasts().transition("live", ...) कॉल करो। यह enableAutoStart के साथ
+ * काम करने के लिए पूरी तरह सुरक्षित है — अगर YouTube ने पहले ही खुद-ब-खुद "live" कर दिया
+ * हो, तो यह कॉल बस एक (हानिरहित) redundant-transition एरर देगा जिसे हम पकड़ (catch) कर
+ * के अनदेखा कर देते हैं।
+ */
+internal fun MainActivity.ensureBroadcastGoesLive() {
+    val youtube = youtubeClient ?: return
+    val broadcastId = currentBroadcastId ?: return
+    val streamId = currentStreamId ?: return
+    Thread {
+        // ~90 सेकंड तक हर 3 सेकंड में चेक करेंगे — YouTube को स्ट्रीम को "active"/healthy
+        // मानने में आमतौर पर कुछ ही सेकंड लगते हैं, लेकिन धीमे नेटवर्क पर थोड़ा वक़्त लग सकता है।
+        val maxAttempts = 30
+        var attempts = 0
+        while (attempts < maxAttempts) {
+            // अगर इस बीच यूज़र ने स्ट्रीम रोक दी, या कोई नई स्ट्रीम शुरू हो गई, तो यह पुरानी
+            // पोलिंग लूप खुद को बंद कर ले — गलत broadcast को कभी टच न करे।
+            if (!rtmpCamera.isStreaming || currentBroadcastId != broadcastId) return@Thread
+            attempts++
+            try {
+                addQuota(1)
+                val streamStatus = youtube.liveStreams().list("status").setId(streamId).execute()
+                    .items?.firstOrNull()?.status?.streamStatus
+
+                if (streamStatus == "active") {
+                    addQuota(1)
+                    val lifeCycleStatus = youtube.liveBroadcasts().list("status").setId(broadcastId).execute()
+                        .items?.firstOrNull()?.status?.lifeCycleStatus
+
+                    if (lifeCycleStatus != "live" && lifeCycleStatus != "complete" && lifeCycleStatus != "completeStarting") {
+                        try {
+                            addQuota(50)
+                            youtube.liveBroadcasts().transition("live", broadcastId, "status").execute()
+                        } catch (e: Exception) {
+                            // अगर YouTube ने enableAutoStart से पहले ही खुद इसे live कर दिया था
+                            // तो यह कॉल एक redundant-transition एरर देगा — यह सामान्य/सुरक्षित है।
+                            e.printStackTrace()
+                        }
+                    }
+                    return@Thread
+                } else if (streamStatus == "error") {
+                    // स्ट्रीम की सेहत खराब है (जैसे कोई डेटा नहीं मिल रहा) — दोबारा कोशिश करते रहो,
+                    // हो सकता है यह शुरुआती कुछ सेकंड का उतार-चढ़ाव हो।
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            Thread.sleep(3000)
         }
     }.start()
 }
