@@ -770,9 +770,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             rtmpCamera.getGlInterface().addFilter(imageFilterRender)
             
             rtmpCamera.startPreview(openGlView)
+            // startPreview() internally resets aspect ratio mode, so Fill must be re-applied AFTER this call
+            openGlView.setAspectRatioMode(AspectRatioMode.Fill)
             
             openGlView.post {
-                try { rtmpCamera.getGlInterface().setPreviewResolution(openGlView.width, openGlView.height) } catch (e: Exception) {}
+                try {
+                    rtmpCamera.getGlInterface().setPreviewResolution(openGlView.width, openGlView.height)
+                    openGlView.setAspectRatioMode(AspectRatioMode.Fill)
+                } catch (e: Exception) {}
             }
             
             updateSnapshot(1000)
@@ -1597,6 +1602,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     // GenericStream खुद कैमरे का सोर्स हैंडल करता है, 
                     // हमें बस प्रीव्यू को दोबारा सेट करना है।
                     rtmpCamera.startPreview(openGlView)
+                    // startPreview() internally resets aspect ratio mode, so Fill must be re-applied AFTER this call
+                    openGlView.setAspectRatioMode(AspectRatioMode.Fill)
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
