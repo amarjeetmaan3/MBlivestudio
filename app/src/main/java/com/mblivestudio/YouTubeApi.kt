@@ -83,9 +83,7 @@ internal fun MainActivity.createYouTubeBroadcast() {
             youtube.liveBroadcasts().bind(bId, "id,contentDetails").apply { streamId = stream2.id }.execute()
 
             val ingestionUrl = stream2.cdn.ingestionInfo.ingestionAddress
-            var resolvedIp: String? = null
-            try { val host = if (ingestionUrl.contains("b.rtmp")) "b.rtmp.youtube.com" else "a.rtmp.youtube.com"; resolvedIp = InetAddress.getAllByName(host).firstOrNull { it is Inet4Address }?.hostAddress } catch (e: Exception) { e.printStackTrace() }
-            val finalUrl = if (resolvedIp != null && ingestionUrl.contains("a.rtmp.youtube.com")) ingestionUrl.replace("a.rtmp.youtube.com", resolvedIp) + "/" + stream2.cdn.ingestionInfo.streamName else ingestionUrl.replace("a.rtmp", "b.rtmp") + "/" + stream2.cdn.ingestionInfo.streamName
+            val finalUrl = ingestionUrl + "/" + stream2.cdn.ingestionInfo.streamName  
             
             val shareLink = "https://youtu.be/$bId"
             saveStreamLocally(finalTitle, bId, liveChatId, finalUrl)
