@@ -1,7 +1,9 @@
 package com.mblivestudio
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Color
@@ -14,6 +16,7 @@ import android.text.TextWatcher
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import android.view.inputmethod.InputMethodManager
 import android.webkit.WebView
 import android.widget.EditText
 import android.widget.ImageView
