@@ -37,7 +37,6 @@ import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.SurfaceHolder
 import android.view.View
-import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.webkit.WebChromeClient
@@ -70,6 +69,7 @@ import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.URL
 import java.util.Calendar
+import com.pedro.encoder.input.gl.AspectRatioMode
 
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
@@ -231,40 +231,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-
-        // Force the activity content to use the entire physical display.
-        // This prevents system-bar insets from creating any top, bottom or side gap.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            window.setDecorFitsSystemWindows(false)
-        }
-        window.decorView.systemUiVisibility = (
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_FULLSCREEN
-        )
-
         setContentView(R.layout.activity_main)
 
         openGlView = findViewById(R.id.surfaceView)
-
-        // Keep the camera preview truly edge-to-edge.
-        // The camera surface must occupy the complete available activity area;
-        // all studio controls/overlays remain drawn above it.
-        openGlView.layoutParams = openGlView.layoutParams.apply {
-            width = ViewGroup.LayoutParams.MATCH_PARENT
-            height = ViewGroup.LayoutParams.MATCH_PARENT
-            if (this is ViewGroup.MarginLayoutParams) {
-                leftMargin = 0
-                topMargin = 0
-                rightMargin = 0
-                bottomMargin = 0
-            }
-        }
-        openGlView.x = 0f
-        openGlView.y = 0f
         openGlView.holder.addCallback(this)
         rtmpCamera = GenericStream(
             this,
@@ -278,19 +247,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         registerAudioDeviceMonitoring()
 
         overlayContainer = findViewById(R.id.overlayContainer)
-        overlayContainer.layoutParams = overlayContainer.layoutParams.apply {
-            width = ViewGroup.LayoutParams.MATCH_PARENT
-            height = ViewGroup.LayoutParams.MATCH_PARENT
-            if (this is ViewGroup.MarginLayoutParams) {
-                leftMargin = 0
-                topMargin = 0
-                rightMargin = 0
-                bottomMargin = 0
-            }
-        }
-        overlayContainer.x = 0f
-        overlayContainer.y = 0f
-
         dragScoreboard = findViewById(R.id.dragScoreboard)
         scoreMainText = findViewById(R.id.scoreMainText)
         scoreSubText = findViewById(R.id.scoreSubText)
@@ -795,6 +751,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             imageFilterRender.setPosition(0f, 0f)
             rtmpCamera.getGlInterface().addFilter(imageFilterRender)
             rtmpCamera.startPreview(openGlView)
+            rtmpCamera.getGlInterface().setAspectRatioMode(AspectRatioMode.Fill)
             updateSnapshot(1000)
         } else {
             Toast.makeText(this, "CAMERA ERROR: Encoder not supported.", Toast.LENGTH_LONG).show()
