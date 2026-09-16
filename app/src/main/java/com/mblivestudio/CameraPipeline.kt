@@ -11,61 +11,88 @@ import com.pedro.encoder.input.sources.video.Camera2Source
 
 internal fun MainActivity.tryStartCameraPreview() {
     if (!surfaceReady || rtmpCamera.isOnPreview) return
-    if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return
+    if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ||
+        checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return
 
     var isSuccess = false
-    val isPortrait = streamHeight > streamWidth
-    
-    // फिक्स 1: एन्कोडर को हमेशा Landscape डाइमेंशन दें, लेकिन Portrait के लिए 90° घुमा दें
-    val encWidth = if (isPortrait) streamHeight else streamWidth
-    val encHeight = if (isPortrait) streamWidth else streamHeight
-    val rotation = if (isPortrait) 90 else 0
 
-    val fallback = listOf(
-        Triple(encWidth, encHeight, streamBitrate),
-        Triple(1280, 720, 3_000_000),
-        Triple(854, 480, 1_500_000),
-        Triple(640, 480, 1_000_000)
-    )
-    
+    // RtmpCamera2 is the proven working video pipeline for this project.
+    // Keep the requested orientation/resolution instead of swapping dimensions
+    // and forcing a rotation before the encoder has selected a supported format.
+    val fallback = if (streamWidth >= streamHeight) {
+        listOf(
+            Triple(streamWidth, streamHeight, streamBitrate),
+            Triple(1280, 720, 3_000_000),
+            Triple(854, 480, 1_500_000),
+            Triple(640, 480, 1_000_000)
+        )
+    } else {
+        listOf(
+            Triple(streamWidth, streamHeight, streamBitrate),
+            Triple(720, 1280, 3_000_000),
+            Triple(480, 854, 1_500_000),
+            Triple(480, 640, 1_000_000)
+        )
+    }
+
     for (res in fallback) {
-        try {
-            // prepareVideo(width, height, fps, bitrate, iFrameInterval, rotation)
-            if (rtmpCamera.prepareVideo(res.first, res.second, streamFps, res.third, 2, rotation)) {
-                streamWidth = if (isPortrait) res.second else res.first
-                streamHeight = if (isPortrait) res.first else res.second
-                streamBitrate = res.third
-                isSuccess = true
-                break
+        val fpsCandidates = if (streamFps == 30) intArrayOf(30) else intArrayOf(streamFps, 30)
+        for (fps in fpsCandidates) {
+            try {
+                if (rtmpCamera.prepareVideo(res.first, res.second, fps, res.third, 2, 0)) {
+                    streamWidth = res.first
+                    streamHeight = res.second
+                    streamBitrate = res.third
+                    streamFps = fps
+                    isSuccess = true
+                    break
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
+        if (isSuccess) break
     }
-    
-    // फिक्स 2: YouTube को 44.1kHz ऑडियो चाहिए होता है। 16kHz से स्ट्रीम Upcoming पर अटक जाती है।
+
+    if (!isSuccess) {
+        try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) { e.printStackTrace() }
+    }
+
     var aReady = false
-    try {
-        aReady = rtmpCamera.prepareAudio(44100, true, 128 * 1024, false, false)
-        if (!aReady) aReady = rtmpCamera.prepareAudio(16000, false, 64 * 1024, false, false)
-    } catch (e: Exception) {
-        e.printStackTrace()
+    if (isBluetoothMicActive) {
+        try { aReady = rtmpCamera.prepareAudio(64 * 1024, 16000, false, false, false) } catch (_: Exception) {}
+        if (!aReady) try { aReady = rtmpCamera.prepareAudio(64 * 1024, 32000, false, false, false) } catch (_: Exception) {}
+        if (!aReady) try { aReady = rtmpCamera.prepareAudio(64 * 1024, 44100, false, false, false) } catch (_: Exception) {}
+    } else {
+        val useEchoCanceler = detectedMicRoute == MicRoute.PHONE
+        try { aReady = rtmpCamera.prepareAudio(64 * 1024, 44100, false, useEchoCanceler, true) } catch (_: Exception) {}
+        if (!aReady) try { aReady = rtmpCamera.prepareAudio(64 * 1024, 32000, false, useEchoCanceler, true) } catch (_: Exception) {}
+        if (!aReady) try { aReady = rtmpCamera.prepareAudio(64 * 1024, 44100, false, false, false) } catch (_: Exception) {}
     }
-    
+    if (!aReady) {
+        try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { e.printStackTrace() }
+    }
+
     if (isSuccess && aReady) {
         applyCurrentMicrophoneDevice()
         cameraLayoutFilter.setRect(0f, 0f, 1f, 1f)
         cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f)
         rtmpCamera.getGlInterface().setFilter(cameraLayoutFilter)
-        
+
         imageFilterRender.setScale(100f, 100f)
         imageFilterRender.setPosition(0f, 0f)
         rtmpCamera.getGlInterface().addFilter(imageFilterRender)
-        
-        rtmpCamera.startPreview(openGlView)
-        updateSnapshot(1000)
+
+        try {
+            rtmpCamera.startPreview()
+            updateSnapshot(1000)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            try { rtmpCamera.stopPreview() } catch (_: Exception) {}
+            Toast.makeText(this, "CAMERA ERROR: ${e.message ?: "Preview failed"}", Toast.LENGTH_LONG).show()
+        }
     } else {
-        Toast.makeText(this, "CAMERA ERROR: Encoder not supported.", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "CAMERA ERROR: Device encoder not supported.", Toast.LENGTH_LONG).show()
     }
 }
 
