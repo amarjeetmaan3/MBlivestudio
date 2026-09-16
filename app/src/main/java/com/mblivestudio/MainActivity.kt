@@ -763,7 +763,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         
         if (isSuccess && aReady) {
             applyCurrentMicrophoneDevice()
-            cameraLayoutFilter.setRect(0f, 0f, 1f, 1f)
+            // NOTE: rect ko yahan force reset nahi karte — jo layout (full/split/corner) user ne
+            // pehle se choose kiya hai, wahi cameraLayoutFilter instance me preserved rehta hai.
             cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f)
             rtmpCamera.getGlInterface().setFilter(cameraLayoutFilter)
             
@@ -790,40 +791,17 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     private var refreshQueued = false
 
-    private fun drawOverlayToStreamBitmap(bitmap: Bitmap) {
-        val sourceW = overlayContainer.width.toFloat()
-        val sourceH = overlayContainer.height.toFloat()
-        if (sourceW <= 0f || sourceH <= 0f) return
-
-        val targetW = bitmap.width.toFloat()
-        val targetH = bitmap.height.toFloat()
-
-        val scale = maxOf(targetW / sourceW, targetH / sourceH)
-        val scaledW = sourceW * scale
-        val scaledH = sourceH * scale
-        val dx = (targetW - scaledW) * 0.5f
-        val dy = (targetH - scaledH) * 0.5f
-
-        val save = canvasFor(bitmap).save()
-        val canvas = canvasFor(bitmap)
-        canvas.translate(dx, dy)
-        canvas.scale(scale, scale)
-        overlayContainer.draw(canvas)
-        canvas.restoreToCount(save)
-    }
-
-    private fun canvasFor(bitmap: Bitmap): Canvas {
-        return if (bitmap === bitmapA) canvasA!! else canvasB!!
-    }
-
     private fun updateSnapshot(delay: Long = 100) {
         if (!rtmpCamera.isOnPreview || overlayContainer.width == 0 || overlayContainer.height == 0) return
         if (pendingRefresh) { refreshQueued = true; return }
         pendingRefresh = true
         overlayHandler.postDelayed({
             try {
-                val w = streamWidth.coerceAtLeast(1)
-                val h = streamHeight.coerceAtLeast(1)
+                // Stable file jaisa: bitmap container ke actual on-screen size ka, koi scale/crop nahi.
+                // imageFilterRender GL level par ise poore frame par stretch kar deta hai (setScale/setPosition),
+                // isliye device ki screen ratio se koi fark nahi padta.
+                val w = overlayContainer.width
+                val h = overlayContainer.height
 
                 useBufferA = !useBufferA
 
@@ -834,7 +812,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                         canvasA = Canvas(bitmapA!!)
                     }
                     bitmapA!!.eraseColor(Color.TRANSPARENT)
-                    drawOverlayToStreamBitmap(bitmapA!!)
+                    overlayContainer.draw(canvasA!!)
                     imageFilterRender.setImage(bitmapA!!)
                 } else {
                     if (bitmapB == null || bitmapB!!.isRecycled || bitmapB!!.width != w || bitmapB!!.height != h) {
@@ -843,7 +821,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                         canvasB = Canvas(bitmapB!!)
                     }
                     bitmapB!!.eraseColor(Color.TRANSPARENT)
-                    drawOverlayToStreamBitmap(bitmapB!!)
+                    overlayContainer.draw(canvasB!!)
                     imageFilterRender.setImage(bitmapB!!)
                 }
             } catch (e: Exception) {
