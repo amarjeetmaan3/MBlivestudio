@@ -69,7 +69,7 @@ import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.URL
 import java.util.Calendar
-import com.pedro.encoder.input.gl.AspectRatioMode
+import com.pedro.encoder.utils.gl.AspectRatioMode
 
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
