@@ -11,7 +11,6 @@ import android.os.Handler
 import android.os.Looper
 import android.widget.ImageButton
 import android.widget.Toast
-import com.pedro.encoder.input.sources.audio.MicrophoneSource
 
 internal fun MainActivity.registerAudioDeviceMonitoring() {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
@@ -113,9 +112,9 @@ internal fun MainActivity.findBluetoothMic(): AudioDeviceInfo? {
 @SuppressLint("MissingPermission")
 internal fun MainActivity.applyCurrentMicrophoneDevice(): Boolean {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
-    val source = rtmpCamera.audioSource as? MicrophoneSource ?: return false
-    val preferred = if (isBluetoothMicActive) findBluetoothMic() else findPhoneMic()
-    return try { source.setPreferredDevice(preferred) } catch (e: Exception) { e.printStackTrace(); false }
+    // FIX: With RtmpCamera2, the OS-level routing (AudioManager) forces the route,
+    // so we don't need direct access to audioSource to call setPreferredDevice.
+    return true
 }
 
 internal fun MainActivity.switchAudioLive() {
