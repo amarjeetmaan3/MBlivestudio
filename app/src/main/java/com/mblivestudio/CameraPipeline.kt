@@ -7,6 +7,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.view.MotionEvent
 import android.widget.Toast
+import com.pedro.encoder.input.sources.video.Camera2Source
 
 internal fun MainActivity.tryStartCameraPreview() {
     if (!surfaceReady || rtmpCamera.isOnPreview) return
@@ -93,16 +94,29 @@ internal fun MainActivity.tryStartCameraPreview() {
 }
 
 internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
-    val sourceW = overlayContainer.width.toFloat(); val sourceH = overlayContainer.height.toFloat()
+    val sourceW = overlayContainer.width.toFloat()
+    val sourceH = overlayContainer.height.toFloat()
     if (sourceW <= 0f || sourceH <= 0f) return
-    val targetW = bitmap.width.toFloat(); val targetH = bitmap.height.toFloat()
-    val scale = maxOf(targetW / sourceW, targetH / sourceH)
-    val scaledW = sourceW * scale; val scaledH = sourceH * scale
-    val dx = (targetW - scaledW) * 0.5f; val dy = (targetH - scaledH) * 0.5f
+
+    val targetW = bitmap.width.toFloat()
+    val targetH = bitmap.height.toFloat()
+
+    // 100% "Full Fill View" Fix: 
+    // यह कैलकुलेशन पता लगाती है कि OpenGL ने वीडियो को पूरी स्क्रीन पर भरने के लिए कितना ज़ूम किया है।
+    val fillScale = maxOf(sourceW / targetW, sourceH / targetH)
+    
+    // यह पता लगाता है कि स्क्रीन से बाहर वीडियो का कितना हिस्सा कट (Crop) रहा है।
+    val xOffset = (sourceW - targetW * fillScale) / 2f
+    val yOffset = (sourceH - targetH * fillScale) / 2f
 
     val save = canvasFor(bitmap).save()
     val canvas = canvasFor(bitmap)
-    canvas.translate(dx, dy); canvas.scale(scale, scale)
+    
+    // अब हम कैनवास को बिल्कुल उतना ही रिवर्स-स्केल और शिफ्ट कर देंगे ताकि वीडियो के अंदर
+    // ग्राफ़िक ठीक उसी जगह छपे जहाँ वो आपकी स्क्रीन पर है।
+    canvas.scale(1f / fillScale, 1f / fillScale)
+    canvas.translate(-xOffset, -yOffset)
+    
     overlayContainer.draw(canvas)
     canvas.restoreToCount(save)
 }
@@ -143,7 +157,6 @@ internal fun MainActivity.sendSyntheticZoomEvent(action: Int, pointerDistance: F
     val props = arrayOf(MotionEvent.PointerProperties(), MotionEvent.PointerProperties()); props[0].id = 0; props[1].id = 1
     val coords = arrayOf(MotionEvent.PointerCoords(), MotionEvent.PointerCoords()); coords[0].x = 0f; coords[0].y = 0f; coords[1].x = pointerDistance; coords[1].y = 0f
     val event = MotionEvent.obtain(now, now, action, 2, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
-    // FIX: Use RtmpCamera2 setZoom directly[cite: 3]
     try { rtmpCamera.setZoom(event, delta) } catch (e: Exception) {}
     event.recycle()
 }
