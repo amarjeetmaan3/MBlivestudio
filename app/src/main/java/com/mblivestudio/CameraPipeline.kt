@@ -14,23 +14,43 @@ internal fun MainActivity.tryStartCameraPreview() {
     if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return
 
     var isSuccess = false
-    val fallback = if (streamWidth >= streamHeight)
-        listOf(Triple(streamWidth, streamHeight, streamBitrate), Triple(1280, 720, 3_000_000), Triple(854, 480, 1_500_000), Triple(640, 480, 1_000_000))
-    else
-        listOf(Triple(streamWidth, streamHeight, streamBitrate), Triple(720, 1280, 3_000_000), Triple(480, 854, 1_500_000), Triple(480, 640, 1_000_000))
+    val isPortrait = streamHeight > streamWidth
+    
+    // फिक्स 1: एन्कोडर को हमेशा Landscape डाइमेंशन दें, लेकिन Portrait के लिए 90° घुमा दें
+    val encWidth = if (isPortrait) streamHeight else streamWidth
+    val encHeight = if (isPortrait) streamWidth else streamHeight
+    val rotation = if (isPortrait) 90 else 0
+
+    val fallback = listOf(
+        Triple(encWidth, encHeight, streamBitrate),
+        Triple(1280, 720, 3_000_000),
+        Triple(854, 480, 1_500_000),
+        Triple(640, 480, 1_000_000)
+    )
     
     for (res in fallback) {
         try {
-            if (rtmpCamera.prepareVideo(res.first, res.second, streamFps, res.third, 1, 0)) {
-                streamWidth = res.first; streamHeight = res.second; streamBitrate = res.third; isSuccess = true; break
+            // prepareVideo(width, height, fps, bitrate, iFrameInterval, rotation)
+            if (rtmpCamera.prepareVideo(res.first, res.second, streamFps, res.third, 2, rotation)) {
+                streamWidth = if (isPortrait) res.second else res.first
+                streamHeight = if (isPortrait) res.first else res.second
+                streamBitrate = res.third
+                isSuccess = true
+                break
             }
-        } catch (e: Exception) {}
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
+    
+    // फिक्स 2: YouTube को 44.1kHz ऑडियो चाहिए होता है। 16kHz से स्ट्रीम Upcoming पर अटक जाती है।
     var aReady = false
     try {
-        aReady = rtmpCamera.prepareAudio(16000, false, 64 * 1024, false, false)
-        if (!aReady) aReady = rtmpCamera.prepareAudio(44100, true, 192 * 1024, true, false)
-    } catch (e: Exception) {}
+        aReady = rtmpCamera.prepareAudio(44100, true, 128 * 1024, false, false)
+        if (!aReady) aReady = rtmpCamera.prepareAudio(16000, false, 64 * 1024, false, false)
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
     
     if (isSuccess && aReady) {
         applyCurrentMicrophoneDevice()
