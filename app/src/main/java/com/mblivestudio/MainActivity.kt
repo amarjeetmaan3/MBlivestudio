@@ -434,6 +434,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                 Toast.makeText(this, "Portrait Mode Locked", Toast.LENGTH_SHORT).show()
             }
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ surfaceReady = true; tryStartCameraPreview() }, 300)
         }
 
         var currentTouchEvent: MotionEvent? = null
