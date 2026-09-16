@@ -130,6 +130,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal var youtubeClient: YouTube? = null
     internal var currentLiveChatId: String? = null
     internal var currentBroadcastId: String? = null
+    internal var currentStreamId: String? = null
     
     internal var chatNextPageToken: String? = null
     internal var chatPollingActive = false
@@ -510,7 +511,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         makeDraggableAndScalable(dragScoreboard)
     }
 
-    override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "YOU ARE LIVE!", Toast.LENGTH_LONG).show(); startStudioTimer() } }
+    // फिक्स 3 (असली फिक्स): RTMP कनेक्ट होना सिर्फ इतना बताता है कि इनकोडर YouTube के इनजेस्ट
+    // सर्वर तक पहुँच गया — इसका मतलब यह नहीं कि YouTube ने ब्रॉडकास्ट को "Live" में बदल दिया।
+    // पहले सिर्फ enableAutoStart=true पर भरोसा किया जा रहा था, जो हमेशा भरोसेमंद नहीं है और
+    // यही वजह थी कि YouTube पर वीडियो सिर्फ "Upcoming" दिखता रहता था और कभी चलता नहीं था।
+    // अब कनेक्शन सफल होते ही हम एक्सप्लिसिट तरीके से ब्रॉडकास्ट को "live" में transition करेंगे।
+    override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "Connected! Going live on YouTube...", Toast.LENGTH_LONG).show(); startStudioTimer() }; ensureBroadcastGoesLive() }
     
     override fun onConnectionFailed(reason: String) {
         if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { retryCount++; runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }; Thread { Thread.sleep(2000); try { rtmpCamera.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} }.start() } else { StreamingService.stop(this@MainActivity); runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show(); stopChatPolling(); stopStudioTimer() } }
