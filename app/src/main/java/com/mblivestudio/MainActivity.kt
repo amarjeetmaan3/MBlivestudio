@@ -229,7 +229,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        // SENSOR_LANDSCAPE (orientation family) ki jagah exact LANDSCAPE lock karne se
+        // Android 12L+ large screens (tablet/foldable) par OS khud letterbox laga deta hai.
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         
         // Notch Fix
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -462,10 +464,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             surfaceReady = false
 
             if (streamWidth > streamHeight) {
-                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                 Toast.makeText(this, "Landscape Mode Locked", Toast.LENGTH_SHORT).show()
             } else {
-                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
                 Toast.makeText(this, "Portrait Mode Locked", Toast.LENGTH_SHORT).show()
             }
         }
