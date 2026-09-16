@@ -74,11 +74,12 @@ internal fun MainActivity.createYouTubeBroadcast() {
             // फिक्स 3: enableAutoStart तभी भरोसेमंद तरीके से काम करता है जब monitor stream
             // (टेस्टिंग-ओनली प्रीव्यू) बंद हो। इसे बंद न करने पर broadcast अक्सर "Upcoming"/testing
             // पर अटका रह जाता है और असली दर्शकों तक कभी "Live" नहीं जाता।
-            // enableAutoStop=true जोड़ा ताकि RTMP डिसकनेक्ट होने पर YouTube साइड भी अपने आप
-            // broadcast खत्म कर दे (बिना यूज़र के stopLiveStream दबाए एक-दो मिनट में)।
+            // नोट: enableAutoStop यहाँ जानबूझकर नहीं जोड़ा — यह प्रोजेक्ट google-api-services-youtube
+            // के पुराने वर्शन (v3-rev222-1.25.0) पर बना है जिसमें वह फ़ील्ड मौजूद नहीं है
+            // (compile error आता है)। स्ट्रीम को "Live" में लाने के असली फिक्स — यानी नीचे
+            // ensureBroadcastGoesLive() वाला explicit transition — के लिए इसकी ज़रूरत नहीं है।
             val broadcastContentDetails = LiveBroadcastContentDetails().apply {
                 enableAutoStart = true
-                enableAutoStop = true
                 latencyPreference = "low"
                 monitorStream = MonitorStreamInfo().apply { enableMonitorStream = false }
             }
