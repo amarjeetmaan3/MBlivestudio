@@ -724,7 +724,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    private fun tryStartCameraPreview() {
+       private fun tryStartCameraPreview() {
         if (!surfaceReady || rtmpCamera.isOnPreview) return
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return
 
@@ -745,6 +745,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         
         if (isSuccess && aReady) {
             applyCurrentMicrophoneDevice()
+            rtmpCamera.getGlInterface().clearFilters()
             cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f)
             rtmpCamera.getGlInterface().setFilter(cameraLayoutFilter)
             imageFilterRender.setScale(100f, 100f)
@@ -757,7 +758,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             Toast.makeText(this, "CAMERA ERROR: Encoder not supported.", Toast.LENGTH_LONG).show()
         }
     }
-
     private var refreshQueued = false
 
     private fun updateSnapshot(delay: Long = 100) {
