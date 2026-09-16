@@ -1589,12 +1589,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    override fun onResume() {
+   override fun onResume() {
         super.onResume()
         if (rtmpCamera.isStreaming) {
             if (surfaceReady) {
                 try { 
-                    (rtmpCamera.videoSource as? Camera2Source)?.start(applicationContext)
+                    // GenericStream खुद कैमरे का सोर्स हैंडल करता है, 
+                    // हमें बस प्रीव्यू को दोबारा सेट करना है।
                     rtmpCamera.startPreview(openGlView)
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -1604,7 +1605,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             tryStartCameraPreview()
         }
     }
-
     override fun onDestroy() {
         super.onDestroy()
         if (!rtmpCamera.isStreaming) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
