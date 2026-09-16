@@ -15,7 +15,6 @@ import android.graphics.Color
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
-import android.media.MediaRecorder
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -32,8 +31,7 @@ import com.mblivestudio.filters.CameraLayoutFilterRender
 import com.pedro.common.ConnectChecker
 import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
 import com.pedro.encoder.utils.gl.AspectRatioMode
-import com.pedro.library.generic.GenericStream
-import com.pedro.encoder.input.sources.audio.MicrophoneSource
+import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.encoder.input.sources.video.Camera2Source
 import com.pedro.library.view.OpenGlView
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -47,7 +45,7 @@ internal enum class MicRoute { PHONE, BLUETOOTH, WIRED }
 
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
-    internal lateinit var rtmpCamera: GenericStream
+    internal lateinit var rtmpCamera: RtmpCamera2
     internal lateinit var openGlView: OpenGlView
     internal lateinit var overlayContainer: RelativeLayout
     internal lateinit var imageFilterRender: ImageObjectFilterRender
@@ -232,7 +230,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         openGlView.y = 0f
         openGlView.holder.addCallback(this)
         
-        rtmpCamera = GenericStream(this, this, Camera2Source(this), MicrophoneSource(MediaRecorder.AudioSource.MIC))
+        rtmpCamera = RtmpCamera2(openGlView, this)
         imageFilterRender = ImageObjectFilterRender()
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         registerAudioDeviceMonitoring()
@@ -582,7 +580,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         super.onResume()
         if (rtmpCamera.isStreaming) {
             if (surfaceReady) {
-                try { rtmpCamera.startPreview(openGlView) } catch (e: Exception) { e.printStackTrace() }
+                try { rtmpCamera.startPreview() } catch (e: Exception) { e.printStackTrace() }
             }
         } else if (surfaceReady) {
             tryStartCameraPreview()
@@ -609,7 +607,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         surfaceReady = false
-        if (rtmpCamera.isOnPreview) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
+        // The RTMP encoder must remain alive if a preview Surface disappears
+        // (background/app switch). Only stop the local preview when we are not streaming.
+        if (!rtmpCamera.isStreaming && rtmpCamera.isOnPreview) {
+            try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+        }
     }
 
     override fun onAuthError() { runOnUiThread { Toast.makeText(this, "Auth Error", Toast.LENGTH_SHORT).show() } }
