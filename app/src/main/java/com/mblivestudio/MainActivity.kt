@@ -4,35 +4,21 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
-import android.app.DatePickerDialog
-import android.app.TimePickerDialog
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Shader
-import android.graphics.Typeface
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
-import android.media.MediaRecorder
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.provider.MediaStore
-import android.text.Editable
-import android.text.InputType
-import android.text.TextUtils
-import android.text.TextWatcher
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.SurfaceHolder
@@ -40,17 +26,12 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
-import android.webkit.WebChromeClient
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.*
 import com.mblivestudio.filters.CameraLayoutFilterRender
 import com.pedro.common.ConnectChecker
 import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
 import com.pedro.encoder.utils.gl.AspectRatioMode
-import com.pedro.library.generic.GenericStream
-import com.pedro.encoder.input.sources.audio.MicrophoneSource
-import com.pedro.encoder.input.sources.video.Camera2Source
+import com.pedro.library.rtmp.RtmpCamera2
 import com.pedro.library.view.OpenGlView
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
@@ -63,7 +44,7 @@ internal enum class MicRoute { PHONE, BLUETOOTH, WIRED }
 
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
-    internal lateinit var rtmpCamera: GenericStream
+    internal lateinit var rtmpCamera: RtmpCamera2
     internal lateinit var openGlView: OpenGlView
     internal lateinit var overlayContainer: RelativeLayout
     internal lateinit var imageFilterRender: ImageObjectFilterRender
@@ -146,6 +127,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal var youtubeClient: YouTube? = null
     internal var currentLiveChatId: String? = null
     internal var currentBroadcastId: String? = null
+    internal var currentStreamId: String? = null
     
     internal var chatNextPageToken: String? = null
     internal var chatPollingActive = false
@@ -247,7 +229,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         openGlView.y = 0f
         openGlView.holder.addCallback(this)
         
-        rtmpCamera = GenericStream(this, this, Camera2Source(this), MicrophoneSource(MediaRecorder.AudioSource.MIC))
+        rtmpCamera = RtmpCamera2(openGlView, this)
         imageFilterRender = ImageObjectFilterRender()
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         registerAudioDeviceMonitoring()
@@ -408,20 +390,21 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnMicToggle.setImageResource(R.drawable.ic_mic_on)
 
         btnMicToggle.setOnClickListener {
-            val mic = rtmpCamera.audioSource as? MicrophoneSource
+            // FIX: Use RtmpCamera2 methods directly instead of audioSource[cite: 2]
             if (isAudioMuted) {
-                mic?.unMute()
+                rtmpCamera.enableAudio()
                 isAudioMuted = false
                 btnMicToggle.setImageResource(R.drawable.ic_mic_on)
             } else {
-                mic?.mute()
+                rtmpCamera.disableAudio()
                 isAudioMuted = true
                 btnMicToggle.setImageResource(R.drawable.ic_mic_off) 
             }
         }
 
         btnSwitchCamera.setOnClickListener {
-            try { (rtmpCamera.videoSource as? Camera2Source)?.switchCamera() } catch (e: Exception) { e.printStackTrace() }
+            // FIX: Use RtmpCamera2 switchCamera directly[cite: 2]
+            try { rtmpCamera.switchCamera() } catch (e: Exception) { e.printStackTrace() }
         }
 
         btnBluetoothMic.clearColorFilter()
@@ -456,7 +439,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
                 currentTouchEvent?.let { event ->
-                    try { (rtmpCamera.videoSource as? Camera2Source)?.setZoom(event, detector.scaleFactor) } catch (e: Exception) {}
+                    // FIX: Use RtmpCamera2 setZoom directly[cite: 2]
+                    try { rtmpCamera.setZoom(event, detector.scaleFactor) } catch (e: Exception) {}
                 }
                 return true
             }
@@ -525,7 +509,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         makeDraggableAndScalable(dragScoreboard)
     }
 
-    override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "YOU ARE LIVE!", Toast.LENGTH_LONG).show(); startStudioTimer() } }
+    override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "Connected! Going live on YouTube...", Toast.LENGTH_LONG).show(); startStudioTimer() }; ensureBroadcastGoesLive() }
     
     override fun onConnectionFailed(reason: String) {
         if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { retryCount++; runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }; Thread { Thread.sleep(2000); try { rtmpCamera.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} }.start() } else { StreamingService.stop(this@MainActivity); runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show(); stopChatPolling(); stopStudioTimer() } }
@@ -568,9 +552,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     override fun onPause() {
         super.onPause()
-        if (rtmpCamera.isStreaming) {
-            try { (rtmpCamera.videoSource as? Camera2Source)?.stop() } catch (e: Exception) {}
-        } else {
+        if (!rtmpCamera.isStreaming) {
             if (rtmpCamera.isOnPreview) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
         }
     }
@@ -579,7 +561,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         super.onResume()
         if (rtmpCamera.isStreaming) {
             if (surfaceReady) {
-                try { rtmpCamera.startPreview(openGlView) } catch (e: Exception) { e.printStackTrace() }
+                try { rtmpCamera.startPreview() } catch (e: Exception) { e.printStackTrace() }
             }
         } else if (surfaceReady) {
             tryStartCameraPreview()
@@ -606,7 +588,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         surfaceReady = false
-        if (rtmpCamera.isOnPreview) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
+        if (!rtmpCamera.isStreaming && rtmpCamera.isOnPreview) {
+            try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+        }
     }
 
     override fun onAuthError() { runOnUiThread { Toast.makeText(this, "Auth Error", Toast.LENGTH_SHORT).show() } }
