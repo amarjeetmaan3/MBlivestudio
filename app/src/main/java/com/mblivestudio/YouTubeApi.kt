@@ -53,6 +53,7 @@ internal fun MainActivity.removeSavedStream(broadcastId: String) {
 }
 
 internal fun MainActivity.createYouTubeBroadcast() {
+    val activity = this
     btnGoLive.text = "1/3: API..."; btnGoLive.isEnabled = false
     val finalTitle = pendingTitle.trim().ifEmpty { "Live from M.B. Live Studio" }
     val finalDesc = pendingDesc.trim().ifEmpty { "Streaming via Android App" }
@@ -60,8 +61,8 @@ internal fun MainActivity.createYouTubeBroadcast() {
     Thread {
         addQuota(150)
         try {
-            val credential = GoogleAccountCredential.usingOAuth2(this@MainActivity, listOf("https://www.googleapis.com/auth/youtube"))
-            val signInAccount = GoogleSignIn.getLastSignedInAccount(this@MainActivity)
+            val credential = GoogleAccountCredential.usingOAuth2(activity, listOf("https://www.googleapis.com/auth/youtube"))
+            val signInAccount = GoogleSignIn.getLastSignedInAccount(activity)
             if (signInAccount?.account != null) credential.selectedAccount = signInAccount.account else credential.selectedAccountName = connectedAccountEmail
             val youtube = YouTube.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), HttpRequestInitializer { request -> credential.initialize(request); request.connectTimeout = 10000; request.readTimeout = 10000; request.numberOfRetries = 0 }).setApplicationName("MBLiveStudio").build()
             youtubeClient = youtube
@@ -94,11 +95,12 @@ internal fun MainActivity.createYouTubeBroadcast() {
                 btnGoLive.isEnabled = true
                 showStreamReadyDialog(finalTitle, shareLink, finalUrl, bId, liveChatId)
             }
-        } catch (e: Exception) { e.printStackTrace(); runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; Toast.makeText(this@MainActivity, "Timeout/API Error: ${e.message}", Toast.LENGTH_LONG).show() } }
+        } catch (e: Exception) { e.printStackTrace(); runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; Toast.makeText(activity, "Timeout/API Error: ${e.message}", Toast.LENGTH_LONG).show() } }
     }.start()
 }
 
 internal fun MainActivity.stopLiveStream() {
+    val activity = this
     btnGoLive.isEnabled = false; btnGoLive.text = "STOPPING..."
     Thread {
         currentBroadcastId?.let { broadcastId -> 
@@ -107,10 +109,10 @@ internal fun MainActivity.stopLiveStream() {
             currentBroadcastId = null 
         }
         try { rtmpCamera.stopStream() } catch (e: Exception) {}
-        StreamingService.stop(this@MainActivity)
+        StreamingService.stop(activity)
         runOnUiThread {
             btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
-            Toast.makeText(this@MainActivity, "Stream Ended Permanently.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(activity, "Stream Ended Permanently.", Toast.LENGTH_SHORT).show()
             generatedRtmpUrl = null; stopChatPolling(); stopStudioTimer()
         }
     }.start()
