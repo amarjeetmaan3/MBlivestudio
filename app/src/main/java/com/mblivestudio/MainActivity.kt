@@ -557,13 +557,25 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
+    // फिक्स 4 (असली रूट-कॉज़ — "YouTube पर No data / Connect your encoder"):
+    // पहले यहाँ, स्ट्रीमिंग के दौरान भी, (rtmpCamera.videoSource as? Camera2Source)?.stop()
+    // कॉल हो रहा था। यह rtmpCamera.stopPreview() जैसा "safe/no-op while streaming" कॉल नहीं है —
+    // यह सीधे कैमरे का कैप्चर सेशन बंद कर देता है, चाहे स्ट्रीम चल ही क्यों न रही हो।
+    // नतीजा: जैसे ही ऐप बैकग्राउंड में जाता (जैसे यूज़र Chrome खोलकर YouTube Studio देखने
+    // जाता), कैमरा बंद हो जाता, एनकोडर को नए फ़्रेम मिलने बंद हो जाते, RTMP कनेक्शन तो
+    // ज़िंदा रहता लेकिन उसमें कोई वीडियो डेटा नहीं बहता — और YouTube पर ठीक वही "No data /
+    // Connect your encoder" दिखने लगता जो स्क्रीनशॉट में दिखा। यह बिल्कुल StreamingService.kt
+    // के मकसद के खिलाफ था (जो खासतौर पर इसीलिए बनाई गई थी कि बैकग्राउंड में भी
+    // कैमरा+एनकोडर पाइपलाइन चलती रहे)।
+    // असली फिक्स: स्ट्रीमिंग चालू हो तो कैमरे को बिल्कुल मत छेड़ो — सिर्फ तभी रोको जब
+    // स्ट्रीमिंग नहीं हो रही (ताकि कैमरा बाकी ऐप्स के लिए फ्री हो जाए / बैटरी बचे)।
     override fun onPause() {
         super.onPause()
-        if (rtmpCamera.isStreaming) {
-            try { (rtmpCamera.videoSource as? Camera2Source)?.stop() } catch (e: Exception) {}
-        } else {
+        if (!rtmpCamera.isStreaming) {
             if (rtmpCamera.isOnPreview) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
         }
+        // isStreaming == true पर जानबूझकर कुछ नहीं करते — कैमरा और एनकोडर बैकग्राउंड में
+        // भी चलते रहने चाहिए, StreamingService का यही पूरा मकसद है।
     }
 
     override fun onResume() {
