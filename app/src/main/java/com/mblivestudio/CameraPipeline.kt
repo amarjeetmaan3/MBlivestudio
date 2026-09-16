@@ -7,7 +7,6 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.view.MotionEvent
 import android.widget.Toast
-import com.pedro.encoder.input.sources.video.Camera2Source
 
 internal fun MainActivity.tryStartCameraPreview() {
     if (!surfaceReady || rtmpCamera.isOnPreview) return
@@ -16,29 +15,32 @@ internal fun MainActivity.tryStartCameraPreview() {
 
     var isSuccess = false
 
-    val fallback = if (streamWidth >= streamHeight) {
-        listOf(
-            Triple(streamWidth, streamHeight, streamBitrate),
-            Triple(1280, 720, 3_000_000),
-            Triple(854, 480, 1_500_000),
-            Triple(640, 480, 1_000_000)
-        )
-    } else {
-        listOf(
-            Triple(streamWidth, streamHeight, streamBitrate),
-            Triple(720, 1280, 3_000_000),
-            Triple(480, 854, 1_500_000),
-            Triple(480, 640, 1_000_000)
-        )
-    }
+    val isPortrait = streamHeight > streamWidth
+    
+    // ENCODER ERROR FIX: 
+    // हार्डवेयर एनकोडर को हमेशा लैंडस्केप डाइमेंशन देंगे (ताकि वह क्रैश न हो)।
+    // लेकिन OpenGL को बता देंगे कि कैमरा 90 डिग्री घुमाना है।
+    val encWidth = if (isPortrait) streamHeight else streamWidth
+    val encHeight = if (isPortrait) streamWidth else streamHeight
+    val rotation = if (isPortrait) 90 else 0
+
+    val fallback = listOf(
+        Triple(encWidth, encHeight, streamBitrate),
+        Triple(1280, 720, 3_000_000),
+        Triple(854, 480, 1_500_000),
+        Triple(640, 480, 1_000_000)
+    )
 
     for (res in fallback) {
         val fpsCandidates = if (streamFps == 30) intArrayOf(30) else intArrayOf(streamFps, 30)
         for (fps in fpsCandidates) {
             try {
-                if (rtmpCamera.prepareVideo(res.first, res.second, fps, res.third, 2, 0)) {
-                    streamWidth = res.first
-                    streamHeight = res.second
+                // OpenGL रोटेशन का इस्तेमाल करके हार्डवेयर को चकमा देना (Bypass Hardware Restriction)
+                if (rtmpCamera.prepareVideo(res.first, res.second, fps, res.third, 2, rotation)) {
+                    
+                    // वेरिएबल्स को वापस असली स्क्रीन साइज़ पर सेट करना
+                    streamWidth = if (isPortrait) res.second else res.first
+                    streamHeight = if (isPortrait) res.first else res.second
                     streamBitrate = res.third
                     streamFps = fps
                     isSuccess = true
@@ -101,19 +103,14 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
     val targetW = bitmap.width.toFloat()
     val targetH = bitmap.height.toFloat()
 
-    // 100% "Full Fill View" Fix: 
-    // यह कैलकुलेशन पता लगाती है कि OpenGL ने वीडियो को पूरी स्क्रीन पर भरने के लिए कितना ज़ूम किया है।
+    // 100% "Full Fill View" Ghosting Fix (Mathematical Reverse Scale)
     val fillScale = maxOf(sourceW / targetW, sourceH / targetH)
-    
-    // यह पता लगाता है कि स्क्रीन से बाहर वीडियो का कितना हिस्सा कट (Crop) रहा है।
     val xOffset = (sourceW - targetW * fillScale) / 2f
     val yOffset = (sourceH - targetH * fillScale) / 2f
 
     val save = canvasFor(bitmap).save()
     val canvas = canvasFor(bitmap)
     
-    // अब हम कैनवास को बिल्कुल उतना ही रिवर्स-स्केल और शिफ्ट कर देंगे ताकि वीडियो के अंदर
-    // ग्राफ़िक ठीक उसी जगह छपे जहाँ वो आपकी स्क्रीन पर है।
     canvas.scale(1f / fillScale, 1f / fillScale)
     canvas.translate(-xOffset, -yOffset)
     
