@@ -78,10 +78,11 @@ internal fun MainActivity.createYouTubeBroadcast() {
             // के पुराने वर्शन (v3-rev222-1.25.0) पर बना है जिसमें वह फ़ील्ड मौजूद नहीं है
             // (compile error आता है)। स्ट्रीम को "Live" में लाने के असली फिक्स — यानी नीचे
             // ensureBroadcastGoesLive() वाला explicit transition — के लिए इसकी ज़रूरत नहीं है।
+            // Match the configuration used by the last known-good YouTube pipeline.
+            // Auto-start lets YouTube move the broadcast to live once valid RTMP media arrives.
             val broadcastContentDetails = LiveBroadcastContentDetails().apply {
                 enableAutoStart = true
-                latencyPreference = "low"
-                monitorStream = MonitorStreamInfo().apply { enableMonitorStream = false }
+                latencyPreference = "ultraLow"
             }
             val broadcast = youtube.liveBroadcasts().insert("snippet,status,contentDetails", LiveBroadcast().apply { snippet = broadcastSnippet; status = broadcastStatus; contentDetails = broadcastContentDetails }).execute()
 
@@ -95,8 +96,24 @@ internal fun MainActivity.createYouTubeBroadcast() {
             currentStreamId = stream2.id
 
             val ingestionUrl = stream2.cdn.ingestionInfo.ingestionAddress
-            val finalUrl = ingestionUrl + "/" + stream2.cdn.ingestionInfo.streamName  
-            
+
+            // Use the same resolved YouTube ingest endpoint that the known-working
+            // RtmpCamera2 version used. This avoids device/network combinations where
+            // the RTMP socket connects to the hostname but media packets never reach ingest.
+            var resolvedIp: String? = null
+            try {
+                val host = if (ingestionUrl.contains("b.rtmp")) "b.rtmp.youtube.com" else "a.rtmp.youtube.com"
+                resolvedIp = InetAddress.getAllByName(host)
+                    .firstOrNull { it is Inet4Address }?.hostAddress
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            val finalUrl = if (resolvedIp != null && ingestionUrl.contains("a.rtmp.youtube.com")) {
+                ingestionUrl.replace("a.rtmp.youtube.com", resolvedIp!!) + "/" + stream2.cdn.ingestionInfo.streamName
+            } else {
+                ingestionUrl.replace("a.rtmp", "b.rtmp") + "/" + stream2.cdn.ingestionInfo.streamName
+            }
+
             val shareLink = "https://youtu.be/$bId"
             saveStreamLocally(finalTitle, bId, liveChatId, finalUrl)
 
