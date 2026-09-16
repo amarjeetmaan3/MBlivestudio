@@ -170,7 +170,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     private var dailyQuotaUsed = 0
     private var currentZoomDistance = 100f
 
-    // --- TIMERS ---
+    // --- TIMERS & HANDLERS ---
     private var liveStartTimeMillis: Long = 0L
     private var timerRunning = false
     private val timerHandler = Handler(Looper.getMainLooper())
@@ -183,6 +183,22 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             val seconds = (elapsed / 1000) % 60
             tvLiveTimer.text = String.format("%02d:%02d:%02d", hours, minutes, seconds)
             timerHandler.postDelayed(this, 1000)
+        }
+    }
+
+    private val tickerHandler = Handler(Looper.getMainLooper())
+    private val tickerRunnable = object : Runnable {
+        override fun run() {
+            updateSnapshot(50) 
+            tickerHandler.postDelayed(this, 100)
+        }
+    }
+
+    private val webSyncHandler = Handler(Looper.getMainLooper())
+    private val webSyncRunnable = object : Runnable {
+        override fun run() {
+            updateSnapshot(100)
+            webSyncHandler.postDelayed(this, 1000)
         }
     }
 
@@ -417,6 +433,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
             target?.let { 
                 if (it != dragScoreboard) { 
+                    if (it.tag == "LOWER_THIRD") tickerHandler.removeCallbacks(tickerRunnable)
+                    if (it.tag == "WEB_OVERLAY") webSyncHandler.removeCallbacks(webSyncRunnable)
                     if (it is EditText) {
                         it.clearFocus()
                         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
@@ -777,16 +795,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             applyCurrentMicrophoneDevice()
             cameraLayoutFilter.setRect(0f, 0f, 1f, 1f)
             cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f)
-            rtmpCamera.glInterface.setFilter(cameraLayoutFilter)
+            rtmpCamera.getGlInterface().setFilter(cameraLayoutFilter)
             openGlView.setAspectRatioMode(AspectRatioMode.Fill)
             imageFilterRender.setScale(100f, 100f)
             imageFilterRender.setPosition(0f, 0f)
-            rtmpCamera.glInterface.addFilter(imageFilterRender)
+            rtmpCamera.getGlInterface().addFilter(imageFilterRender)
             
             rtmpCamera.startPreview(openGlView)
             
             openGlView.post {
-                try { rtmpCamera.glInterface.setPreviewResolution(openGlView.width, openGlView.height) } catch (e: Exception) {}
+                try { rtmpCamera.getGlInterface().setPreviewResolution(openGlView.width, openGlView.height) } catch (e: Exception) {}
             }
             
             updateSnapshot(1000)
@@ -884,7 +902,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         openGlView.setAspectRatioMode(AspectRatioMode.Fill)
         surfaceReady = true
         if (rtmpCamera.isOnPreview) {
-            try { rtmpCamera.glInterface.setPreviewResolution(width, height) } catch (e: Exception) {}
+            try { rtmpCamera.getGlInterface().setPreviewResolution(width, height) } catch (e: Exception) {}
         } else {
             tryStartCameraPreview()
         }
@@ -1607,8 +1625,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (rtmpCamera.isStreaming) {
             if (surfaceReady) {
                 try { 
-                    (rtmpCamera.videoSource as? Camera2Source)?.start(applicationContext) 
-                    rtmpCamera.replaceView(openGlView)
+                    rtmpCamera.startPreview(openGlView)
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
