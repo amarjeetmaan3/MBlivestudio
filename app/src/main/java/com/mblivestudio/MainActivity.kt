@@ -37,6 +37,7 @@ import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.SurfaceHolder
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.webkit.WebChromeClient
@@ -46,6 +47,7 @@ import android.widget.*
 import com.mblivestudio.filters.CameraLayoutFilterRender
 import com.pedro.common.ConnectChecker
 import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
+import com.pedro.encoder.input.gl.render.enums.AspectRatioMode
 import com.pedro.library.generic.GenericStream
 import com.pedro.encoder.input.sources.audio.MicrophoneSource
 import com.pedro.encoder.input.sources.video.Camera2Source
@@ -69,7 +71,6 @@ import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.URL
 import java.util.Calendar
-import com.pedro.encoder.utils.gl.AspectRatioMode
 
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
@@ -231,9 +232,43 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+
+        // Force the activity content to use the entire physical display.
+        // This prevents system-bar insets from creating any top, bottom or side gap.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+        }
+        window.decorView.systemUiVisibility = (
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+        )
+
         setContentView(R.layout.activity_main)
 
         openGlView = findViewById(R.id.surfaceView)
+        // RootEncoder OpenGlView defaults to Adjust. Fill gives the old camera behavior:
+        // preserve aspect ratio and crop the excess so the preview occupies the whole view.
+        openGlView.setAspectRatioMode(AspectRatioMode.Fill)
+
+        // Keep the camera preview truly edge-to-edge.
+        // The camera surface must occupy the complete available activity area;
+        // all studio controls/overlays remain drawn above it.
+        openGlView.layoutParams = openGlView.layoutParams.apply {
+            width = ViewGroup.LayoutParams.MATCH_PARENT
+            height = ViewGroup.LayoutParams.MATCH_PARENT
+            if (this is ViewGroup.MarginLayoutParams) {
+                leftMargin = 0
+                topMargin = 0
+                rightMargin = 0
+                bottomMargin = 0
+            }
+        }
+        openGlView.x = 0f
+        openGlView.y = 0f
         openGlView.holder.addCallback(this)
         rtmpCamera = GenericStream(
             this,
@@ -247,6 +282,19 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         registerAudioDeviceMonitoring()
 
         overlayContainer = findViewById(R.id.overlayContainer)
+        overlayContainer.layoutParams = overlayContainer.layoutParams.apply {
+            width = ViewGroup.LayoutParams.MATCH_PARENT
+            height = ViewGroup.LayoutParams.MATCH_PARENT
+            if (this is ViewGroup.MarginLayoutParams) {
+                leftMargin = 0
+                topMargin = 0
+                rightMargin = 0
+                bottomMargin = 0
+            }
+        }
+        overlayContainer.x = 0f
+        overlayContainer.y = 0f
+
         dragScoreboard = findViewById(R.id.dragScoreboard)
         scoreMainText = findViewById(R.id.scoreMainText)
         scoreSubText = findViewById(R.id.scoreSubText)
@@ -724,7 +772,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-       private fun tryStartCameraPreview() {
+    private fun tryStartCameraPreview() {
         if (!surfaceReady || rtmpCamera.isOnPreview) return
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return
 
@@ -735,7 +783,17 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             listOf(Triple(streamWidth, streamHeight, streamBitrate), Triple(720, 1280, 3_000_000), Triple(480, 854, 1_500_000), Triple(480, 640, 1_000_000))
         
         for (res in fallback) {
-            try { if (rtmpCamera.prepareVideo(res.first, res.second, res.third, streamFps, 2, 0)) { isSuccess = true; break } } catch (e: Exception) {}
+            try {
+                if (rtmpCamera.prepareVideo(res.first, res.second, res.third, streamFps, 2, 0)) {
+                    // Keep the overlay canvas on the exact resolution that the
+                    // encoder actually accepted, including automatic fallback.
+                    streamWidth = res.first
+                    streamHeight = res.second
+                    streamBitrate = res.third
+                    isSuccess = true
+                    break
+                }
+            } catch (e: Exception) {}
         }
         var aReady = false
         try {
@@ -745,20 +803,50 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         
         if (isSuccess && aReady) {
             applyCurrentMicrophoneDevice()
-            rtmpCamera.getGlInterface().clearFilters()
+            cameraLayoutFilter.setRect(0f, 0f, 1f, 1f)
             cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f)
             rtmpCamera.getGlInterface().setFilter(cameraLayoutFilter)
+            openGlView.setAspectRatioMode(AspectRatioMode.Fill)
             imageFilterRender.setScale(100f, 100f)
             imageFilterRender.setPosition(0f, 0f)
             rtmpCamera.getGlInterface().addFilter(imageFilterRender)
             rtmpCamera.startPreview(openGlView)
-            rtmpCamera.getGlInterface().setAspectRatioMode(AspectRatioMode.Fill)
             updateSnapshot(1000)
         } else {
             Toast.makeText(this, "CAMERA ERROR: Encoder not supported.", Toast.LENGTH_LONG).show()
         }
     }
+
     private var refreshQueued = false
+
+    private fun drawOverlayToStreamBitmap(bitmap: Bitmap) {
+        val sourceW = overlayContainer.width.toFloat()
+        val sourceH = overlayContainer.height.toFloat()
+        if (sourceW <= 0f || sourceH <= 0f) return
+
+        val targetW = bitmap.width.toFloat()
+        val targetH = bitmap.height.toFloat()
+
+        // The camera preview is Fill/center-crop. The overlay canvas must use the
+        // exact same aspect-ratio mapping; otherwise every overlay gets an extra
+        // visible area when the phone/tablet display ratio differs from the stream.
+        val scale = maxOf(targetW / sourceW, targetH / sourceH)
+        val scaledW = sourceW * scale
+        val scaledH = sourceH * scale
+        val dx = (targetW - scaledW) * 0.5f
+        val dy = (targetH - scaledH) * 0.5f
+
+        val save = canvasFor(bitmap).save()
+        val canvas = canvasFor(bitmap)
+        canvas.translate(dx, dy)
+        canvas.scale(scale, scale)
+        overlayContainer.draw(canvas)
+        canvas.restoreToCount(save)
+    }
+
+    private fun canvasFor(bitmap: Bitmap): Canvas {
+        return if (bitmap === bitmapA) canvasA!! else canvasB!!
+    }
 
     private fun updateSnapshot(delay: Long = 100) {
         if (!rtmpCamera.isOnPreview || overlayContainer.width == 0 || overlayContainer.height == 0) return
@@ -766,8 +854,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         pendingRefresh = true
         overlayHandler.postDelayed({
             try {
-                val w = overlayContainer.width
-                val h = overlayContainer.height
+                val w = streamWidth.coerceAtLeast(1)
+                val h = streamHeight.coerceAtLeast(1)
 
                 useBufferA = !useBufferA
 
@@ -778,7 +866,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                         canvasA = Canvas(bitmapA!!)
                     }
                     bitmapA!!.eraseColor(Color.TRANSPARENT)
-                    overlayContainer.draw(canvasA!!)
+                    drawOverlayToStreamBitmap(bitmapA!!)
                     imageFilterRender.setImage(bitmapA!!)
                 } else {
                     if (bitmapB == null || bitmapB!!.isRecycled || bitmapB!!.width != w || bitmapB!!.height != h) {
@@ -787,7 +875,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                         canvasB = Canvas(bitmapB!!)
                     }
                     bitmapB!!.eraseColor(Color.TRANSPARENT)
-                    overlayContainer.draw(canvasB!!)
+                    drawOverlayToStreamBitmap(bitmapB!!)
                     imageFilterRender.setImage(bitmapB!!)
                 }
             } catch (e: Exception) {
@@ -818,6 +906,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     override fun surfaceCreated(holder: SurfaceHolder) {}
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+    openGlView.setAspectRatioMode(AspectRatioMode.Fill)
     surfaceReady = true
     if (rtmpCamera.isOnPreview) {
         try { rtmpCamera.getGlInterface().setPreviewResolution(width, height) } catch (e: Exception) {}
