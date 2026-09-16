@@ -794,16 +794,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             applyCurrentMicrophoneDevice()
             cameraLayoutFilter.setRect(0f, 0f, 1f, 1f)
             cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f)
-            rtmpCamera.glInterface.setFilter(cameraLayoutFilter)
+            rtmpCamera.getGlInterface().setFilter(cameraLayoutFilter)
             
             imageFilterRender.setScale(100f, 100f)
             imageFilterRender.setPosition(0f, 0f)
-            rtmpCamera.glInterface.addFilter(imageFilterRender)
+            rtmpCamera.getGlInterface().addFilter(imageFilterRender)
             
             rtmpCamera.startPreview(openGlView)
             
             openGlView.post {
-                try { rtmpCamera.glInterface.setPreviewResolution(openGlView.width, openGlView.height) } catch (e: Exception) {}
+               try { rtmpCamera.getGlInterface().setPreviewResolution(openGlView.width, openGlView.height) } catch (e: Exception) {}
             }
             
             updateSnapshot(1000)
@@ -902,7 +902,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         openGlView.setAspectRatioMode(AspectRatioMode.Fill)
         surfaceReady = true
         if (rtmpCamera.isOnPreview) {
-            try { rtmpCamera.glInterface.setPreviewResolution(width, height) } catch (e: Exception) {}
+          try { rtmpCamera.getGlInterface().setPreviewResolution(width, height) } catch (e: Exception) {}
         } else {
             tryStartCameraPreview()
         }
