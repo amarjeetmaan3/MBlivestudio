@@ -4,21 +4,35 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Shader
+import android.graphics.Typeface
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.media.MediaRecorder
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
+import android.text.Editable
+import android.text.InputType
+import android.text.TextUtils
+import android.text.TextWatcher
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.SurfaceHolder
@@ -26,12 +40,16 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
+import android.webkit.WebChromeClient
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.*
 import com.mblivestudio.filters.CameraLayoutFilterRender
 import com.pedro.common.ConnectChecker
 import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
 import com.pedro.encoder.utils.gl.AspectRatioMode
-import com.pedro.library.rtmp.RtmpCamera2
+import com.pedro.library.generic.GenericStream
+import com.pedro.encoder.input.sources.audio.MicrophoneSource
 import com.pedro.encoder.input.sources.video.Camera2Source
 import com.pedro.library.view.OpenGlView
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -45,7 +63,7 @@ internal enum class MicRoute { PHONE, BLUETOOTH, WIRED }
 
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
-    internal lateinit var rtmpCamera: RtmpCamera2
+    internal lateinit var rtmpCamera: GenericStream
     internal lateinit var openGlView: OpenGlView
     internal lateinit var overlayContainer: RelativeLayout
     internal lateinit var imageFilterRender: ImageObjectFilterRender
@@ -128,7 +146,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal var youtubeClient: YouTube? = null
     internal var currentLiveChatId: String? = null
     internal var currentBroadcastId: String? = null
-    internal var currentStreamId: String? = null
     
     internal var chatNextPageToken: String? = null
     internal var chatPollingActive = false
@@ -230,7 +247,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         openGlView.y = 0f
         openGlView.holder.addCallback(this)
         
-        rtmpCamera = RtmpCamera2(openGlView, this)
+        rtmpCamera = GenericStream(this, this, Camera2Source(this), MicrophoneSource(MediaRecorder.AudioSource.MIC))
         imageFilterRender = ImageObjectFilterRender()
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         registerAudioDeviceMonitoring()
@@ -433,7 +450,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                 Toast.makeText(this, "Portrait Mode Locked", Toast.LENGTH_SHORT).show()
             }
-            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ surfaceReady = true; tryStartCameraPreview() }, 300)
         }
 
         var currentTouchEvent: MotionEvent? = null
@@ -509,12 +525,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         makeDraggableAndScalable(dragScoreboard)
     }
 
-    // फिक्स 3 (असली फिक्स): RTMP कनेक्ट होना सिर्फ इतना बताता है कि इनकोडर YouTube के इनजेस्ट
-    // सर्वर तक पहुँच गया — इसका मतलब यह नहीं कि YouTube ने ब्रॉडकास्ट को "Live" में बदल दिया।
-    // पहले सिर्फ enableAutoStart=true पर भरोसा किया जा रहा था, जो हमेशा भरोसेमंद नहीं है और
-    // यही वजह थी कि YouTube पर वीडियो सिर्फ "Upcoming" दिखता रहता था और कभी चलता नहीं था।
-    // अब कनेक्शन सफल होते ही हम एक्सप्लिसिट तरीके से ब्रॉडकास्ट को "live" में transition करेंगे।
-    override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "Connected! Going live on YouTube...", Toast.LENGTH_LONG).show(); startStudioTimer() }; ensureBroadcastGoesLive() }
+    override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "YOU ARE LIVE!", Toast.LENGTH_LONG).show(); startStudioTimer() } }
     
     override fun onConnectionFailed(reason: String) {
         if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { retryCount++; runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }; Thread { Thread.sleep(2000); try { rtmpCamera.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} }.start() } else { StreamingService.stop(this@MainActivity); runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show(); stopChatPolling(); stopStudioTimer() } }
@@ -555,32 +566,20 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // फिक्स 4 (असली रूट-कॉज़ — "YouTube पर No data / Connect your encoder"):
-    // पहले यहाँ, स्ट्रीमिंग के दौरान भी, (rtmpCamera.videoSource as? Camera2Source)?.stop()
-    // कॉल हो रहा था। यह rtmpCamera.stopPreview() जैसा "safe/no-op while streaming" कॉल नहीं है —
-    // यह सीधे कैमरे का कैप्चर सेशन बंद कर देता है, चाहे स्ट्रीम चल ही क्यों न रही हो।
-    // नतीजा: जैसे ही ऐप बैकग्राउंड में जाता (जैसे यूज़र Chrome खोलकर YouTube Studio देखने
-    // जाता), कैमरा बंद हो जाता, एनकोडर को नए फ़्रेम मिलने बंद हो जाते, RTMP कनेक्शन तो
-    // ज़िंदा रहता लेकिन उसमें कोई वीडियो डेटा नहीं बहता — और YouTube पर ठीक वही "No data /
-    // Connect your encoder" दिखने लगता जो स्क्रीनशॉट में दिखा। यह बिल्कुल StreamingService.kt
-    // के मकसद के खिलाफ था (जो खासतौर पर इसीलिए बनाई गई थी कि बैकग्राउंड में भी
-    // कैमरा+एनकोडर पाइपलाइन चलती रहे)।
-    // असली फिक्स: स्ट्रीमिंग चालू हो तो कैमरे को बिल्कुल मत छेड़ो — सिर्फ तभी रोको जब
-    // स्ट्रीमिंग नहीं हो रही (ताकि कैमरा बाकी ऐप्स के लिए फ्री हो जाए / बैटरी बचे)।
     override fun onPause() {
         super.onPause()
-        if (!rtmpCamera.isStreaming) {
+        if (rtmpCamera.isStreaming) {
+            try { (rtmpCamera.videoSource as? Camera2Source)?.stop() } catch (e: Exception) {}
+        } else {
             if (rtmpCamera.isOnPreview) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
         }
-        // isStreaming == true पर जानबूझकर कुछ नहीं करते — कैमरा और एनकोडर बैकग्राउंड में
-        // भी चलते रहने चाहिए, StreamingService का यही पूरा मकसद है।
     }
 
     override fun onResume() {
         super.onResume()
         if (rtmpCamera.isStreaming) {
             if (surfaceReady) {
-                try { rtmpCamera.startPreview() } catch (e: Exception) { e.printStackTrace() }
+                try { rtmpCamera.startPreview(openGlView) } catch (e: Exception) { e.printStackTrace() }
             }
         } else if (surfaceReady) {
             tryStartCameraPreview()
@@ -607,11 +606,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         surfaceReady = false
-        // The RTMP encoder must remain alive if a preview Surface disappears
-        // (background/app switch). Only stop the local preview when we are not streaming.
-        if (!rtmpCamera.isStreaming && rtmpCamera.isOnPreview) {
-            try { rtmpCamera.stopPreview() } catch (e: Exception) {}
-        }
+        if (rtmpCamera.isOnPreview) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
     }
 
     override fun onAuthError() { runOnUiThread { Toast.makeText(this, "Auth Error", Toast.LENGTH_SHORT).show() } }
