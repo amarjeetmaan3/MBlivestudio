@@ -244,6 +244,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 or View.SYSTEM_UI_FLAG_FULLSCREEN
         )
 
+        // Notch Fix
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+
         setContentView(R.layout.activity_main)
 
         openGlView = findViewById(R.id.surfaceView)
@@ -472,7 +477,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         btnBluetoothMic.clearColorFilter()
         btnBluetoothMic.setOnClickListener {
-            if (rtmpCamera.isStreaming) { Toast.makeText(this, "Stop the stream before switching mic source.", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) { requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 2); return@setOnClickListener }
             toggleBluetoothMic(btnBluetoothMic)
         }
@@ -795,16 +799,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             cameraLayoutFilter.setRect(0f, 0f, 1f, 1f)
             cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f)
             rtmpCamera.getGlInterface().setFilter(cameraLayoutFilter)
-            
+            openGlView.setAspectRatioMode(AspectRatioMode.Fill)
             imageFilterRender.setScale(100f, 100f)
             imageFilterRender.setPosition(0f, 0f)
             rtmpCamera.getGlInterface().addFilter(imageFilterRender)
             
             rtmpCamera.startPreview(openGlView)
-            
-            openGlView.post {
-               try { rtmpCamera.getGlInterface().setPreviewResolution(openGlView.width, openGlView.height) } catch (e: Exception) {}
-            }
             
             updateSnapshot(1000)
         } else {
@@ -901,9 +901,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
         openGlView.setAspectRatioMode(AspectRatioMode.Fill)
         surfaceReady = true
-        if (rtmpCamera.isOnPreview) {
-          try { rtmpCamera.getGlInterface().setPreviewResolution(width, height) } catch (e: Exception) {}
-        } else {
+        if (!rtmpCamera.isOnPreview) {
             tryStartCameraPreview()
         }
     }
