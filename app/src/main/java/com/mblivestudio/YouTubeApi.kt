@@ -13,6 +13,8 @@ import com.google.api.client.json.gson.GsonFactory
 import com.google.api.client.util.DateTime
 import com.google.api.services.youtube.YouTube
 import com.google.api.services.youtube.model.*
+import java.net.Inet4Address
+import java.net.InetAddress
 
 internal fun MainActivity.loadQuota() {
     val prefs = getSharedPreferences("MBLivePrefs", Context.MODE_PRIVATE)
@@ -79,11 +81,23 @@ internal fun MainActivity.createYouTubeBroadcast() {
 
             val stream2 = youtube.liveStreams().insert("snippet,cdn", LiveStream().apply { snippet = LiveStreamSnippet().apply { title = "$finalTitle - Key" }; cdn = CdnSettings().apply { ingestionType = "rtmp"; resolution = "variable"; frameRate = "variable" } }).execute()
             youtube.liveBroadcasts().bind(bId, "id,contentDetails").apply { streamId = stream2.id }.execute()
+            currentStreamId = stream2.id
 
-            // FIX: Removed the IP resolution hack. We must use the exact URL YouTube gives us.
             val ingestionUrl = stream2.cdn.ingestionInfo.ingestionAddress
-            val finalUrl = "$ingestionUrl/${stream2.cdn.ingestionInfo.streamName}"
-            
+            var resolvedIp: String? = null
+            try {
+                val host = if (ingestionUrl.contains("b.rtmp")) "b.rtmp.youtube.com" else "a.rtmp.youtube.com"
+                resolvedIp = InetAddress.getAllByName(host)
+                    .firstOrNull { it is Inet4Address }?.hostAddress
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            val finalUrl = if (resolvedIp != null && ingestionUrl.contains("a.rtmp.youtube.com")) {
+                ingestionUrl.replace("a.rtmp.youtube.com", resolvedIp) + "/" + stream2.cdn.ingestionInfo.streamName
+            } else {
+                ingestionUrl.replace("a.rtmp", "b.rtmp") + "/" + stream2.cdn.ingestionInfo.streamName
+            }
+
             val shareLink = "https://youtu.be/$bId"
             saveStreamLocally(finalTitle, bId, liveChatId, finalUrl)
 
@@ -105,12 +119,51 @@ internal fun MainActivity.stopLiveStream() {
             removeSavedStream(broadcastId)
             currentBroadcastId = null 
         }
+        currentStreamId = null
         try { rtmpCamera.stopStream() } catch (e: Exception) {}
         StreamingService.stop(activity)
         runOnUiThread {
             btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
             Toast.makeText(activity, "Stream Ended Permanently.", Toast.LENGTH_SHORT).show()
             generatedRtmpUrl = null; stopChatPolling(); stopStudioTimer()
+        }
+    }.start()
+}
+
+internal fun MainActivity.ensureBroadcastGoesLive() {
+    val youtube = youtubeClient ?: return
+    val broadcastId = currentBroadcastId ?: return
+    val streamId = currentStreamId ?: return
+    Thread {
+        val maxAttempts = 30
+        var attempts = 0
+        while (attempts < maxAttempts) {
+            if (!rtmpCamera.isStreaming || currentBroadcastId != broadcastId) return@Thread
+            attempts++
+            try {
+                addQuota(1)
+                val streamStatus = youtube.liveStreams().list("status").setId(streamId).execute()
+                    .items?.firstOrNull()?.status?.streamStatus
+
+                if (streamStatus == "active") {
+                    addQuota(1)
+                    val lifeCycleStatus = youtube.liveBroadcasts().list("status").setId(broadcastId).execute()
+                        .items?.firstOrNull()?.status?.lifeCycleStatus
+
+                    if (lifeCycleStatus != "live" && lifeCycleStatus != "complete" && lifeCycleStatus != "completeStarting") {
+                        try {
+                            addQuota(50)
+                            youtube.liveBroadcasts().transition("live", broadcastId, "status").execute()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                    return@Thread
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            Thread.sleep(3000)
         }
     }.start()
 }
