@@ -104,7 +104,6 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
     val targetW = bitmap.width.toFloat()
     val targetH = bitmap.height.toFloat()
 
-    // UPDATE 4: ANTI-SQUISH: यह लॉजिक स्क्रीन को 90° होने पर भी 16:9 (लैंडस्केप) में लॉक रखेगा
     val fillScale = maxOf(sourceW / targetW, sourceH / targetH)
     val xOffset = (sourceW - targetW * fillScale) / 2f
     val yOffset = (sourceH - targetH * fillScale) / 2f
@@ -115,12 +114,31 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
     canvas.scale(1f / fillScale, 1f / fillScale)
     canvas.translate(-xOffset, -yOffset)
     
-    // THE VIRTUAL CURTAIN: YouTube पर डार्क स्लेट (म्यूट या बैकग्राउंड होने पर 100% कवरेज)
-    if (isCameraMuted || isBackgrounded || !surfaceReady) {
-        canvas.drawColor(Color.parseColor("#121212")) // Black Slate Draw
+    if (isPrivacyMode) {
+        // OBS STUDIO MODE: 
+        // 1. YouTube के फ्रेम को पूरी तरह ब्लैक करके कैमरा छुपा दें
+        canvas.drawColor(Color.parseColor("#FF000000")) 
+        
+        // 2. दर्शकों के लिए सिर्फ स्लेट/थंबनेल ड्रा करें
+        cachedSlateBitmap?.let { slate ->
+            val scale = maxOf(sourceW / slate.width, sourceH / slate.height)
+            val sw = slate.width * scale
+            val sh = slate.height * scale
+            val sx = (sourceW - sw) / 2f
+            val sy = (sourceH - sh) / 2f
+            val destRect = android.graphics.RectF(sx, sy, sx + sw, sy + sh)
+            canvas.drawBitmap(slate, null, destRect, null)
+        }
+        // 3. हम यहाँ जानबूझकर `overlayContainer.draw(canvas)` नहीं चलाएंगे।
+        // इसका मतलब: YouTube को आपके ओवरले खिसकते हुए नहीं दिखेंगे, लेकिन आपको अपनी स्क्रीन पर दिखेंगे!
+    } else {
+        // NORMAL LIVE MODE
+        if (isBackgrounded || !surfaceReady) {
+            canvas.drawColor(Color.parseColor("#121212")) 
+        }
+        overlayContainer.draw(canvas)
     }
     
-    overlayContainer.draw(canvas)
     canvas.restoreToCount(save)
 }
 
@@ -129,7 +147,6 @@ internal fun MainActivity.canvasFor(bitmap: Bitmap): Canvas {
 }
 
 internal fun MainActivity.updateSnapshot(delay: Long = 0) {
-    // FIX: जब ऐप बैकग्राउंड में हो, तब भी यह लूप चलना चाहिए ताकि स्ट्रीम ज़िंदा रहे
     if ((!rtmpCamera.isOnPreview && !rtmpCamera.isStreaming) || overlayContainer.width == 0 || overlayContainer.height == 0) return
     if (pendingRefresh) { refreshQueued = true; return }
     pendingRefresh = true
