@@ -39,6 +39,8 @@ import com.google.android.gms.common.api.Scope
 import com.google.android.gms.common.api.ApiException
 import com.google.api.services.youtube.YouTube
 import com.pedro.library.view.OpenGlView
+import java.util.Timer
+import java.util.TimerTask
 
 internal enum class MicRoute { PHONE, BLUETOOTH, WIRED }
 
@@ -64,6 +66,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     internal lateinit var ivStreamSlate: ImageView 
     internal var isBackgrounded = false
+
+    // THE UNSTOPPABLE TIMER: फोन लॉक होने पर भी ओवरले को जिंदा रखेगा
+    internal var overlayTimer: Timer? = null
 
     internal lateinit var dragScoreboard: LinearLayout
     internal lateinit var scoreMainText: TextView
@@ -117,8 +122,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal var generatedRtmpUrl: String? = null
 
     internal val overlayHandler = Handler(Looper.getMainLooper())
-    internal var pendingRefresh = false
-    internal var refreshQueued = false
     internal var surfaceReady = false
 
     internal var bitmapA: Bitmap? = null
@@ -170,7 +173,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal val tickerHandler = Handler(Looper.getMainLooper())
     internal val tickerRunnable = object : Runnable {
         override fun run() {
-            this@MainActivity.updateSnapshot(50) 
+            this@MainActivity.updateSnapshot(0) 
             tickerHandler.postDelayed(this, 150)
         }
     }
@@ -178,7 +181,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal val webSyncHandler = Handler(Looper.getMainLooper())
     internal val webSyncRunnable = object : Runnable {
         override fun run() {
-            this@MainActivity.updateSnapshot(100)
+            this@MainActivity.updateSnapshot(0)
             webSyncHandler.postDelayed(this, 1000)
         }
     }
@@ -215,7 +218,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     internal fun showSlate() {
-        // FIX: स्टूडियो (लोकल व्यू) अब सीधे कैश से फोटो उठाएगा, URI परमिशन की ज़रूरत खत्म!
+        // FIX: लोकल स्टूडियो में भी थंबनेल 100% दिखेगा
         if (globalSlateBitmap != null) {
             ivStreamSlate.setImageBitmap(globalSlateBitmap)
         } else {
@@ -230,12 +233,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         updateSnapshot(0)
     }
 
+    // FIX: तुम्हारा पुराना SENSOR_LANDSCAPE वापस कर दिया गया है
     internal fun lockOrientation() {
         val isLandscape = streamWidth > streamHeight
         requestedOrientation = if (isLandscape) {
-            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         } else {
-            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
         }
     }
 
@@ -310,6 +314,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
         overlayContainer.addView(ivStreamSlate, 0)
 
+        // START THE UNSTOPPABLE TIMER
+        overlayTimer = Timer()
+        overlayTimer?.scheduleAtFixedRate(object : TimerTask() {
+            override fun run() {
+                if (rtmpCamera.isOnPreview || rtmpCamera.isStreaming) {
+                    Handler(Looper.getMainLooper()).post { updateSnapshot(0) }
+                }
+            }
+        }, 0, 100)
+
         dragScoreboard = findViewById(R.id.dragScoreboard)
         scoreMainText = findViewById(R.id.scoreMainText)
         scoreSubText = findViewById(R.id.scoreSubText)
@@ -371,7 +385,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             currentMode = "DRAG"; btnOverlayDone.visibility = View.GONE; val root = findViewById<RelativeLayout>(R.id.rootLayout)
             resizeHandles.forEach { root.removeView(it) }; resizeHandles.clear(); cropFrameViews.forEach { root.removeView(it) }; cropFrameViews.clear()
             selectedOverlay?.let { if (it is EditText) it.clearFocus(); it.setOnTouchListener(null); makeDraggableAndScalable(it) }
-            updateOverlayMenuButtonPosition(); updateSnapshot()
+            updateOverlayMenuButtonPosition(); updateSnapshot(0)
         }
 
         val btnSwitchCamera: ImageButton = findViewById(R.id.btnSwitchCamera)
@@ -397,11 +411,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
 
         findViewById<Button>(R.id.btnToggleComments).setOnClickListener { popupSettings.visibility = View.GONE; commentsPanel.visibility = if (commentsPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
-        findViewById<Button>(R.id.btnToggleStreamChat).setOnClickListener { popupSettings.visibility = View.GONE; if (tvStreamChatOverlay.visibility == View.VISIBLE) { tvStreamChatOverlay.visibility = View.GONE; updateSnapshot() } else { tvStreamChatOverlay.visibility = View.VISIBLE; tvStreamChatOverlay.bringToFront(); refreshChatOverlayText(); updateSnapshot() } }
+        findViewById<Button>(R.id.btnToggleStreamChat).setOnClickListener { popupSettings.visibility = View.GONE; if (tvStreamChatOverlay.visibility == View.VISIBLE) { tvStreamChatOverlay.visibility = View.GONE; updateSnapshot(0) } else { tvStreamChatOverlay.visibility = View.VISIBLE; tvStreamChatOverlay.bringToFront(); refreshChatOverlayText(); updateSnapshot(0) } }
         findViewById<Button>(R.id.btnAddText).setOnClickListener { popupSettings.visibility = View.GONE; showAddTextDialog() }
         findViewById<Button>(R.id.btnAddWebOverlay).setOnClickListener { popupSettings.visibility = View.GONE; showAddWebDialog() }
         findViewById<Button>(R.id.btnAddLogo).setOnClickListener { popupSettings.visibility = View.GONE; val intent = Intent(Intent.ACTION_GET_CONTENT); intent.type = "image/*"; startActivityForResult(intent, PICK_IMAGE_REQUEST) }
-        findViewById<Button>(R.id.btnToggleScore).setOnClickListener { popupSettings.visibility = View.GONE; if (dragScoreboard.visibility == View.VISIBLE) { dragScoreboard.visibility = View.GONE; updateSnapshot() } else { showScoreboardDialog() } }
+        findViewById<Button>(R.id.btnToggleScore).setOnClickListener { popupSettings.visibility = View.GONE; if (dragScoreboard.visibility == View.VISIBLE) { dragScoreboard.visibility = View.GONE; updateSnapshot(0) } else { showScoreboardDialog() } }
         findViewById<Button>(R.id.btnAddLowerThird).setOnClickListener { popupSettings.visibility = View.GONE; showAddLowerThirdDialog() }
         
         findViewById<ImageButton>(R.id.btnLayoutFull).setOnClickListener { applyCameraLayout(floatArrayOf(0f,0f,1f,1f)); popupSettings.visibility = View.GONE }
@@ -421,7 +435,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     if (it.tag == "WEB_OVERLAY") webSyncHandler.removeCallbacks(webSyncRunnable)
                     if (it is EditText) { it.clearFocus(); (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(it.windowToken, 0) }
                     overlayContainer.removeView(it); if (selectedOverlay == it) selectedOverlay = null
-                    updateOverlayMenuButtonPosition(); updateSnapshot() 
+                    updateOverlayMenuButtonPosition(); updateSnapshot(0) 
                 } 
             } 
         }
@@ -486,14 +500,24 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             showGoLiveDialog()
         }
         makeDraggableAndScalable(dragScoreboard)
-        
         tickerHandler.post(tickerRunnable)
     }
 
     override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); startStudioTimer() }; ensureBroadcastGoesLive() }
     
     override fun onConnectionFailed(reason: String) {
-        if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { retryCount++; runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }; Thread { Thread.sleep(2000); try { rtmpCamera.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} }.start() } else { StreamingService.stop(this@MainActivity); runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; unlockOrientation(); tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; stopChatPolling(); stopStudioTimer() } }
+        if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { 
+            retryCount++
+            runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }
+            Thread { 
+                // CONNECTION FIX: यूट्यूब सर्वर को पुराना कनेक्शन काटने के लिए 4 सेकंड का समय मिलेगा, फिर ऑटो-कनेक्ट होगा
+                Thread.sleep(4000) 
+                try { rtmpCamera.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} 
+            }.start() 
+        } else { 
+            StreamingService.stop(this@MainActivity)
+            runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; unlockOrientation(); tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; stopChatPolling(); stopStudioTimer() } 
+        }
     }
     
     override fun onDisconnect() { StreamingService.stop(this@MainActivity); runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F")); try { rtmpCamera.stopPreview() } catch (e: Exception) {}; unlockOrientation(); tryStartCameraPreview(); stopChatPolling(); stopStudioTimer() } }
@@ -538,10 +562,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         super.onDestroy()
         if (!rtmpCamera.isStreaming) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
         
-        // FIX: CLEANUP SENSOR (फोर्स किल पर कैमरा आज़ाद करना)
         activeRtmpCamera = null 
+        overlayTimer?.cancel()
+        overlayTimer = null
         
-        overlayHandler.removeCallbacksAndMessages(null); chatHandler.removeCallbacksAndMessages(null); timerHandler.removeCallbacksAndMessages(null); tickerHandler.removeCallbacksAndMessages(null); webSyncHandler.removeCallbacksAndMessages(null)
+        chatHandler.removeCallbacksAndMessages(null); timerHandler.removeCallbacksAndMessages(null)
         bitmapA?.let { if (!it.isRecycled) it.recycle() }; bitmapA = null; canvasA = null; bitmapB?.let { if (!it.isRecycled) it.recycle() }; bitmapB = null; canvasB = null
     }
 
