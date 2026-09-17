@@ -44,16 +44,23 @@ internal enum class MicRoute { PHONE, BLUETOOTH, WIRED }
 
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
+    // CRASH FIX: Singleton Camera
+    companion object {
+        @SuppressLint("StaticFieldLeak")
+        var activeRtmpCamera: RtmpCamera2? = null
+    }
+
     internal lateinit var rtmpCamera: RtmpCamera2
     internal lateinit var openGlView: OpenGlView
     internal lateinit var overlayContainer: RelativeLayout
     internal lateinit var imageFilterRender: ImageObjectFilterRender
     internal val cameraLayoutFilter = CameraLayoutFilterRender()
 
-    // THE VIRTUAL CURTAIN: Slate System
+    // THE VIRTUAL CURTAIN: Privacy Mode System
     internal lateinit var ivStreamSlate: ImageView 
-    internal var isCameraMuted = false 
-    internal var isBackgrounded = false // ऐप स्विच ट्रैक करने के लिए
+    internal var isPrivacyMode = false 
+    internal var cachedSlateBitmap: Bitmap? = null
+    internal var isBackgrounded = false
 
     internal lateinit var dragScoreboard: LinearLayout
     internal lateinit var scoreMainText: TextView
@@ -174,21 +181,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // SLATE CONTROLLERS
-    internal fun showSlate() {
-        if (pendingThumbnailUri != null) ivStreamSlate.setImageURI(pendingThumbnailUri)
-        else ivStreamSlate.setImageDrawable(null) // डार्क स्क्रीन, क्रैश से बचने के लिए
-        ivStreamSlate.visibility = View.VISIBLE
-        updateSnapshot(0)
-    }
-
-    internal fun hideSlate() {
-        ivStreamSlate.visibility = View.GONE
-        updateSnapshot(0)
-    }
-
     internal fun lockOrientation() {
-        // FULL_SENSOR Allows 180° rotation natively
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
     }
 
@@ -202,33 +195,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         System.setProperty("java.net.preferIPv6Addresses", "false")
     }
 
-    // UPDATE 2: SMART ROTATION (180° OpenGL Flip)
+    // FIXED CAMERA ORIENTATION (कैमरा नहीं घूमेगा, सिर्फ UI घूमेगा)
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
-        
-        // 1. फोन घूमते ही तुरंत स्लेट गिराएं (ताकि झटके न दिखें)
-        showSlate()
-        
-        val isLandscape = newConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-        
-        // 2. 180° ग्राफ़िक फ्लिप (OpenGL): कैमरा हार्डवेयर को बिना छेड़े वीडियो पलटें
-        val displayRotation = (getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.rotation
-        var glRotation = 0
-        if (isLandscape) {
-            // अगर फोन 180° या 270° (उल्टा लैंडस्केप) है, तो स्ट्रीम को 180° पलट दें
-            if (displayRotation == android.view.Surface.ROTATION_270 || displayRotation == android.view.Surface.ROTATION_180) {
-                glRotation = 180
-            }
-        }
-        
-        // एनकोडर को नया एंगल दें
-        try { rtmpCamera.glInterface.setRotation(glRotation) } catch (e: Exception) {}
-
-        // 3. 1.5 सेकंड बाद स्लेट हटा लें (अगर आपने खुद म्यूट नहीं किया है)
-        if (!isCameraMuted) {
-            Handler(Looper.getMainLooper()).postDelayed({ hideSlate() }, 1500)
-        }
-        
         updateSnapshot(0)
     }
 
@@ -264,7 +233,15 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         openGlView.layoutParams = openGlView.layoutParams.apply { width = ViewGroup.LayoutParams.MATCH_PARENT; height = ViewGroup.LayoutParams.MATCH_PARENT }
         openGlView.holder.addCallback(this)
         
-        rtmpCamera = RtmpCamera2(openGlView, this)
+        // CRASH FIX: अगर कैमरा पहले से बैकग्राउंड में चल रहा है, तो नया मत बनाओ!
+        if (activeRtmpCamera == null) {
+            rtmpCamera = RtmpCamera2(openGlView, this)
+            activeRtmpCamera = rtmpCamera
+        } else {
+            rtmpCamera = activeRtmpCamera!!
+            try { rtmpCamera.replaceView(openGlView) } catch(e: Exception) {}
+        }
+        
         imageFilterRender = ImageObjectFilterRender()
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         registerAudioDeviceMonitoring()
@@ -348,18 +325,21 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val btnMicToggle: ImageButton = findViewById(R.id.btnMicToggle)
         val btnBluetoothMic: ImageButton = findViewById(R.id.btnBluetoothMic)
         
-        // CAMERA OFF / MUTE BUTTON (Perfect Fix without mipmap error)
-        val btnCameraToggle: ImageButton = findViewById(R.id.btnOrientation)
-        btnCameraToggle.setImageResource(android.R.drawable.ic_menu_camera)
-        btnCameraToggle.setOnClickListener {
-            isCameraMuted = !isCameraMuted
-            if (isCameraMuted) {
-                showSlate()
-                btnCameraToggle.setColorFilter(Color.RED)
+        // THE STUDIO / PRIVACY MODE BUTTON
+        val btnPrivacyMode: ImageButton = findViewById(R.id.btnOrientation)
+        btnPrivacyMode.setImageResource(android.R.drawable.ic_menu_camera)
+        btnPrivacyMode.setOnClickListener {
+            isPrivacyMode = !isPrivacyMode
+            if (isPrivacyMode) {
+                btnPrivacyMode.setColorFilter(Color.RED)
+                rtmpCamera.disableAudio()
+                Toast.makeText(this, "PRIVACY ON: YouTube पर स्लेट दिख रही है। अब आप ओवरले सेट कर सकते हैं।", Toast.LENGTH_LONG).show()
             } else {
-                hideSlate()
-                btnCameraToggle.clearColorFilter()
+                btnPrivacyMode.clearColorFilter()
+                if (!isAudioMuted) rtmpCamera.enableAudio()
+                Toast.makeText(this, "PRIVACY OFF: आप वापस YouTube पर लाइव हैं!", Toast.LENGTH_SHORT).show()
             }
+            updateSnapshot(0)
         }
 
         findViewById<Button>(R.id.btnToggleComments).setOnClickListener { popupSettings.visibility = View.GONE; commentsPanel.visibility = if (commentsPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
@@ -447,7 +427,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
         makeDraggableAndScalable(dragScoreboard)
         
-        // UPDATE 1: START THE ENGINE (ओवरले और स्लेट को YouTube तक पहुँचाने वाला इंजन)
         tickerHandler.post(tickerRunnable)
     }
 
@@ -466,7 +445,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (resultCode == Activity.RESULT_OK && data != null) {
             when (requestCode) {
                 PICK_IMAGE_REQUEST -> { try { val imageUri = data.data; if (imageUri != null) { addImageOverlayToScreen(BitmapFactory.decodeStream(contentResolver.openInputStream(imageUri))) } } catch (e: Exception) { e.printStackTrace(); Toast.makeText(this, "Failed to load image", Toast.LENGTH_SHORT).show() } }
-                PICK_THUMBNAIL_REQUEST -> { pendingThumbnailUri = data.data; thumbnailPreviewImageView?.setImageURI(pendingThumbnailUri); ivStreamSlate.setImageURI(pendingThumbnailUri) }
+                PICK_THUMBNAIL_REQUEST -> { 
+                    pendingThumbnailUri = data.data
+                    thumbnailPreviewImageView?.setImageURI(pendingThumbnailUri)
+                    // Privacy Mode के लिए थंबनेल सेव करें
+                    pendingThumbnailUri?.let { uri ->
+                        try { cachedSlateBitmap = BitmapFactory.decodeStream(contentResolver.openInputStream(uri)) } catch (e: Exception) {}
+                    }
+                }
                 SIGN_IN_REQUEST -> { val task = GoogleSignIn.getSignedInAccountFromIntent(data); try { val account = task.getResult(ApiException::class.java); connectedAccountEmail = account?.email; if (account != null) applyAccountToHeader(account); Toast.makeText(this, "Signed in as ${account?.email}", Toast.LENGTH_SHORT).show() } catch (e: ApiException) { e.printStackTrace(); Toast.makeText(this, "Sign-in failed", Toast.LENGTH_SHORT).show() } }
             }
         }
@@ -495,29 +481,24 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     override fun surfaceCreated(holder: SurfaceHolder) {}
     
-    // UPDATE 3: THE VIRTUAL CURTAIN: Safe Restore (वापस आने पर)
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) { 
         openGlView.setAspectRatioMode(AspectRatioMode.Fill) 
         surfaceReady = true 
         if (isBackgrounded && rtmpCamera.isStreaming) {
-            // "हॉट-स्वैप" वापसी: कैमरे को बैकग्राउंड से वापस असली स्क्रीन से जोड़ें
+            // बैकग्राउंड से लौटने पर कैमरे को नई स्क्रीन से जोड़ें
             try { rtmpCamera.replaceView(openGlView) } catch (e: Exception) {}
             isBackgrounded = false
-            if (!isCameraMuted) hideSlate()
         } else if (!rtmpCamera.isOnPreview) { 
             tryStartCameraPreview() 
         } 
     }
     
-    // UPDATE 3: THE VIRTUAL CURTAIN: Background Switch / Lock Screen (ऐप मिनिमाइज़ या फोन लॉक)
     override fun surfaceDestroyed(holder: SurfaceHolder) { 
         surfaceReady = false
         isBackgrounded = true
         if (rtmpCamera.isStreaming) {
-            // लॉक स्क्रीन पर स्लेट दिखाएं
-            showSlate()
-            // NEVER DISCONNECT: कैमरे को 'stop' करने के बजाय, उसे डमी स्क्रीन दें
-            try { rtmpCamera.replaceView(this) } catch (e: Exception) {}
+            // BATTERY SAVER MODE: फोन लॉक होने पर स्ट्रीम चालू रखने की निंजा तकनीक!
+            try { rtmpCamera.replaceView(applicationContext) } catch (e: Exception) {}
         } else if (rtmpCamera.isOnPreview) {
             try { rtmpCamera.stopPreview() } catch (e: Exception) {}
         }
