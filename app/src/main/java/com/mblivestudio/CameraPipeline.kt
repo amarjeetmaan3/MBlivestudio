@@ -21,8 +21,7 @@ internal fun MainActivity.tryStartCameraPreview() {
     val encWidth = if (isPortrait) streamHeight else streamWidth
     val encHeight = if (isPortrait) streamWidth else streamHeight
     
-    // 180° CAMERA VIEW FIX: अब कैमरा रोटेशन को सिस्टम के हिसाब से कैलकुलेट करेगा, 
-    // ताकि फोन 180° उल्टा होने पर कैमरे का व्यू भी सही से उल्टा/सीधा हो जाए।
+    // 180° / 90° CAMERA SENSOR MAPPING
     var rotation = 0
     val displayRotation = (getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.rotation
     if (isPortrait) {
@@ -105,7 +104,6 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
     val targetW = bitmap.width.toFloat()
     val targetH = bitmap.height.toFloat()
 
-    // GHOSTING FIX
     val fillScale = maxOf(sourceW / targetW, sourceH / targetH)
     val xOffset = (sourceW - targetW * fillScale) / 2f
     val yOffset = (sourceH - targetH * fillScale) / 2f
@@ -116,8 +114,10 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
     canvas.scale(1f / fillScale, 1f / fillScale)
     canvas.translate(-xOffset, -yOffset)
     
-    if (isCameraMuted || !surfaceReady) {
-        canvas.drawColor(Color.parseColor("#121212")) // Black Slate Draw
+    // THE VIRTUAL CURTAIN: 100% Opacity Over Camera
+    // जब आप बैकग्राउंड में होंगे या म्यूट करेंगे, यह लेयर कैमरे को 100% कवर कर लेगी।
+    if (isCameraMuted || isBackgrounded || !surfaceReady) {
+        canvas.drawColor(Color.parseColor("#121212")) // डार्क स्लेट (Black)
     }
     
     overlayContainer.draw(canvas)
@@ -129,6 +129,7 @@ internal fun MainActivity.canvasFor(bitmap: Bitmap): Canvas {
 }
 
 internal fun MainActivity.updateSnapshot(delay: Long = 0) {
+    // FIX: जब ऐप बैकग्राउंड में हो, तब भी यह लूप चलना चाहिए ताकि स्ट्रीम ज़िंदा रहे
     if ((!rtmpCamera.isOnPreview && !rtmpCamera.isStreaming) || overlayContainer.width == 0 || overlayContainer.height == 0) return
     if (pendingRefresh) { refreshQueued = true; return }
     pendingRefresh = true
