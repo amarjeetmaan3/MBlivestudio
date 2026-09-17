@@ -104,6 +104,7 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
     val targetW = bitmap.width.toFloat()
     val targetH = bitmap.height.toFloat()
 
+    // UPDATE 4: ANTI-SQUISH: यह लॉजिक स्क्रीन को 90° होने पर भी 16:9 (लैंडस्केप) में लॉक रखेगा
     val fillScale = maxOf(sourceW / targetW, sourceH / targetH)
     val xOffset = (sourceW - targetW * fillScale) / 2f
     val yOffset = (sourceH - targetH * fillScale) / 2f
@@ -114,10 +115,9 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
     canvas.scale(1f / fillScale, 1f / fillScale)
     canvas.translate(-xOffset, -yOffset)
     
-    // THE VIRTUAL CURTAIN: 100% Opacity Over Camera
-    // जब आप बैकग्राउंड में होंगे या म्यूट करेंगे, यह लेयर कैमरे को 100% कवर कर लेगी।
+    // THE VIRTUAL CURTAIN: YouTube पर डार्क स्लेट (म्यूट या बैकग्राउंड होने पर 100% कवरेज)
     if (isCameraMuted || isBackgrounded || !surfaceReady) {
-        canvas.drawColor(Color.parseColor("#121212")) // डार्क स्लेट (Black)
+        canvas.drawColor(Color.parseColor("#121212")) // Black Slate Draw
     }
     
     overlayContainer.draw(canvas)
