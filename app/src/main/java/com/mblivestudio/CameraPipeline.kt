@@ -1,36 +1,28 @@
 package com.mblivestudio
 
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
-import android.os.Handler
-import android.os.Looper
 import android.view.MotionEvent
-import android.view.WindowManager
 import android.widget.Toast
 
 internal fun MainActivity.tryStartCameraPreview() {
-    if (!surfaceReady || rtmpCamera.isOnPreview || MainActivity.globalPrivacyMode) return
+    if (!surfaceReady || rtmpCamera.isOnPreview) return
     if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ||
         checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return
 
     var isSuccess = false
+
     val isPortrait = streamHeight > streamWidth
     
-    // ओरिजिनल बेसिक लॉजिक वापस कर दिया गया है
+    // ENCODER ERROR FIX: 
+    // हार्डवेयर एनकोडर को हमेशा लैंडस्केप डाइमेंशन देंगे (ताकि वह क्रैश न हो)।
+    // लेकिन OpenGL को बता देंगे कि कैमरा 90 डिग्री घुमाना है।
     val encWidth = if (isPortrait) streamHeight else streamWidth
     val encHeight = if (isPortrait) streamWidth else streamHeight
-    
-    var rotation = 0
-    val displayRotation = (getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.rotation
-    if (isPortrait) {
-        rotation = if (displayRotation == android.view.Surface.ROTATION_270) 270 else 90
-    } else {
-        rotation = if (displayRotation == android.view.Surface.ROTATION_270 || displayRotation == android.view.Surface.ROTATION_180) 180 else 0
-    }
+    val rotation = if (isPortrait) 90 else 0
 
     val fallback = listOf(
         Triple(encWidth, encHeight, streamBitrate),
@@ -43,7 +35,10 @@ internal fun MainActivity.tryStartCameraPreview() {
         val fpsCandidates = if (streamFps == 30) intArrayOf(30) else intArrayOf(streamFps, 30)
         for (fps in fpsCandidates) {
             try {
+                // OpenGL रोटेशन का इस्तेमाल करके हार्डवेयर को चकमा देना (Bypass Hardware Restriction)
                 if (rtmpCamera.prepareVideo(res.first, res.second, fps, res.third, 2, rotation)) {
+                    
+                    // वेरिएबल्स को वापस असली स्क्रीन साइज़ पर सेट करना
                     streamWidth = if (isPortrait) res.second else res.first
                     streamHeight = if (isPortrait) res.first else res.second
                     streamBitrate = res.third
@@ -51,7 +46,9 @@ internal fun MainActivity.tryStartCameraPreview() {
                     isSuccess = true
                     break
                 }
-            } catch (e: Exception) { e.printStackTrace() }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
         if (isSuccess) break
     }
@@ -87,11 +84,14 @@ internal fun MainActivity.tryStartCameraPreview() {
 
         try {
             rtmpCamera.startPreview()
-            updateSnapshot(0)
+            updateSnapshot(1000)
         } catch (e: Exception) {
             e.printStackTrace()
             try { rtmpCamera.stopPreview() } catch (_: Exception) {}
+            Toast.makeText(this, "CAMERA ERROR: ${e.message ?: "Preview failed"}", Toast.LENGTH_LONG).show()
         }
+    } else {
+        Toast.makeText(this, "CAMERA ERROR: Device encoder not supported.", Toast.LENGTH_LONG).show()
     }
 }
 
@@ -103,6 +103,7 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
     val targetW = bitmap.width.toFloat()
     val targetH = bitmap.height.toFloat()
 
+    // 100% "Full Fill View" Ghosting Fix (Mathematical Reverse Scale)
     val fillScale = maxOf(sourceW / targetW, sourceH / targetH)
     val xOffset = (sourceW - targetW * fillScale) / 2f
     val yOffset = (sourceH - targetH * fillScale) / 2f
@@ -113,24 +114,7 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
     canvas.scale(1f / fillScale, 1f / fillScale)
     canvas.translate(-xOffset, -yOffset)
     
-    if (MainActivity.globalPrivacyMode) {
-        canvas.drawColor(Color.parseColor("#121212")) 
-        MainActivity.globalSlateBitmap?.let { slate ->
-            val scale = maxOf(sourceW / slate.width, sourceH / slate.height)
-            val sw = slate.width * scale
-            val sh = slate.height * scale
-            val sx = (sourceW - sw) / 2f
-            val sy = (sourceH - sh) / 2f
-            val destRect = android.graphics.RectF(sx, sy, sx + sw, sy + sh)
-            canvas.drawBitmap(slate, null, destRect, null)
-        }
-    } else {
-        if (isBackgrounded || !surfaceReady) {
-            canvas.drawColor(Color.parseColor("#121212"))
-        }
-        overlayContainer.draw(canvas)
-    }
-    
+    overlayContainer.draw(canvas)
     canvas.restoreToCount(save)
 }
 
@@ -138,36 +122,31 @@ internal fun MainActivity.canvasFor(bitmap: Bitmap): Canvas {
     return if (bitmap === bitmapA) canvasA!! else canvasB!!
 }
 
-internal fun MainActivity.updateSnapshot(delay: Long = 0) {
-    if ((!rtmpCamera.isOnPreview && !rtmpCamera.isStreaming && !MainActivity.globalPrivacyMode) || overlayContainer.width == 0 || overlayContainer.height == 0) return
-    
-    val action = Runnable {
+internal fun MainActivity.updateSnapshot(delay: Long = 100) {
+    if (!rtmpCamera.isOnPreview || overlayContainer.width == 0 || overlayContainer.height == 0) return
+    if (pendingRefresh) { refreshQueued = true; return }
+    pendingRefresh = true
+    overlayHandler.postDelayed({
         try {
             val w = streamWidth.coerceAtLeast(1)
             val h = streamHeight.coerceAtLeast(1)
             useBufferA = !useBufferA
-            val currentBitmap = if (useBufferA) {
+            if (useBufferA) {
                 if (bitmapA == null || bitmapA!!.isRecycled || bitmapA!!.width != w || bitmapA!!.height != h) {
                     bitmapA?.recycle(); bitmapA = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888); canvasA = Canvas(bitmapA!!)
                 }
-                bitmapA!!
+                bitmapA!!.eraseColor(Color.TRANSPARENT); drawOverlayToStreamBitmap(bitmapA!!); imageFilterRender.setImage(bitmapA!!)
             } else {
                 if (bitmapB == null || bitmapB!!.isRecycled || bitmapB!!.width != w || bitmapB!!.height != h) {
                     bitmapB?.recycle(); bitmapB = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888); canvasB = Canvas(bitmapB!!)
                 }
-                bitmapB!!
+                bitmapB!!.eraseColor(Color.TRANSPARENT); drawOverlayToStreamBitmap(bitmapB!!); imageFilterRender.setImage(bitmapB!!)
             }
-            currentBitmap.eraseColor(Color.TRANSPARENT)
-            drawOverlayToStreamBitmap(currentBitmap)
-            imageFilterRender.setImage(currentBitmap)
-        } catch (e: Exception) { e.printStackTrace() }
-    }
-    
-    if (delay > 0) {
-        Handler(Looper.getMainLooper()).postDelayed(action, delay)
-    } else {
-        if (Looper.myLooper() == Looper.getMainLooper()) action.run() else Handler(Looper.getMainLooper()).post(action)
-    }
+        } catch (e: Exception) { e.printStackTrace() } finally {
+            pendingRefresh = false
+            if (refreshQueued) { refreshQueued = false; updateSnapshot(0) }
+        }
+    }, delay)
 }
 
 internal fun MainActivity.sendSyntheticZoomEvent(action: Int, pointerDistance: Float, delta: Float) {
