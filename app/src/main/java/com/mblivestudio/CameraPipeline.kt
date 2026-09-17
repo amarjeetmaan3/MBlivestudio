@@ -18,31 +18,25 @@ internal fun MainActivity.tryStartCameraPreview() {
         checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return
 
     var isSuccess = false
+    val isPortrait = streamHeight > streamWidth
+    
+    // ओरिजिनल बेसिक लॉजिक वापस कर दिया गया है
+    val encWidth = if (isPortrait) streamHeight else streamWidth
+    val encHeight = if (isPortrait) streamWidth else streamHeight
+    
+    var rotation = 0
     val displayRotation = (getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.rotation
-    val isPortrait = displayRotation == android.view.Surface.ROTATION_0 || displayRotation == android.view.Surface.ROTATION_180
-    
-    val maxBase = maxOf(streamWidth, streamHeight)
-    val minBase = minOf(streamWidth, streamHeight)
-    
-    // डाइनैमिक रिज़ॉल्यूशन: अगर सीधा है तो Portrait (720x1280), अगर टेढ़ा है तो Landscape (1280x720)
-    val targetWidth = if (isPortrait) minBase else maxBase
-    val targetHeight = if (isPortrait) maxBase else minBase
-    
-    // डाइनैमिक एंगल: कैमरा मैट्रिक्स को UI के हिसाब से रोटेट करना
-    val rotation = when (displayRotation) {
-        android.view.Surface.ROTATION_0 -> 90
-        android.view.Surface.ROTATION_90 -> 0
-        android.view.Surface.ROTATION_180 -> 270
-        android.view.Surface.ROTATION_270 -> 180
-        else -> 0
+    if (isPortrait) {
+        rotation = if (displayRotation == android.view.Surface.ROTATION_270) 270 else 90
+    } else {
+        rotation = if (displayRotation == android.view.Surface.ROTATION_270 || displayRotation == android.view.Surface.ROTATION_180) 180 else 0
     }
 
-    // फॉलबैक भी डाइनैमिक हो गया ताकि घुमाने पर वीडियो स्ट्रेच न हो
     val fallback = listOf(
-        Triple(targetWidth, targetHeight, streamBitrate),
-        Triple(if (isPortrait) 720 else 1280, if (isPortrait) 1280 else 720, 3_000_000),
-        Triple(if (isPortrait) 480 else 854, if (isPortrait) 854 else 480, 1_500_000),
-        Triple(if (isPortrait) 480 else 640, if (isPortrait) 640 else 480, 1_000_000)
+        Triple(encWidth, encHeight, streamBitrate),
+        Triple(1280, 720, 3_000_000),
+        Triple(854, 480, 1_500_000),
+        Triple(640, 480, 1_000_000)
     )
 
     for (res in fallback) {
@@ -50,8 +44,8 @@ internal fun MainActivity.tryStartCameraPreview() {
         for (fps in fpsCandidates) {
             try {
                 if (rtmpCamera.prepareVideo(res.first, res.second, fps, res.third, 2, rotation)) {
-                    streamWidth = res.first
-                    streamHeight = res.second
+                    streamWidth = if (isPortrait) res.second else res.first
+                    streamHeight = if (isPortrait) res.first else res.second
                     streamBitrate = res.third
                     streamFps = fps
                     isSuccess = true
