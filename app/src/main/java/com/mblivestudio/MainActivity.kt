@@ -66,7 +66,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     internal lateinit var ivStreamSlate: ImageView 
     internal var isBackgrounded = false
-
     internal var overlayTimer: Timer? = null
 
     internal lateinit var dragScoreboard: LinearLayout
@@ -95,7 +94,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal var currentMode = "DRAG"
     internal val resizeHandles = mutableListOf<View>()
     internal val cropFrameViews = mutableListOf<View>()
-
     internal var selectedOverlay: View? = null
     
     internal var isAudioMuted = false
@@ -119,8 +117,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal var retryCount = 0
     internal val MAX_RETRIES = 3
     internal var generatedRtmpUrl: String? = null
-
-    internal val overlayHandler = Handler(Looper.getMainLooper())
     internal var surfaceReady = false
 
     internal var bitmapA: Bitmap? = null
@@ -148,7 +144,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal var chatNextPageToken: String? = null
     internal var chatPollingActive = false
     internal val chatHandler = Handler(Looper.getMainLooper())
-    
     internal val streamChatHistory = mutableListOf<String>()
 
     internal var dailyQuotaUsed = 0
@@ -252,11 +247,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
-        updateSnapshot(0)
-        // FIX: Rotation par camera update (jab live na ho)
-        if (!rtmpCamera.isStreaming && rtmpCamera.isOnPreview) {
-            try { rtmpCamera.stopPreview() } catch (e: Exception) {}
-            tryStartCameraPreview()
+        // Issue 1 Fix: Rotation update forces the layout filter to refresh
+        if (surfaceReady) {
+            applyCameraLayout(floatArrayOf(0f, 0f, 1f, 1f))
+            updateSnapshot(0)
         }
     }
 
@@ -290,8 +284,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         setContentView(R.layout.activity_main)
 
         openGlView = findViewById(R.id.surfaceView)
-        // FIX: WYSIWYG Mismatch Fix
-        openGlView.setAspectRatioMode(AspectRatioMode.Adjust) 
+        openGlView.setAspectRatioMode(AspectRatioMode.Fill)
         openGlView.layoutParams = openGlView.layoutParams.apply { width = ViewGroup.LayoutParams.MATCH_PARENT; height = ViewGroup.LayoutParams.MATCH_PARENT }
         openGlView.holder.addCallback(this)
         
@@ -317,10 +310,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
         overlayContainer.addView(ivStreamSlate, 0)
 
+        // Issue 3 Fix: Timer runs regardless of UI state
         overlayTimer = Timer()
         overlayTimer?.scheduleAtFixedRate(object : TimerTask() {
             override fun run() {
-                if (rtmpCamera.isOnPreview || rtmpCamera.isStreaming) {
+                if (rtmpCamera.isOnPreview || rtmpCamera.isStreaming || globalPrivacyMode) {
                     Handler(Looper.getMainLooper()).post { updateSnapshot(0) }
                 }
             }
@@ -331,6 +325,22 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         scoreSubText = findViewById(R.id.scoreSubText)
 
         btnGoLive = findViewById(R.id.btnGoLive)
+        
+        // Issue 4 Fix: Ghost Connection Resume Logic
+        val prefs = getSharedPreferences("LiveAppPrefs", Context.MODE_PRIVATE)
+        if (prefs.getBoolean("is_live", false)) {
+            val savedUrl = prefs.getString("rtmp_url", null)
+            if (savedUrl != null) {
+                generatedRtmpUrl = savedUrl
+                btnGoLive.text = "RECONNECTING..."
+                btnGoLive.isEnabled = false
+                // Server flush time
+                Handler(Looper.getMainLooper()).postDelayed({
+                    try { rtmpCamera.startStream(savedUrl) } catch (e: Exception) {}
+                }, 4000)
+            }
+        }
+
         btnStreamsManager = findViewById(R.id.btnStreamsManager)
         ivProfilePhoto = findViewById(R.id.ivProfilePhoto)
         tvLiveTimer = findViewById(R.id.tvLiveTimer)
@@ -396,7 +406,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         
         val btnPrivacyMode: ImageButton = findViewById(R.id.btnOrientation)
         btnPrivacyMode.setImageResource(android.R.drawable.ic_menu_camera)
-        if (globalPrivacyMode) { btnPrivacyMode.setColorFilter(Color.RED); showSlate() }
+        
+        if (globalPrivacyMode) { 
+            btnPrivacyMode.setColorFilter(Color.RED)
+            showSlate() 
+        }
         
         btnPrivacyMode.setOnClickListener {
             globalPrivacyMode = !globalPrivacyMode
@@ -408,8 +422,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 btnPrivacyMode.clearColorFilter()
                 if (!isAudioMuted) rtmpCamera.enableAudio()
                 hideSlate()
+                // If camera was off because of slate, restart it
+                if (!rtmpCamera.isOnPreview) {
+                    tryStartCameraPreview()
+                }
             }
-            updateSnapshot(0)
         }
 
         findViewById<Button>(R.id.btnToggleComments).setOnClickListener { popupSettings.visibility = View.GONE; commentsPanel.visibility = if (commentsPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
@@ -433,8 +450,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             if (target == null) { val focusView = currentFocus; if (focusView is EditText && focusView.parent == overlayContainer) target = focusView }
             target?.let { 
                 if (it != dragScoreboard) { 
-                    if (it.tag == "LOWER_THIRD") tickerHandler.removeCallbacks(tickerRunnable)
-                    if (it.tag == "WEB_OVERLAY") webSyncHandler.removeCallbacks(webSyncRunnable)
                     if (it is EditText) { it.clearFocus(); (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(it.windowToken, 0) }
                     overlayContainer.removeView(it); if (selectedOverlay == it) selectedOverlay = null
                     updateOverlayMenuButtonPosition(); updateSnapshot(0) 
@@ -488,6 +503,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnGoLive.setOnClickListener {
             if (rtmpCamera.isStreaming) { 
                 AlertDialog.Builder(this).setTitle("Stop Live Stream?").setMessage("This will end your broadcast on YouTube.").setPositiveButton("End Stream") { _, _ -> 
+                    // Session खत्म, मेमोरी क्लियर करो
+                    val prefs = getSharedPreferences("LiveAppPrefs", Context.MODE_PRIVATE)
+                    prefs.edit().clear().apply()
                     stopLiveStream() 
                     clearSlateCache() 
                 }.setNegativeButton("Cancel", null).show()
@@ -502,22 +520,24 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             showGoLiveDialog()
         }
         makeDraggableAndScalable(dragScoreboard)
-        
-        // FIX: Force Kill (Ghost Session) UI Recovery
-        if (rtmpCamera.isStreaming) {
-            btnGoLive.text = "STOP STREAM"
-            btnGoLive.setBackgroundColor(Color.parseColor("#E53935"))
-            lockOrientation()
-            if (!timerRunning) {
-                timerRunning = true
-                timerHandler.post(timerRunnable)
-            }
-        }
-        
         tickerHandler.post(tickerRunnable)
     }
 
-    override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); startStudioTimer() }; ensureBroadcastGoesLive() }
+    override fun onConnectionSuccess() { 
+        runOnUiThread { 
+            retryCount = 0
+            btnGoLive.text = "STOP STREAM"
+            btnGoLive.isEnabled = true
+            btnGoLive.setBackgroundColor(Color.parseColor("#E53935"))
+            
+            // Issue 4 Fix: Save Live State 
+            val prefs = getSharedPreferences("LiveAppPrefs", Context.MODE_PRIVATE)
+            prefs.edit().putBoolean("is_live", true).putString("rtmp_url", generatedRtmpUrl).apply()
+            
+            startStudioTimer() 
+        }
+        ensureBroadcastGoesLive() 
+    }
     
     override fun onConnectionFailed(reason: String) {
         if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { 
@@ -529,11 +549,36 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }.start() 
         } else { 
             StreamingService.stop(this@MainActivity)
-            runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; unlockOrientation(); tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; stopChatPolling(); stopStudioTimer() } 
+            runOnUiThread { 
+                val prefs = getSharedPreferences("LiveAppPrefs", Context.MODE_PRIVATE)
+                prefs.edit().clear().apply()
+                try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+                unlockOrientation()
+                tryStartCameraPreview()
+                btnGoLive.text = "GO LIVE"
+                btnGoLive.isEnabled = true
+                try { rtmpCamera.stopStream() } catch (e: Exception) {}
+                stopChatPolling()
+                stopStudioTimer() 
+            } 
         }
     }
     
-    override fun onDisconnect() { StreamingService.stop(this@MainActivity); runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F")); try { rtmpCamera.stopPreview() } catch (e: Exception) {}; unlockOrientation(); tryStartCameraPreview(); stopChatPolling(); stopStudioTimer() } }
+    override fun onDisconnect() { 
+        StreamingService.stop(this@MainActivity)
+        runOnUiThread { 
+            val prefs = getSharedPreferences("LiveAppPrefs", Context.MODE_PRIVATE)
+            prefs.edit().clear().apply()
+            btnGoLive.text = "GO LIVE"
+            btnGoLive.isEnabled = true
+            btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
+            try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+            unlockOrientation()
+            tryStartCameraPreview()
+            stopChatPolling()
+            stopStudioTimer() 
+        } 
+    }
     
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) { super.onRequestPermissionsResult(requestCode, permissions, grantResults); tryStartCameraPreview() }
 
@@ -566,19 +611,29 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (activeRtmpCamera?.isStreaming == true) {
             lockOrientation()
         }
-        if (surfaceReady && !rtmpCamera.isOnPreview && !rtmpCamera.isStreaming) {
-            tryStartCameraPreview()
-        } 
+        
+        // Issue 5 Fix: Lock/Switch के बाद प्राइवेसी मोड चेक 
+        if (globalPrivacyMode) {
+            showSlate()
+        } else {
+            // Issue 2 Fix: Safe Start (थोड़ा इंतज़ार करके हार्डवेयर एक्सेस करना)
+            if (surfaceReady && !rtmpCamera.isOnPreview && !rtmpCamera.isStreaming) {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    tryStartCameraPreview()
+                }, 500)
+            }
+        }
+        
+        // Issue 3 Fix: ग्राफ़िक्स इंजन को ओवरले वापस देने का कमांड
+        applyCameraLayout(floatArrayOf(0f, 0f, 1f, 1f))
+        updateSnapshot(100)
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        // FIX: Force Kill (Ghost Session) - Sirf tab null karo jab live na ho
-        if (!rtmpCamera.isStreaming) { 
-            try { rtmpCamera.stopPreview() } catch (e: Exception) {} 
-            activeRtmpCamera = null 
-        }
+        if (!rtmpCamera.isStreaming) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
         
+        activeRtmpCamera = null 
         overlayTimer?.cancel()
         overlayTimer = null
         
@@ -589,14 +644,15 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun surfaceCreated(holder: SurfaceHolder) {}
     
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) { 
-        // FIX: WYSIWYG Mismatch Fix
-        openGlView.setAspectRatioMode(AspectRatioMode.Adjust) 
+        openGlView.setAspectRatioMode(AspectRatioMode.Fill) 
         surfaceReady = true 
         if (isBackgrounded && rtmpCamera.isStreaming) {
             try { rtmpCamera.replaceView(openGlView) } catch (e: Exception) {}
             isBackgrounded = false
-        } else if (!rtmpCamera.isOnPreview) { 
-            tryStartCameraPreview() 
+        } else if (!rtmpCamera.isOnPreview && !globalPrivacyMode) { 
+            Handler(Looper.getMainLooper()).postDelayed({
+                tryStartCameraPreview() 
+            }, 500)
         } 
     }
     
