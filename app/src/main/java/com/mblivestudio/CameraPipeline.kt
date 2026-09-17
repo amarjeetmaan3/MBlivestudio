@@ -23,7 +23,6 @@ internal fun MainActivity.tryStartCameraPreview() {
     val encWidth = if (isPortrait) streamHeight else streamWidth
     val encHeight = if (isPortrait) streamWidth else streamHeight
     
-    // Issue 1 Fix: Rotation Matrix Mapping
     var rotation = 0
     val displayRotation = (getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.rotation
     if (isPortrait) {
@@ -113,7 +112,6 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
     canvas.scale(1f / fillScale, 1f / fillScale)
     canvas.translate(-xOffset, -yOffset)
     
-    // Privacy Slate Override in Drawing
     if (MainActivity.globalPrivacyMode) {
         canvas.drawColor(Color.parseColor("#121212")) 
         MainActivity.globalSlateBitmap?.let { slate ->
@@ -140,7 +138,6 @@ internal fun MainActivity.canvasFor(bitmap: Bitmap): Canvas {
 }
 
 internal fun MainActivity.updateSnapshot(delay: Long = 0) {
-    // If neither preview nor stream nor privacy mode is on, don't waste memory
     if ((!rtmpCamera.isOnPreview && !rtmpCamera.isStreaming && !MainActivity.globalPrivacyMode) || overlayContainer.width == 0 || overlayContainer.height == 0) return
     
     val action = Runnable {
