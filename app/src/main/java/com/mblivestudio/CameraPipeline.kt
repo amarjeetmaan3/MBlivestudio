@@ -1,12 +1,13 @@
 package com.mblivestudio
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.view.MotionEvent
-import android.view.View
+import android.view.WindowManager
 import android.widget.Toast
 
 internal fun MainActivity.tryStartCameraPreview() {
@@ -17,10 +18,18 @@ internal fun MainActivity.tryStartCameraPreview() {
     var isSuccess = false
     val isPortrait = streamHeight > streamWidth
     
-    // ENCODER CRASH FIX: हार्डवेयर एनकोडर को हमेशा लैंडस्केप डाइमेंशन देंगे।
     val encWidth = if (isPortrait) streamHeight else streamWidth
     val encHeight = if (isPortrait) streamWidth else streamHeight
-    val rotation = if (isPortrait) 90 else 0
+    
+    // 180° CAMERA VIEW FIX: अब कैमरा रोटेशन को सिस्टम के हिसाब से कैलकुलेट करेगा, 
+    // ताकि फोन 180° उल्टा होने पर कैमरे का व्यू भी सही से उल्टा/सीधा हो जाए।
+    var rotation = 0
+    val displayRotation = (getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.rotation
+    if (isPortrait) {
+        rotation = if (displayRotation == android.view.Surface.ROTATION_270) 270 else 90
+    } else {
+        rotation = if (displayRotation == android.view.Surface.ROTATION_270 || displayRotation == android.view.Surface.ROTATION_180) 180 else 0
+    }
 
     val fallback = listOf(
         Triple(encWidth, encHeight, streamBitrate),
@@ -96,7 +105,7 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
     val targetW = bitmap.width.toFloat()
     val targetH = bitmap.height.toFloat()
 
-    // GHOSTING FIX (Mathematical Reverse Scale)
+    // GHOSTING FIX
     val fillScale = maxOf(sourceW / targetW, sourceH / targetH)
     val xOffset = (sourceW - targetW * fillScale) / 2f
     val yOffset = (sourceH - targetH * fillScale) / 2f
@@ -107,9 +116,8 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
     canvas.scale(1f / fillScale, 1f / fillScale)
     canvas.translate(-xOffset, -yOffset)
     
-    // Slate Background Drawer (If Camera is muted)
     if (isCameraMuted || !surfaceReady) {
-        canvas.drawColor(Color.parseColor("#121212")) // Black out background
+        canvas.drawColor(Color.parseColor("#121212")) // Black Slate Draw
     }
     
     overlayContainer.draw(canvas)
@@ -121,7 +129,6 @@ internal fun MainActivity.canvasFor(bitmap: Bitmap): Canvas {
 }
 
 internal fun MainActivity.updateSnapshot(delay: Long = 0) {
-    // Modified: Now runs even if preview is off, as long as streaming is active (for background audio/slate)
     if ((!rtmpCamera.isOnPreview && !rtmpCamera.isStreaming) || overlayContainer.width == 0 || overlayContainer.height == 0) return
     if (pendingRefresh) { refreshQueued = true; return }
     pendingRefresh = true
