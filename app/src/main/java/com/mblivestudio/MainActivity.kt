@@ -56,7 +56,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal lateinit var imageFilterRender: ImageObjectFilterRender
     internal val cameraLayoutFilter = CameraLayoutFilterRender()
 
-    // THE VIRTUAL CURTAIN: Privacy Mode System
+    // THE BLIND SLATE: Privacy Mode System
     internal lateinit var ivStreamSlate: ImageView 
     internal var isPrivacyMode = false 
     internal var cachedSlateBitmap: Bitmap? = null
@@ -181,8 +181,20 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
+    internal fun showSlate() {
+        if (pendingThumbnailUri != null) ivStreamSlate.setImageURI(pendingThumbnailUri)
+        else ivStreamSlate.setBackgroundColor(Color.parseColor("#121212"))
+        ivStreamSlate.visibility = View.VISIBLE
+        updateSnapshot(0)
+    }
+
+    internal fun hideSlate() {
+        ivStreamSlate.visibility = View.GONE
+        updateSnapshot(0)
+    }
+
     internal fun lockOrientation() {
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LOCKED
     }
 
     internal fun unlockOrientation() {
@@ -195,7 +207,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         System.setProperty("java.net.preferIPv6Addresses", "false")
     }
 
-    // FIXED CAMERA ORIENTATION (कैमरा नहीं घूमेगा, सिर्फ UI घूमेगा)
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         updateSnapshot(0)
@@ -233,7 +244,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         openGlView.layoutParams = openGlView.layoutParams.apply { width = ViewGroup.LayoutParams.MATCH_PARENT; height = ViewGroup.LayoutParams.MATCH_PARENT }
         openGlView.holder.addCallback(this)
         
-        // CRASH FIX: अगर कैमरा पहले से बैकग्राउंड में चल रहा है, तो नया मत बनाओ!
+        // CRASH FIX: App Switch & Resume Clash Resolver
         if (activeRtmpCamera == null) {
             rtmpCamera = RtmpCamera2(openGlView, this)
             activeRtmpCamera = rtmpCamera
@@ -248,11 +259,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         overlayContainer = findViewById(R.id.overlayContainer)
         
-        // SLATE SETUP: सबसे पीछे डार्क लेयर
         ivStreamSlate = ImageView(this).apply {
             layoutParams = RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             scaleType = ImageView.ScaleType.CENTER_CROP
-            setBackgroundColor(Color.parseColor("#121212")) // डार्क
+            setBackgroundColor(Color.parseColor("#121212"))
             visibility = View.GONE
         }
         overlayContainer.addView(ivStreamSlate, 0)
@@ -325,7 +335,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val btnMicToggle: ImageButton = findViewById(R.id.btnMicToggle)
         val btnBluetoothMic: ImageButton = findViewById(R.id.btnBluetoothMic)
         
-        // THE STUDIO / PRIVACY MODE BUTTON
+        // THE BLIND SLATE / PRIVACY MODE BUTTON
         val btnPrivacyMode: ImageButton = findViewById(R.id.btnOrientation)
         btnPrivacyMode.setImageResource(android.R.drawable.ic_menu_camera)
         btnPrivacyMode.setOnClickListener {
@@ -333,11 +343,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             if (isPrivacyMode) {
                 btnPrivacyMode.setColorFilter(Color.RED)
                 rtmpCamera.disableAudio()
-                Toast.makeText(this, "PRIVACY ON: YouTube पर स्लेट दिख रही है। अब आप ओवरले सेट कर सकते हैं।", Toast.LENGTH_LONG).show()
+                showSlate()
+                Toast.makeText(this, "STUDIO MODE ON: Mic Muted & Slate is live.", Toast.LENGTH_SHORT).show()
             } else {
                 btnPrivacyMode.clearColorFilter()
                 if (!isAudioMuted) rtmpCamera.enableAudio()
-                Toast.makeText(this, "PRIVACY OFF: आप वापस YouTube पर लाइव हैं!", Toast.LENGTH_SHORT).show()
+                hideSlate()
+                Toast.makeText(this, "STUDIO MODE OFF: Stream Updated.", Toast.LENGTH_SHORT).show()
             }
             updateSnapshot(0)
         }
@@ -448,7 +460,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 PICK_THUMBNAIL_REQUEST -> { 
                     pendingThumbnailUri = data.data
                     thumbnailPreviewImageView?.setImageURI(pendingThumbnailUri)
-                    // Privacy Mode के लिए थंबनेल सेव करें
                     pendingThumbnailUri?.let { uri ->
                         try { cachedSlateBitmap = BitmapFactory.decodeStream(contentResolver.openInputStream(uri)) } catch (e: Exception) {}
                     }
@@ -485,7 +496,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         openGlView.setAspectRatioMode(AspectRatioMode.Fill) 
         surfaceReady = true 
         if (isBackgrounded && rtmpCamera.isStreaming) {
-            // बैकग्राउंड से लौटने पर कैमरे को नई स्क्रीन से जोड़ें
             try { rtmpCamera.replaceView(openGlView) } catch (e: Exception) {}
             isBackgrounded = false
         } else if (!rtmpCamera.isOnPreview) { 
@@ -497,8 +507,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         surfaceReady = false
         isBackgrounded = true
         if (rtmpCamera.isStreaming) {
-            // BATTERY SAVER MODE: फोन लॉक होने पर स्ट्रीम चालू रखने की निंजा तकनीक!
-            try { rtmpCamera.replaceView(applicationContext) } catch (e: Exception) {}
+            try { rtmpCamera.replaceView(this) } catch (e: Exception) {}
         } else if (rtmpCamera.isOnPreview) {
             try { rtmpCamera.stopPreview() } catch (e: Exception) {}
         }
