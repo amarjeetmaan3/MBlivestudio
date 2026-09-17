@@ -25,10 +25,22 @@ internal fun MainActivity.tryStartCameraPreview() {
     
     var rotation = 0
     val displayRotation = (getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.rotation
-    if (isPortrait) {
-        rotation = if (displayRotation == android.view.Surface.ROTATION_270) 270 else 90
+    
+    // FIX: 4-Way Rotation Mapping (Free Rotation Mismatch Fix)
+    rotation = if (isPortrait) {
+        when (displayRotation) {
+            android.view.Surface.ROTATION_0 -> 90
+            android.view.Surface.ROTATION_90 -> 0
+            android.view.Surface.ROTATION_180 -> 270
+            else -> 180 
+        }
     } else {
-        rotation = if (displayRotation == android.view.Surface.ROTATION_270 || displayRotation == android.view.Surface.ROTATION_180) 180 else 0
+        when (displayRotation) {
+            android.view.Surface.ROTATION_0 -> 0
+            android.view.Surface.ROTATION_90 -> 270
+            android.view.Surface.ROTATION_180 -> 180
+            else -> 90 
+        }
     }
 
     val fallback = listOf(
@@ -82,7 +94,11 @@ internal fun MainActivity.tryStartCameraPreview() {
 
         imageFilterRender.setScale(100f, 100f)
         imageFilterRender.setPosition(0f, 0f)
-        rtmpCamera.getGlInterface().addFilter(imageFilterRender)
+        
+        // FIX: Duplicate Filter Guard (Black Screen / Pipeline Corruption Fix)
+        if (rtmpCamera.getGlInterface().filtersCount() < 2) {
+            rtmpCamera.getGlInterface().addFilter(imageFilterRender)
+        }
 
         try {
             rtmpCamera.startPreview()
@@ -137,7 +153,6 @@ internal fun MainActivity.canvasFor(bitmap: Bitmap): Canvas {
     return if (bitmap === bitmapA) canvasA!! else canvasB!!
 }
 
-// FIX: यह सीधे काम करेगा, डिले वाला पेंडिंग रिफ्रेश लूप हटा दिया गया है
 internal fun MainActivity.updateSnapshot(delay: Long = 0) {
     if ((!rtmpCamera.isOnPreview && !rtmpCamera.isStreaming) || overlayContainer.width == 0 || overlayContainer.height == 0) return
     
