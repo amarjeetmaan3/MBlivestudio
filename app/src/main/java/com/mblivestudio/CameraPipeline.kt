@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.os.Handler
+import android.os.Looper
 import android.view.MotionEvent
 import android.widget.Toast
 
@@ -114,7 +116,25 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
     canvas.scale(1f / fillScale, 1f / fillScale)
     canvas.translate(-xOffset, -yOffset)
     
-    overlayContainer.draw(canvas)
+    // PRIVACY SLATE / BACKGROUND DRAWING LOGIC INJECTED HERE
+    if (MainActivity.globalPrivacyMode) {
+        canvas.drawColor(Color.parseColor("#121212"))
+        MainActivity.globalSlateBitmap?.let { slate ->
+            val scale = maxOf(sourceW / slate.width, sourceH / slate.height)
+            val sw = slate.width * scale
+            val sh = slate.height * scale
+            val sx = (sourceW - sw) / 2f
+            val sy = (sourceH - sh) / 2f
+            val destRect = android.graphics.RectF(sx, sy, sx + sw, sy + sh)
+            canvas.drawBitmap(slate, null, destRect, null)
+        }
+    } else {
+        if (!surfaceReady) {
+            canvas.drawColor(Color.parseColor("#121212")) // Fills background if app is minimized
+        }
+        overlayContainer.draw(canvas)
+    }
+    
     canvas.restoreToCount(save)
 }
 
@@ -123,10 +143,10 @@ internal fun MainActivity.canvasFor(bitmap: Bitmap): Canvas {
 }
 
 internal fun MainActivity.updateSnapshot(delay: Long = 100) {
-    if (!rtmpCamera.isOnPreview || overlayContainer.width == 0 || overlayContainer.height == 0) return
-    if (pendingRefresh) { refreshQueued = true; return }
-    pendingRefresh = true
-    overlayHandler.postDelayed({
+    // MODIFIED: Snapshot will run even if camera preview stops, as long as streaming or privacy mode is active
+    if ((!rtmpCamera.isOnPreview && !rtmpCamera.isStreaming && !MainActivity.globalPrivacyMode) || overlayContainer.width == 0 || overlayContainer.height == 0) return
+    
+    val action = Runnable {
         try {
             val w = streamWidth.coerceAtLeast(1)
             val h = streamHeight.coerceAtLeast(1)
@@ -146,7 +166,16 @@ internal fun MainActivity.updateSnapshot(delay: Long = 100) {
             pendingRefresh = false
             if (refreshQueued) { refreshQueued = false; updateSnapshot(0) }
         }
-    }, delay)
+    }
+
+    if (delay > 0) {
+        if (pendingRefresh) { refreshQueued = true; return }
+        pendingRefresh = true
+        overlayHandler.postDelayed(action, delay)
+    } else {
+        // TIMER LOGIC: Runs instantly when called by the background lock-screen timer
+        if (Looper.myLooper() == Looper.getMainLooper()) action.run() else Handler(Looper.getMainLooper()).post(action)
+    }
 }
 
 internal fun MainActivity.sendSyntheticZoomEvent(action: Int, pointerDistance: Float, delta: Float) {
