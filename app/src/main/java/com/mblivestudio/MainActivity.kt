@@ -202,34 +202,33 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         System.setProperty("java.net.preferIPv6Addresses", "false")
     }
 
-    // SMART ROTATION: हॉट-स्वैप (बिना एनकोडर रोके)
+    // UPDATE 2: SMART ROTATION (180° OpenGL Flip)
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         
-        val isLandscape = newConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-        val maxDim = maxOf(streamWidth, streamHeight)
-        val minDim = minOf(streamWidth, streamHeight)
+        // 1. फोन घूमते ही तुरंत स्लेट गिराएं (ताकि झटके न दिखें)
+        showSlate()
         
-        if (isLandscape) { streamWidth = maxDim; streamHeight = minDim } 
-        else { streamWidth = minDim; streamHeight = maxDim }
-
-        if (surfaceReady && rtmpCamera.isOnPreview) {
-            if (!rtmpCamera.isStreaming) {
-                // स्ट्रीम बंद है, नॉर्मल रीस्टार्ट करें
-                try { rtmpCamera.stopPreview() } catch (e: Exception) {}
-                Handler(Looper.getMainLooper()).postDelayed({ tryStartCameraPreview() }, 300)
-            } else {
-                // स्ट्रीम चल रही है (Never Disconnect)!
-                // 1. पर्दा गिराएं 
-                showSlate()
-                
-                // 2. हम कैमरे को stopPreview() बिल्कुल नहीं करेंगे। 
-                // 3. 1.5 सेकंड बाद, जब सिस्टम UI सेट कर ले, पर्दा हटा देंगे।
-                if (!isCameraMuted) {
-                    Handler(Looper.getMainLooper()).postDelayed({ hideSlate() }, 1500)
-                }
+        val isLandscape = newConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        
+        // 2. 180° ग्राफ़िक फ्लिप (OpenGL): कैमरा हार्डवेयर को बिना छेड़े वीडियो पलटें
+        val displayRotation = (getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.rotation
+        var glRotation = 0
+        if (isLandscape) {
+            // अगर फोन 180° या 270° (उल्टा लैंडस्केप) है, तो स्ट्रीम को 180° पलट दें
+            if (displayRotation == android.view.Surface.ROTATION_270 || displayRotation == android.view.Surface.ROTATION_180) {
+                glRotation = 180
             }
         }
+        
+        // एनकोडर को नया एंगल दें
+        try { rtmpCamera.glInterface.setRotation(glRotation) } catch (e: Exception) {}
+
+        // 3. 1.5 सेकंड बाद स्लेट हटा लें (अगर आपने खुद म्यूट नहीं किया है)
+        if (!isCameraMuted) {
+            Handler(Looper.getMainLooper()).postDelayed({ hideSlate() }, 1500)
+        }
+        
         updateSnapshot(0)
     }
 
@@ -447,6 +446,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             showGoLiveDialog()
         }
         makeDraggableAndScalable(dragScoreboard)
+        
+        // UPDATE 1: START THE ENGINE (ओवरले और स्लेट को YouTube तक पहुँचाने वाला इंजन)
+        tickerHandler.post(tickerRunnable)
     }
 
     override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "Connected! Going live on YouTube...", Toast.LENGTH_LONG).show(); startStudioTimer() }; ensureBroadcastGoesLive() }
@@ -493,7 +495,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     override fun surfaceCreated(holder: SurfaceHolder) {}
     
-    // THE VIRTUAL CURTAIN: Safe Restore (वापस आने पर)
+    // UPDATE 3: THE VIRTUAL CURTAIN: Safe Restore (वापस आने पर)
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) { 
         openGlView.setAspectRatioMode(AspectRatioMode.Fill) 
         surfaceReady = true 
@@ -507,14 +509,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         } 
     }
     
-    // THE VIRTUAL CURTAIN: Background Switch (ऐप मिनिमाइज़ या फोन लॉक)
+    // UPDATE 3: THE VIRTUAL CURTAIN: Background Switch / Lock Screen (ऐप मिनिमाइज़ या फोन लॉक)
     override fun surfaceDestroyed(holder: SurfaceHolder) { 
         surfaceReady = false
         isBackgrounded = true
         if (rtmpCamera.isStreaming) {
+            // लॉक स्क्रीन पर स्लेट दिखाएं
             showSlate()
-            // NEVER DISCONNECT: कैमरे को 'stop' करने के बजाय, उसे 'context' (नकली स्क्रीन) दे दो।
-            // इससे स्ट्रीम ज़िंदा रहेगी और क्रैश नहीं होगी।
+            // NEVER DISCONNECT: कैमरे को 'stop' करने के बजाय, उसे डमी स्क्रीन दें
             try { rtmpCamera.replaceView(this) } catch (e: Exception) {}
         } else if (rtmpCamera.isOnPreview) {
             try { rtmpCamera.stopPreview() } catch (e: Exception) {}
