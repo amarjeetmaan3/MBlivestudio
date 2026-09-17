@@ -44,7 +44,6 @@ internal enum class MicRoute { PHONE, BLUETOOTH, WIRED }
 
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
-    // GLOBAL MEMORY FIX: यह कभी डिलीट नहीं होगा, चाहे ऐप स्विच हो या घूमे
     companion object {
         @SuppressLint("StaticFieldLeak")
         var activeRtmpCamera: RtmpCamera2? = null
@@ -53,7 +52,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         var globalThumbnailUri: android.net.Uri? = null
     }
 
-    // BACKWARD COMPATIBILITY: Dialogs.kt और YouTubeApi.kt के लिए
     internal var pendingThumbnailUri: android.net.Uri?
         get() = globalThumbnailUri
         set(value) { globalThumbnailUri = value }
@@ -185,7 +183,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // SLATE CACHING LOGIC (परमानेंट स्टोरेज)
     internal fun saveSlateToCache(uri: android.net.Uri) {
         try {
             val inputStream = contentResolver.openInputStream(uri)
@@ -218,8 +215,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     internal fun showSlate() {
-        if (globalThumbnailUri != null) ivStreamSlate.setImageURI(globalThumbnailUri)
-        else ivStreamSlate.setBackgroundColor(Color.parseColor("#121212"))
+        // FIX: स्टूडियो (लोकल व्यू) अब सीधे कैश से फोटो उठाएगा, URI परमिशन की ज़रूरत खत्म!
+        if (globalSlateBitmap != null) {
+            ivStreamSlate.setImageBitmap(globalSlateBitmap)
+        } else {
+            ivStreamSlate.setBackgroundColor(Color.parseColor("#121212"))
+        }
         ivStreamSlate.visibility = View.VISIBLE
         updateSnapshot(0)
     }
@@ -229,7 +230,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         updateSnapshot(0)
     }
 
-    // THE HARD LOCK: जिस स्थिति में शुरू हुआ, वहीं पत्थर की तरह फिक्स रहेगा
     internal fun lockOrientation() {
         val isLandscape = streamWidth > streamHeight
         requestedOrientation = if (isLandscape) {
@@ -271,7 +271,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER
 
-        // लोड स्लेट फ्रॉम मेमोरी
         loadSlateFromCache()
 
         val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
@@ -474,7 +473,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             if (rtmpCamera.isStreaming) { 
                 AlertDialog.Builder(this).setTitle("Stop Live Stream?").setMessage("This will end your broadcast on YouTube.").setPositiveButton("End Stream") { _, _ -> 
                     stopLiveStream() 
-                    clearSlateCache() // स्ट्रीम बंद होने पर ऑटो-डिलीट
+                    clearSlateCache() 
                 }.setNegativeButton("Cancel", null).show()
                 return@setOnClickListener 
             }
@@ -538,6 +537,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onDestroy() {
         super.onDestroy()
         if (!rtmpCamera.isStreaming) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
+        
+        // FIX: CLEANUP SENSOR (फोर्स किल पर कैमरा आज़ाद करना)
+        activeRtmpCamera = null 
+        
         overlayHandler.removeCallbacksAndMessages(null); chatHandler.removeCallbacksAndMessages(null); timerHandler.removeCallbacksAndMessages(null); tickerHandler.removeCallbacksAndMessages(null); webSyncHandler.removeCallbacksAndMessages(null)
         bitmapA?.let { if (!it.isRecycled) it.recycle() }; bitmapA = null; canvasA = null; bitmapB?.let { if (!it.isRecycled) it.recycle() }; bitmapB = null; canvasB = null
     }
