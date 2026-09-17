@@ -84,7 +84,6 @@ internal fun MainActivity.tryStartCameraPreview() {
         imageFilterRender.setPosition(0f, 0f)
         rtmpCamera.getGlInterface().addFilter(imageFilterRender)
 
-        // GRACEFUL CAMERA RESET: अगर कैमरा अटका है तो क्रैश नहीं होगा, क्लीन स्टार्ट लेगा
         try {
             rtmpCamera.startPreview()
             updateSnapshot(1000)
@@ -147,7 +146,6 @@ internal fun MainActivity.canvasFor(bitmap: Bitmap): Canvas {
 }
 
 internal fun MainActivity.updateSnapshot(delay: Long = 0) {
-    // LOOP FREEZE FIX: ओवरले खाली होने पर भी लूप नहीं रुकेगा
     if (!rtmpCamera.isOnPreview && !rtmpCamera.isStreaming) return
     if (pendingRefresh) { refreshQueued = true; return }
     pendingRefresh = true
