@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.view.MotionEvent
+import android.view.View
 import android.widget.Toast
 
 internal fun MainActivity.tryStartCameraPreview() {
@@ -14,12 +15,9 @@ internal fun MainActivity.tryStartCameraPreview() {
         checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return
 
     var isSuccess = false
-
     val isPortrait = streamHeight > streamWidth
     
-    // ENCODER ERROR FIX: 
-    // हार्डवेयर एनकोडर को हमेशा लैंडस्केप डाइमेंशन देंगे (ताकि वह क्रैश न हो)।
-    // लेकिन OpenGL को बता देंगे कि कैमरा 90 डिग्री घुमाना है।
+    // ENCODER CRASH FIX: हार्डवेयर एनकोडर को हमेशा लैंडस्केप डाइमेंशन देंगे।
     val encWidth = if (isPortrait) streamHeight else streamWidth
     val encHeight = if (isPortrait) streamWidth else streamHeight
     val rotation = if (isPortrait) 90 else 0
@@ -35,10 +33,7 @@ internal fun MainActivity.tryStartCameraPreview() {
         val fpsCandidates = if (streamFps == 30) intArrayOf(30) else intArrayOf(streamFps, 30)
         for (fps in fpsCandidates) {
             try {
-                // OpenGL रोटेशन का इस्तेमाल करके हार्डवेयर को चकमा देना (Bypass Hardware Restriction)
                 if (rtmpCamera.prepareVideo(res.first, res.second, fps, res.third, 2, rotation)) {
-                    
-                    // वेरिएबल्स को वापस असली स्क्रीन साइज़ पर सेट करना
                     streamWidth = if (isPortrait) res.second else res.first
                     streamHeight = if (isPortrait) res.first else res.second
                     streamBitrate = res.third
@@ -46,9 +41,7 @@ internal fun MainActivity.tryStartCameraPreview() {
                     isSuccess = true
                     break
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            } catch (e: Exception) { e.printStackTrace() }
         }
         if (isSuccess) break
     }
@@ -103,7 +96,7 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
     val targetW = bitmap.width.toFloat()
     val targetH = bitmap.height.toFloat()
 
-    // 100% "Full Fill View" Ghosting Fix (Mathematical Reverse Scale)
+    // GHOSTING FIX (Mathematical Reverse Scale)
     val fillScale = maxOf(sourceW / targetW, sourceH / targetH)
     val xOffset = (sourceW - targetW * fillScale) / 2f
     val yOffset = (sourceH - targetH * fillScale) / 2f
@@ -114,6 +107,11 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
     canvas.scale(1f / fillScale, 1f / fillScale)
     canvas.translate(-xOffset, -yOffset)
     
+    // Slate Background Drawer (If Camera is muted)
+    if (isCameraMuted || !surfaceReady) {
+        canvas.drawColor(Color.parseColor("#121212")) // Black out background
+    }
+    
     overlayContainer.draw(canvas)
     canvas.restoreToCount(save)
 }
@@ -122,8 +120,9 @@ internal fun MainActivity.canvasFor(bitmap: Bitmap): Canvas {
     return if (bitmap === bitmapA) canvasA!! else canvasB!!
 }
 
-internal fun MainActivity.updateSnapshot(delay: Long = 100) {
-    if (!rtmpCamera.isOnPreview || overlayContainer.width == 0 || overlayContainer.height == 0) return
+internal fun MainActivity.updateSnapshot(delay: Long = 0) {
+    // Modified: Now runs even if preview is off, as long as streaming is active (for background audio/slate)
+    if ((!rtmpCamera.isOnPreview && !rtmpCamera.isStreaming) || overlayContainer.width == 0 || overlayContainer.height == 0) return
     if (pendingRefresh) { refreshQueued = true; return }
     pendingRefresh = true
     overlayHandler.postDelayed({
