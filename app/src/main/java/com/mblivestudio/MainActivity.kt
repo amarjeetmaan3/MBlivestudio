@@ -39,16 +39,29 @@ import com.google.android.gms.common.api.Scope
 import com.google.android.gms.common.api.ApiException
 import com.google.api.services.youtube.YouTube
 import com.pedro.library.view.OpenGlView
+import java.util.Timer
+import java.util.TimerTask
 
 internal enum class MicRoute { PHONE, BLUETOOTH, WIRED }
 
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
+
+    // PRIVACY SLATE VARIABLES ADDED
+    companion object {
+        var globalPrivacyMode = false
+        var globalSlateBitmap: Bitmap? = null
+    }
 
     internal lateinit var rtmpCamera: RtmpCamera2
     internal lateinit var openGlView: OpenGlView
     internal lateinit var overlayContainer: RelativeLayout
     internal lateinit var imageFilterRender: ImageObjectFilterRender
     internal val cameraLayoutFilter = CameraLayoutFilterRender()
+
+    internal lateinit var ivStreamSlate: ImageView
+
+    // BACKGROUND RUNNING TIMER ADDED
+    internal var overlayTimer: Timer? = null
 
     internal lateinit var dragScoreboard: LinearLayout
     internal lateinit var scoreMainText: TextView
@@ -169,6 +182,44 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
+    // PRIVACY SLATE LOGIC (For background/local cache)
+    internal fun saveSlateToCache(uri: android.net.Uri) {
+        try {
+            val inputStream = contentResolver.openInputStream(uri)
+            val bitmap = BitmapFactory.decodeStream(inputStream)
+            val file = java.io.File(cacheDir, "privacy_slate.png")
+            val out = java.io.FileOutputStream(file)
+            bitmap?.compress(Bitmap.CompressFormat.PNG, 100, out)
+            out.flush()
+            out.close()
+            globalSlateBitmap = bitmap
+        } catch (e: Exception) { e.printStackTrace() }
+    }
+
+    internal fun loadSlateFromCache() {
+        try {
+            val file = java.io.File(cacheDir, "privacy_slate.png")
+            if (file.exists()) {
+                globalSlateBitmap = BitmapFactory.decodeFile(file.absolutePath)
+            }
+        } catch (e: Exception) { e.printStackTrace() }
+    }
+
+    internal fun showSlate() {
+        if (globalSlateBitmap != null) {
+            ivStreamSlate.setImageBitmap(globalSlateBitmap)
+        } else {
+            ivStreamSlate.setBackgroundColor(Color.parseColor("#121212"))
+        }
+        ivStreamSlate.visibility = View.VISIBLE
+        updateSnapshot(0)
+    }
+
+    internal fun hideSlate() {
+        ivStreamSlate.visibility = View.GONE
+        updateSnapshot(0)
+    }
+
     // ORIENTATION LOCK LOGIC: Locks to current mode allowing 180 flip
     internal fun lockOrientation() {
         val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
@@ -231,6 +282,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         
+        loadSlateFromCache() // Load cached slate on start
+
         // Let the device auto-rotate initially
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER
 
@@ -283,6 +336,25 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
         }
         overlayContainer.x = 0f; overlayContainer.y = 0f
+
+        // Add Slate View to container
+        ivStreamSlate = ImageView(this).apply {
+            layoutParams = RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            setBackgroundColor(Color.parseColor("#121212"))
+            visibility = View.GONE
+        }
+        overlayContainer.addView(ivStreamSlate, 0)
+
+        // START TIMER FOR BACKGROUND RUNNING (LOCK SCREEN OVERLAYS)
+        overlayTimer = Timer()
+        overlayTimer?.scheduleAtFixedRate(object : TimerTask() {
+            override fun run() {
+                if (rtmpCamera.isOnPreview || rtmpCamera.isStreaming || globalPrivacyMode) {
+                    Handler(Looper.getMainLooper()).post { updateSnapshot(0) }
+                }
+            }
+        }, 0, 100)
 
         dragScoreboard = findViewById(R.id.dragScoreboard)
         scoreMainText = findViewById(R.id.scoreMainText)
@@ -442,6 +514,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             toggleBluetoothMic(btnBluetoothMic)
         }
 
+        // BASE FILE LOGIC FOR btnOrientation MAINTAINED EXACTLY AS IS
         btnOrientation.setOnClickListener {
             if (rtmpCamera.isStreaming) {
                 Toast.makeText(this, "Stop stream to change orientation", Toast.LENGTH_SHORT).show()
@@ -550,7 +623,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                         }
                     } catch (e: Exception) { e.printStackTrace(); Toast.makeText(this, "Failed to load image", Toast.LENGTH_SHORT).show() }
                 }
-                PICK_THUMBNAIL_REQUEST -> { pendingThumbnailUri = data.data; thumbnailPreviewImageView?.setImageURI(pendingThumbnailUri) }
+                PICK_THUMBNAIL_REQUEST -> { 
+                    pendingThumbnailUri = data.data
+                    thumbnailPreviewImageView?.setImageURI(pendingThumbnailUri)
+                    pendingThumbnailUri?.let { saveSlateToCache(it) } // Save slate for background cache
+                }
                 SIGN_IN_REQUEST -> {
                     val task = GoogleSignIn.getSignedInAccountFromIntent(data)
                     try { val account = task.getResult(ApiException::class.java); connectedAccountEmail = account?.email; if (account != null) applyAccountToHeader(account); Toast.makeText(this, "Signed in as ${account?.email}", Toast.LENGTH_SHORT).show() } catch (e: ApiException) { e.printStackTrace(); Toast.makeText(this, "Sign-in failed", Toast.LENGTH_SHORT).show() }
@@ -566,6 +643,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onDestroy() {
         super.onDestroy()
         if (!rtmpCamera.isStreaming) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
+        overlayTimer?.cancel()
+        overlayTimer = null
         overlayHandler.removeCallbacksAndMessages(null); chatHandler.removeCallbacksAndMessages(null); timerHandler.removeCallbacksAndMessages(null); tickerHandler.removeCallbacksAndMessages(null); webSyncHandler.removeCallbacksAndMessages(null)
         bitmapA?.let { if (!it.isRecycled) it.recycle() }; bitmapA = null; canvasA = null; bitmapB?.let { if (!it.isRecycled) it.recycle() }; bitmapB = null; canvasB = null
     }
