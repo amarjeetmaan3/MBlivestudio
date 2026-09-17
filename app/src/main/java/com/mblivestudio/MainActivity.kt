@@ -44,7 +44,7 @@ internal enum class MicRoute { PHONE, BLUETOOTH, WIRED }
 
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
-    // GLOBAL MEMORY: यह कभी डिलीट नहीं होगा, चाहे ऐप स्विच हो या घूमे
+    // GLOBAL MEMORY FIX: यह कभी डिलीट नहीं होगा, चाहे ऐप स्विच हो या घूमे
     companion object {
         @SuppressLint("StaticFieldLeak")
         var activeRtmpCamera: RtmpCamera2? = null
@@ -53,7 +53,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         var globalThumbnailUri: android.net.Uri? = null
     }
 
-    // BACKWARD COMPATIBILITY: Dialogs.kt और YouTubeApi.kt के लिए लिंकर
+    // BACKWARD COMPATIBILITY: Dialogs.kt और YouTubeApi.kt के लिए
     internal var pendingThumbnailUri: android.net.Uri?
         get() = globalThumbnailUri
         set(value) { globalThumbnailUri = value }
@@ -185,6 +185,38 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
+    // SLATE CACHING LOGIC (परमानेंट स्टोरेज)
+    internal fun saveSlateToCache(uri: android.net.Uri) {
+        try {
+            val inputStream = contentResolver.openInputStream(uri)
+            val bitmap = BitmapFactory.decodeStream(inputStream)
+            val file = java.io.File(cacheDir, "privacy_slate.png")
+            val out = java.io.FileOutputStream(file)
+            bitmap?.compress(Bitmap.CompressFormat.PNG, 100, out)
+            out.flush()
+            out.close()
+            globalSlateBitmap = bitmap
+        } catch (e: Exception) { e.printStackTrace() }
+    }
+
+    internal fun loadSlateFromCache() {
+        try {
+            val file = java.io.File(cacheDir, "privacy_slate.png")
+            if (file.exists()) {
+                globalSlateBitmap = BitmapFactory.decodeFile(file.absolutePath)
+            }
+        } catch (e: Exception) { e.printStackTrace() }
+    }
+
+    internal fun clearSlateCache() {
+        try {
+            val file = java.io.File(cacheDir, "privacy_slate.png")
+            if (file.exists()) file.delete()
+            globalSlateBitmap = null
+            globalThumbnailUri = null
+        } catch (e: Exception) {}
+    }
+
     internal fun showSlate() {
         if (globalThumbnailUri != null) ivStreamSlate.setImageURI(globalThumbnailUri)
         else ivStreamSlate.setBackgroundColor(Color.parseColor("#121212"))
@@ -197,12 +229,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         updateSnapshot(0)
     }
 
+    // THE HARD LOCK: जिस स्थिति में शुरू हुआ, वहीं पत्थर की तरह फिक्स रहेगा
     internal fun lockOrientation() {
         val isLandscape = streamWidth > streamHeight
         requestedOrientation = if (isLandscape) {
-            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         } else {
-            ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
     }
 
@@ -237,6 +270,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER
+
+        // लोड स्लेट फ्रॉम मेमोरी
+        loadSlateFromCache()
 
         val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         val maxDim = maxOf(streamWidth, streamHeight)
@@ -343,7 +379,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val btnMicToggle: ImageButton = findViewById(R.id.btnMicToggle)
         val btnBluetoothMic: ImageButton = findViewById(R.id.btnBluetoothMic)
         
-        // THE BLIND SLATE / PRIVACY MODE BUTTON
         val btnPrivacyMode: ImageButton = findViewById(R.id.btnOrientation)
         btnPrivacyMode.setImageResource(android.R.drawable.ic_menu_camera)
         if (globalPrivacyMode) { btnPrivacyMode.setColorFilter(Color.RED); showSlate() }
@@ -436,7 +471,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnStreamsManager.setOnClickListener { showSavedStreamsManager() }
 
         btnGoLive.setOnClickListener {
-            if (rtmpCamera.isStreaming) { AlertDialog.Builder(this).setTitle("Stop Live Stream?").setMessage("This will end your broadcast on YouTube.").setPositiveButton("End Stream") { _, _ -> stopLiveStream() }.setNegativeButton("Cancel", null).show(); return@setOnClickListener }
+            if (rtmpCamera.isStreaming) { 
+                AlertDialog.Builder(this).setTitle("Stop Live Stream?").setMessage("This will end your broadcast on YouTube.").setPositiveButton("End Stream") { _, _ -> 
+                    stopLiveStream() 
+                    clearSlateCache() // स्ट्रीम बंद होने पर ऑटो-डिलीट
+                }.setNegativeButton("Cancel", null).show()
+                return@setOnClickListener 
+            }
             if (!rtmpCamera.isOnPreview) { tryStartCameraPreview(); return@setOnClickListener }
             val currentAccount = GoogleSignIn.getLastSignedInAccount(this)
             if (currentAccount == null) { startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST); return@setOnClickListener }
@@ -469,7 +510,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     globalThumbnailUri = data.data
                     thumbnailPreviewImageView?.setImageURI(globalThumbnailUri)
                     globalThumbnailUri?.let { uri ->
-                        try { globalSlateBitmap = BitmapFactory.decodeStream(contentResolver.openInputStream(uri)) } catch (e: Exception) {}
+                        saveSlateToCache(uri)
                     }
                 }
                 SIGN_IN_REQUEST -> { val task = GoogleSignIn.getSignedInAccountFromIntent(data); try { val account = task.getResult(ApiException::class.java); connectedAccountEmail = account?.email; if (account != null) applyAccountToHeader(account) } catch (e: ApiException) { e.printStackTrace() } }
