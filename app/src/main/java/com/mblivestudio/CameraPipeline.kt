@@ -8,7 +8,6 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.view.MotionEvent
 import android.view.WindowManager
-import android.widget.Toast
 
 internal fun MainActivity.tryStartCameraPreview() {
     if (!surfaceReady || rtmpCamera.isOnPreview) return
@@ -88,10 +87,7 @@ internal fun MainActivity.tryStartCameraPreview() {
         } catch (e: Exception) {
             e.printStackTrace()
             try { rtmpCamera.stopPreview() } catch (_: Exception) {}
-            Toast.makeText(this, "CAMERA ERROR: ${e.message ?: "Preview failed"}", Toast.LENGTH_LONG).show()
         }
-    } else {
-        Toast.makeText(this, "CAMERA ERROR: Device encoder not supported.", Toast.LENGTH_LONG).show()
     }
 }
 
@@ -113,10 +109,10 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
     canvas.scale(1f / fillScale, 1f / fillScale)
     canvas.translate(-xOffset, -yOffset)
     
-    if (isPrivacyMode) {
-        // THE BLIND SLATE: YouTube receives ONLY the slate. No camera, no live overlays.
-        canvas.drawColor(Color.parseColor("#121212"))
-        cachedSlateBitmap?.let { slate ->
+    // BLACK SCREEN FIX: अब हम `globalPrivacyMode` और `globalSlateBitmap` का इस्तेमाल कर रहे हैं।
+    if (MainActivity.globalPrivacyMode) {
+        canvas.drawColor(Color.parseColor("#121212")) // Black background fallback
+        MainActivity.globalSlateBitmap?.let { slate ->
             val scale = maxOf(sourceW / slate.width, sourceH / slate.height)
             val sw = slate.width * scale
             val sh = slate.height * scale
@@ -126,7 +122,6 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
             canvas.drawBitmap(slate, null, destRect, null)
         }
     } else {
-        // NORMAL LIVE MODE: YouTube receives full camera and active overlays
         if (isBackgrounded || !surfaceReady) {
             canvas.drawColor(Color.parseColor("#121212"))
         }
