@@ -13,7 +13,7 @@ import android.view.WindowManager
 import android.widget.Toast
 
 internal fun MainActivity.tryStartCameraPreview() {
-    if (!surfaceReady || rtmpCamera.isOnPreview) return
+    if (!surfaceReady || rtmpCamera.isOnPreview || MainActivity.globalPrivacyMode) return
     if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ||
         checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return
 
@@ -23,24 +23,13 @@ internal fun MainActivity.tryStartCameraPreview() {
     val encWidth = if (isPortrait) streamHeight else streamWidth
     val encHeight = if (isPortrait) streamWidth else streamHeight
     
+    // Issue 1 Fix: Rotation Matrix Mapping
     var rotation = 0
     val displayRotation = (getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.rotation
-    
-    // FIX: 4-Way Rotation Mapping (Free Rotation Mismatch Fix)
-    rotation = if (isPortrait) {
-        when (displayRotation) {
-            android.view.Surface.ROTATION_0 -> 90
-            android.view.Surface.ROTATION_90 -> 0
-            android.view.Surface.ROTATION_180 -> 270
-            else -> 180 
-        }
+    if (isPortrait) {
+        rotation = if (displayRotation == android.view.Surface.ROTATION_270) 270 else 90
     } else {
-        when (displayRotation) {
-            android.view.Surface.ROTATION_0 -> 0
-            android.view.Surface.ROTATION_90 -> 270
-            android.view.Surface.ROTATION_180 -> 180
-            else -> 90 
-        }
+        rotation = if (displayRotation == android.view.Surface.ROTATION_270 || displayRotation == android.view.Surface.ROTATION_180) 180 else 0
     }
 
     val fallback = listOf(
@@ -94,11 +83,7 @@ internal fun MainActivity.tryStartCameraPreview() {
 
         imageFilterRender.setScale(100f, 100f)
         imageFilterRender.setPosition(0f, 0f)
-        
-        // FIX: Duplicate Filter Guard (Black Screen / Pipeline Corruption Fix)
-        if (rtmpCamera.getGlInterface().filtersCount() < 2) {
-            rtmpCamera.getGlInterface().addFilter(imageFilterRender)
-        }
+        rtmpCamera.getGlInterface().addFilter(imageFilterRender)
 
         try {
             rtmpCamera.startPreview()
@@ -128,6 +113,7 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
     canvas.scale(1f / fillScale, 1f / fillScale)
     canvas.translate(-xOffset, -yOffset)
     
+    // Privacy Slate Override in Drawing
     if (MainActivity.globalPrivacyMode) {
         canvas.drawColor(Color.parseColor("#121212")) 
         MainActivity.globalSlateBitmap?.let { slate ->
@@ -154,7 +140,8 @@ internal fun MainActivity.canvasFor(bitmap: Bitmap): Canvas {
 }
 
 internal fun MainActivity.updateSnapshot(delay: Long = 0) {
-    if ((!rtmpCamera.isOnPreview && !rtmpCamera.isStreaming) || overlayContainer.width == 0 || overlayContainer.height == 0) return
+    // If neither preview nor stream nor privacy mode is on, don't waste memory
+    if ((!rtmpCamera.isOnPreview && !rtmpCamera.isStreaming && !MainActivity.globalPrivacyMode) || overlayContainer.width == 0 || overlayContainer.height == 0) return
     
     val action = Runnable {
         try {
@@ -179,9 +166,9 @@ internal fun MainActivity.updateSnapshot(delay: Long = 0) {
     }
     
     if (delay > 0) {
-        overlayHandler.postDelayed(action, delay)
+        Handler(Looper.getMainLooper()).postDelayed(action, delay)
     } else {
-        if (Looper.myLooper() == Looper.getMainLooper()) action.run() else overlayHandler.post(action)
+        if (Looper.myLooper() == Looper.getMainLooper()) action.run() else Handler(Looper.getMainLooper()).post(action)
     }
 }
 
