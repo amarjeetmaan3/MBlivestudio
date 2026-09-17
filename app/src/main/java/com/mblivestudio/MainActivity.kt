@@ -247,7 +247,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
-        // Issue 1 Fix: Rotation update forces the layout filter to refresh
         if (surfaceReady) {
             applyCameraLayout(floatArrayOf(0f, 0f, 1f, 1f))
             updateSnapshot(0)
@@ -310,7 +309,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
         overlayContainer.addView(ivStreamSlate, 0)
 
-        // Issue 3 Fix: Timer runs regardless of UI state
         overlayTimer = Timer()
         overlayTimer?.scheduleAtFixedRate(object : TimerTask() {
             override fun run() {
@@ -326,7 +324,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         btnGoLive = findViewById(R.id.btnGoLive)
         
-        // Issue 4 Fix: Ghost Connection Resume Logic
         val prefs = getSharedPreferences("LiveAppPrefs", Context.MODE_PRIVATE)
         if (prefs.getBoolean("is_live", false)) {
             val savedUrl = prefs.getString("rtmp_url", null)
@@ -334,7 +331,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 generatedRtmpUrl = savedUrl
                 btnGoLive.text = "RECONNECTING..."
                 btnGoLive.isEnabled = false
-                // Server flush time
                 Handler(Looper.getMainLooper()).postDelayed({
                     try { rtmpCamera.startStream(savedUrl) } catch (e: Exception) {}
                 }, 4000)
@@ -422,7 +418,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 btnPrivacyMode.clearColorFilter()
                 if (!isAudioMuted) rtmpCamera.enableAudio()
                 hideSlate()
-                // If camera was off because of slate, restart it
                 if (!rtmpCamera.isOnPreview) {
                     tryStartCameraPreview()
                 }
@@ -503,7 +498,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnGoLive.setOnClickListener {
             if (rtmpCamera.isStreaming) { 
                 AlertDialog.Builder(this).setTitle("Stop Live Stream?").setMessage("This will end your broadcast on YouTube.").setPositiveButton("End Stream") { _, _ -> 
-                    // Session खत्म, मेमोरी क्लियर करो
                     val prefs = getSharedPreferences("LiveAppPrefs", Context.MODE_PRIVATE)
                     prefs.edit().clear().apply()
                     stopLiveStream() 
@@ -530,7 +524,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             btnGoLive.isEnabled = true
             btnGoLive.setBackgroundColor(Color.parseColor("#E53935"))
             
-            // Issue 4 Fix: Save Live State 
             val prefs = getSharedPreferences("LiveAppPrefs", Context.MODE_PRIVATE)
             prefs.edit().putBoolean("is_live", true).putString("rtmp_url", generatedRtmpUrl).apply()
             
@@ -612,19 +605,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             lockOrientation()
         }
         
-        // Issue 5 Fix: Lock/Switch के बाद प्राइवेसी मोड चेक 
         if (globalPrivacyMode) {
             showSlate()
         } else {
-            // Issue 2 Fix: Safe Start (थोड़ा इंतज़ार करके हार्डवेयर एक्सेस करना)
+            // FIX: जो 500ms का फालतू डिले (Delay) लगाया था, वो हटा दिया है।
+            // अब यह पहले की तरह इंस्टेंट स्टार्ट लेगा।
             if (surfaceReady && !rtmpCamera.isOnPreview && !rtmpCamera.isStreaming) {
-                Handler(Looper.getMainLooper()).postDelayed({
-                    tryStartCameraPreview()
-                }, 500)
+                tryStartCameraPreview()
             }
         }
         
-        // Issue 3 Fix: ग्राफ़िक्स इंजन को ओवरले वापस देने का कमांड
         applyCameraLayout(floatArrayOf(0f, 0f, 1f, 1f))
         updateSnapshot(100)
     }
@@ -650,9 +640,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             try { rtmpCamera.replaceView(openGlView) } catch (e: Exception) {}
             isBackgrounded = false
         } else if (!rtmpCamera.isOnPreview && !globalPrivacyMode) { 
-            Handler(Looper.getMainLooper()).postDelayed({
-                tryStartCameraPreview() 
-            }, 500)
+            // FIX: यहाँ से भी फालतू डिले हटा दिया गया है, कैमरा इंस्टेंट स्टार्ट होगा।
+            tryStartCameraPreview() 
         } 
     }
     
