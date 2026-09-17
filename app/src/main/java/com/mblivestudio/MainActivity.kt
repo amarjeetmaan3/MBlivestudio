@@ -20,6 +20,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.MotionEvent
+import android.view.OrientationEventListener
 import android.view.ScaleGestureDetector
 import android.view.SurfaceHolder
 import android.view.View
@@ -67,6 +68,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal lateinit var ivStreamSlate: ImageView 
     internal var isBackgrounded = false
     internal var overlayTimer: Timer? = null
+
+    // SENSOR: लाइव से पहले कैमरा और UI को सिंक रखने के लिए
+    internal var orientationEventListener: OrientationEventListener? = null
+    internal var lastDisplayRotation = -1
 
     internal lateinit var dragScoreboard: LinearLayout
     internal lateinit var scoreMainText: TextView
@@ -226,17 +231,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         updateSnapshot(0)
     }
 
+    // HARD LOCK MODE: जिस स्थिति में लाइव दबाया, वहीं पत्थर की तरह जम जाएगा
     internal fun lockOrientation() {
-        val isLandscape = streamWidth > streamHeight
-        requestedOrientation = if (isLandscape) {
-            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        } else {
-            ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-        }
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LOCKED
     }
 
+    // FREE MODE: सभी दिशाओं (360°) में घूमने की आज़ादी
     internal fun unlockOrientation() {
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_USER
     }
 
     override fun attachBaseContext(newBase: Context?) {
@@ -268,14 +270,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER
+        
+        // स्टार्ट में 360° फ्री मोड सेट किया
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_USER
 
         loadSlateFromCache()
-
-        val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-        val maxDim = maxOf(streamWidth, streamHeight)
-        val minDim = minOf(streamWidth, streamHeight)
-        if (isLandscape) { streamWidth = maxDim; streamHeight = minDim } else { streamWidth = minDim; streamHeight = maxDim }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) { window.setDecorFitsSystemWindows(false) }
         window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_FULLSCREEN)
@@ -293,6 +292,29 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         } else {
             rtmpCamera = activeRtmpCamera!!
             try { rtmpCamera.replaceView(openGlView) } catch(e: Exception) {}
+        }
+
+        // SENSOR LOGIC: फोन घूमेगा, तो यह कैमरा प्रीव्यू को भी उसी एंगल पर सिंक कर देगा
+        lastDisplayRotation = (getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.rotation
+        orientationEventListener = object : OrientationEventListener(this) {
+            override fun onOrientationChanged(orientation: Int) {
+                // लाइव होने पर या प्राइवेसी स्लेट ऑन होने पर कैमरा नहीं घूमेगा
+                if (rtmpCamera.isStreaming || globalPrivacyMode) return
+                
+                val currentRotation = (getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.rotation
+                if (currentRotation != lastDisplayRotation) {
+                    lastDisplayRotation = currentRotation
+                    if (surfaceReady) {
+                        try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+                        tryStartCameraPreview() // यह नए डायमेंशन के साथ कैमरा इंस्टेंट चालू करेगा
+                        applyCameraLayout(floatArrayOf(0f, 0f, 1f, 1f))
+                        updateSnapshot(0)
+                    }
+                }
+            }
+        }
+        if (orientationEventListener?.canDetectOrientation() == true) {
+            orientationEventListener?.enable()
         }
         
         imageFilterRender = ImageObjectFilterRender()
@@ -510,6 +532,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             if (currentAccount == null) { startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST); return@setOnClickListener }
             if (!GoogleSignIn.hasPermissions(currentAccount, Scope("https://www.googleapis.com/auth/youtube"))) { GoogleSignIn.requestPermissions(this, REQUEST_AUTHORIZATION, currentAccount, Scope("https://www.googleapis.com/auth/youtube")); return@setOnClickListener }
             
+            // यहाँ बटन दबाते ही हार्ड-लॉक लग जाएगा
             lockOrientation()
             showGoLiveDialog()
         }
@@ -566,6 +589,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             btnGoLive.isEnabled = true
             btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
             try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+            // स्ट्रीम खत्म होने पर हार्ड-लॉक हट जाएगा
             unlockOrientation()
             tryStartCameraPreview()
             stopChatPolling()
@@ -608,8 +632,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (globalPrivacyMode) {
             showSlate()
         } else {
-            // FIX: जो 500ms का फालतू डिले (Delay) लगाया था, वो हटा दिया है।
-            // अब यह पहले की तरह इंस्टेंट स्टार्ट लेगा।
+            // कैमरा ऐप पर वापस आते ही बिना डिले के तुरंत स्टार्ट होगा
             if (surfaceReady && !rtmpCamera.isOnPreview && !rtmpCamera.isStreaming) {
                 tryStartCameraPreview()
             }
@@ -624,6 +647,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (!rtmpCamera.isStreaming) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
         
         activeRtmpCamera = null 
+        orientationEventListener?.disable()
         overlayTimer?.cancel()
         overlayTimer = null
         
@@ -640,7 +664,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             try { rtmpCamera.replaceView(openGlView) } catch (e: Exception) {}
             isBackgrounded = false
         } else if (!rtmpCamera.isOnPreview && !globalPrivacyMode) { 
-            // FIX: यहाँ से भी फालतू डिले हटा दिया गया है, कैमरा इंस्टेंट स्टार्ट होगा।
             tryStartCameraPreview() 
         } 
     }
