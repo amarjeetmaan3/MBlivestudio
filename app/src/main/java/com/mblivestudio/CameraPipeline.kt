@@ -21,7 +21,6 @@ internal fun MainActivity.tryStartCameraPreview() {
     val encWidth = if (isPortrait) streamHeight else streamWidth
     val encHeight = if (isPortrait) streamWidth else streamHeight
     
-    // 180° / 90° CAMERA SENSOR MAPPING
     var rotation = 0
     val displayRotation = (getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.rotation
     if (isPortrait) {
@@ -115,11 +114,8 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
     canvas.translate(-xOffset, -yOffset)
     
     if (isPrivacyMode) {
-        // OBS STUDIO MODE: 
-        // 1. YouTube के फ्रेम को पूरी तरह ब्लैक करके कैमरा छुपा दें
-        canvas.drawColor(Color.parseColor("#FF000000")) 
-        
-        // 2. दर्शकों के लिए सिर्फ स्लेट/थंबनेल ड्रा करें
+        // THE BLIND SLATE: YouTube receives ONLY the slate. No camera, no live overlays.
+        canvas.drawColor(Color.parseColor("#121212"))
         cachedSlateBitmap?.let { slate ->
             val scale = maxOf(sourceW / slate.width, sourceH / slate.height)
             val sw = slate.width * scale
@@ -129,12 +125,10 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
             val destRect = android.graphics.RectF(sx, sy, sx + sw, sy + sh)
             canvas.drawBitmap(slate, null, destRect, null)
         }
-        // 3. हम यहाँ जानबूझकर `overlayContainer.draw(canvas)` नहीं चलाएंगे।
-        // इसका मतलब: YouTube को आपके ओवरले खिसकते हुए नहीं दिखेंगे, लेकिन आपको अपनी स्क्रीन पर दिखेंगे!
     } else {
-        // NORMAL LIVE MODE
+        // NORMAL LIVE MODE: YouTube receives full camera and active overlays
         if (isBackgrounded || !surfaceReady) {
-            canvas.drawColor(Color.parseColor("#121212")) 
+            canvas.drawColor(Color.parseColor("#121212"))
         }
         overlayContainer.draw(canvas)
     }
