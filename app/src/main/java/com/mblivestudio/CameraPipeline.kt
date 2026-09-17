@@ -86,18 +86,10 @@ internal fun MainActivity.tryStartCameraPreview() {
 
         try {
             rtmpCamera.startPreview()
-            updateSnapshot(1000)
+            updateSnapshot(0)
         } catch (e: Exception) {
             e.printStackTrace()
             try { rtmpCamera.stopPreview() } catch (_: Exception) {}
-            Handler(Looper.getMainLooper()).postDelayed({
-                try {
-                    rtmpCamera.startPreview()
-                    updateSnapshot(1000)
-                } catch (ex: Exception) {
-                    Toast.makeText(this, "CAMERA ERROR: Restart required", Toast.LENGTH_SHORT).show()
-                }
-            }, 500)
         }
     }
 }
@@ -145,31 +137,37 @@ internal fun MainActivity.canvasFor(bitmap: Bitmap): Canvas {
     return if (bitmap === bitmapA) canvasA!! else canvasB!!
 }
 
+// FIX: यह सीधे काम करेगा, डिले वाला पेंडिंग रिफ्रेश लूप हटा दिया गया है
 internal fun MainActivity.updateSnapshot(delay: Long = 0) {
-    if (!rtmpCamera.isOnPreview && !rtmpCamera.isStreaming) return
-    if (pendingRefresh) { refreshQueued = true; return }
-    pendingRefresh = true
-    overlayHandler.postDelayed({
+    if ((!rtmpCamera.isOnPreview && !rtmpCamera.isStreaming) || overlayContainer.width == 0 || overlayContainer.height == 0) return
+    
+    val action = Runnable {
         try {
             val w = streamWidth.coerceAtLeast(1)
             val h = streamHeight.coerceAtLeast(1)
             useBufferA = !useBufferA
-            if (useBufferA) {
+            val currentBitmap = if (useBufferA) {
                 if (bitmapA == null || bitmapA!!.isRecycled || bitmapA!!.width != w || bitmapA!!.height != h) {
                     bitmapA?.recycle(); bitmapA = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888); canvasA = Canvas(bitmapA!!)
                 }
-                bitmapA!!.eraseColor(Color.TRANSPARENT); drawOverlayToStreamBitmap(bitmapA!!); imageFilterRender.setImage(bitmapA!!)
+                bitmapA!!
             } else {
                 if (bitmapB == null || bitmapB!!.isRecycled || bitmapB!!.width != w || bitmapB!!.height != h) {
                     bitmapB?.recycle(); bitmapB = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888); canvasB = Canvas(bitmapB!!)
                 }
-                bitmapB!!.eraseColor(Color.TRANSPARENT); drawOverlayToStreamBitmap(bitmapB!!); imageFilterRender.setImage(bitmapB!!)
+                bitmapB!!
             }
-        } catch (e: Exception) { e.printStackTrace() } finally {
-            pendingRefresh = false
-            if (refreshQueued) { refreshQueued = false; updateSnapshot(0) }
-        }
-    }, delay)
+            currentBitmap.eraseColor(Color.TRANSPARENT)
+            drawOverlayToStreamBitmap(currentBitmap)
+            imageFilterRender.setImage(currentBitmap)
+        } catch (e: Exception) { e.printStackTrace() }
+    }
+    
+    if (delay > 0) {
+        overlayHandler.postDelayed(action, delay)
+    } else {
+        if (Looper.myLooper() == Looper.getMainLooper()) action.run() else overlayHandler.post(action)
+    }
 }
 
 internal fun MainActivity.sendSyntheticZoomEvent(action: Int, pointerDistance: Float, delta: Float) {
