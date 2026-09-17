@@ -396,4 +396,133 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnMicToggle.setImageResource(R.drawable.ic_mic_on)
         btnMicToggle.setOnClickListener {
             if (isAudioMuted) { rtmpCamera.enableAudio(); isAudioMuted = false; btnMicToggle.setImageResource(R.drawable.ic_mic_on) } 
-            else { rtmpCamera.disableAudio(); isAudioMuted = true; btnMicToggle.setImageResource(R.drawable.ic_mic_off)
+            else { rtmpCamera.disableAudio(); isAudioMuted = true; btnMicToggle.setImageResource(R.drawable.ic_mic_off) }
+        }
+
+        btnSwitchCamera.setOnClickListener { try { rtmpCamera.switchCamera() } catch (e: Exception) {} }
+
+        btnBluetoothMic.clearColorFilter()
+        btnBluetoothMic.setOnClickListener {
+            if (rtmpCamera.isStreaming) { Toast.makeText(this, "Stop the stream before switching mic source.", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) { requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 2); return@setOnClickListener }
+            toggleBluetoothMic(btnBluetoothMic)
+        }
+
+        var currentTouchEvent: MotionEvent? = null
+        val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScale(detector: ScaleGestureDetector): Boolean { currentTouchEvent?.let { event -> try { rtmpCamera.setZoom(event, detector.scaleFactor) } catch (e: Exception) {} }; return true }
+        })
+
+        openGlView.setOnTouchListener { _, event ->
+            if (event.action == MotionEvent.ACTION_DOWN) { currentFocus?.clearFocus(); (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(openGlView.windowToken, 0) }
+            if (event.pointerCount > 1) { currentTouchEvent = event; scaleGestureDetector.onTouchEvent(event); true } else false
+        }
+        
+        findViewById<Button>(R.id.btnZoomIn).setOnClickListener { currentZoomDistance += 15f; sendSyntheticZoomEvent(MotionEvent.ACTION_MOVE, currentZoomDistance, 1f) }
+        findViewById<Button>(R.id.btnZoomOut).setOnClickListener { currentZoomDistance -= 15f; if (currentZoomDistance < 100f) currentZoomDistance = 100f; sendSyntheticZoomEvent(MotionEvent.ACTION_MOVE, currentZoomDistance, 1f) }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) { requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1) }
+
+        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).requestEmail().requestProfile().requestScopes(Scope("https://www.googleapis.com/auth/youtube")).build()
+        googleSignInClient = GoogleSignIn.getClient(this, gso)
+        val account = GoogleSignIn.getLastSignedInAccount(this)
+        if (account != null) { connectedAccountEmail = account.email; applyAccountToHeader(account) }
+
+        ivProfilePhoto.setOnClickListener { 
+            val acc = GoogleSignIn.getLastSignedInAccount(this)
+            if (acc == null) { startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST) } 
+            else { AlertDialog.Builder(this).setTitle("Account Options").setMessage("Logged in as: ${acc.email}").setPositiveButton("Logout") { _, _ -> googleSignInClient.signOut().addOnCompleteListener { connectedAccountEmail = null; ivProfilePhoto.setImageResource(android.R.drawable.sym_def_app_icon); Toast.makeText(this, "Logged out.", Toast.LENGTH_LONG).show() } }.setNegativeButton("Cancel", null).show() }
+        }
+
+        btnStreamsManager.setOnClickListener { showSavedStreamsManager() }
+
+        btnGoLive.setOnClickListener {
+            if (rtmpCamera.isStreaming) { AlertDialog.Builder(this).setTitle("Stop Live Stream?").setMessage("This will end your broadcast on YouTube.").setPositiveButton("End Stream") { _, _ -> stopLiveStream() }.setNegativeButton("Cancel", null).show(); return@setOnClickListener }
+            if (!rtmpCamera.isOnPreview) { tryStartCameraPreview(); Toast.makeText(this, "Camera starting, try LIVE again in a moment.", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
+            val currentAccount = GoogleSignIn.getLastSignedInAccount(this)
+            if (currentAccount == null) { Toast.makeText(this, "Please Sign In with YouTube first!", Toast.LENGTH_SHORT).show(); startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST); return@setOnClickListener }
+            if (!GoogleSignIn.hasPermissions(currentAccount, Scope("https://www.googleapis.com/auth/youtube"))) { GoogleSignIn.requestPermissions(this, REQUEST_AUTHORIZATION, currentAccount, Scope("https://www.googleapis.com/auth/youtube")); return@setOnClickListener }
+            
+            lockOrientation()
+            showGoLiveDialog()
+        }
+        makeDraggableAndScalable(dragScoreboard)
+    }
+
+    override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "Connected! Going live on YouTube...", Toast.LENGTH_LONG).show(); startStudioTimer() }; ensureBroadcastGoesLive() }
+    
+    override fun onConnectionFailed(reason: String) {
+        if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { retryCount++; runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }; Thread { Thread.sleep(2000); try { rtmpCamera.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} }.start() } else { StreamingService.stop(this@MainActivity); runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; unlockOrientation(); tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show(); stopChatPolling(); stopStudioTimer() } }
+    }
+    
+    override fun onDisconnect() { StreamingService.stop(this@MainActivity); runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F")); try { rtmpCamera.stopPreview() } catch (e: Exception) {}; unlockOrientation(); tryStartCameraPreview(); stopChatPolling(); stopStudioTimer() } }
+    
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) { super.onRequestPermissionsResult(requestCode, permissions, grantResults); tryStartCameraPreview() }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (resultCode == Activity.RESULT_OK && data != null) {
+            when (requestCode) {
+                PICK_IMAGE_REQUEST -> { try { val imageUri = data.data; if (imageUri != null) { addImageOverlayToScreen(BitmapFactory.decodeStream(contentResolver.openInputStream(imageUri))) } } catch (e: Exception) { e.printStackTrace(); Toast.makeText(this, "Failed to load image", Toast.LENGTH_SHORT).show() } }
+                PICK_THUMBNAIL_REQUEST -> { pendingThumbnailUri = data.data; thumbnailPreviewImageView?.setImageURI(pendingThumbnailUri); ivStreamSlate.setImageURI(pendingThumbnailUri) }
+                SIGN_IN_REQUEST -> { val task = GoogleSignIn.getSignedInAccountFromIntent(data); try { val account = task.getResult(ApiException::class.java); connectedAccountEmail = account?.email; if (account != null) applyAccountToHeader(account); Toast.makeText(this, "Signed in as ${account?.email}", Toast.LENGTH_SHORT).show() } catch (e: ApiException) { e.printStackTrace(); Toast.makeText(this, "Sign-in failed", Toast.LENGTH_SHORT).show() } }
+            }
+        }
+    }
+
+    override fun onPause() { 
+        super.onPause()
+        if (!rtmpCamera.isStreaming && rtmpCamera.isOnPreview) { 
+            try { rtmpCamera.stopPreview() } catch (e: Exception) {} 
+        } 
+    }
+    
+    override fun onResume() { 
+        super.onResume() 
+        if (surfaceReady && !rtmpCamera.isOnPreview && !rtmpCamera.isStreaming) {
+            tryStartCameraPreview()
+        } 
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (!rtmpCamera.isStreaming) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
+        overlayHandler.removeCallbacksAndMessages(null); chatHandler.removeCallbacksAndMessages(null); timerHandler.removeCallbacksAndMessages(null); tickerHandler.removeCallbacksAndMessages(null); webSyncHandler.removeCallbacksAndMessages(null)
+        bitmapA?.let { if (!it.isRecycled) it.recycle() }; bitmapA = null; canvasA = null; bitmapB?.let { if (!it.isRecycled) it.recycle() }; bitmapB = null; canvasB = null
+    }
+
+    override fun surfaceCreated(holder: SurfaceHolder) {}
+    
+    // THE VIRTUAL CURTAIN: Safe Restore (वापस आने पर)
+    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) { 
+        openGlView.setAspectRatioMode(AspectRatioMode.Fill) 
+        surfaceReady = true 
+        if (isBackgrounded && rtmpCamera.isStreaming) {
+            // "हॉट-स्वैप" वापसी: कैमरे को बैकग्राउंड से वापस असली स्क्रीन से जोड़ें
+            try { rtmpCamera.replaceView(openGlView) } catch (e: Exception) {}
+            isBackgrounded = false
+            if (!isCameraMuted) hideSlate()
+        } else if (!rtmpCamera.isOnPreview) { 
+            tryStartCameraPreview() 
+        } 
+    }
+    
+    // THE VIRTUAL CURTAIN: Background Switch (ऐप मिनिमाइज़ या फोन लॉक)
+    override fun surfaceDestroyed(holder: SurfaceHolder) { 
+        surfaceReady = false
+        isBackgrounded = true
+        if (rtmpCamera.isStreaming) {
+            showSlate()
+            // NEVER DISCONNECT: कैमरे को 'stop' करने के बजाय, उसे 'context' (नकली स्क्रीन) दे दो।
+            // इससे स्ट्रीम ज़िंदा रहेगी और क्रैश नहीं होगी।
+            try { rtmpCamera.replaceView(this) } catch (e: Exception) {}
+        } else if (rtmpCamera.isOnPreview) {
+            try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+        }
+    }
+    
+    override fun onAuthError() { runOnUiThread { Toast.makeText(this, "Auth Error", Toast.LENGTH_SHORT).show() } }
+    override fun onAuthSuccess() { runOnUiThread { Toast.makeText(this, "Auth Success", Toast.LENGTH_SHORT).show() } }
+    override fun onConnectionStarted(url: String) {}
+    override fun onNewBitrate(bitrate: Long) { if (rtmpCamera.isStreaming) { try { rtmpCamera.setVideoBitrateOnFly(bitrate.toInt()) } catch (e: Exception) {} } }
+}
