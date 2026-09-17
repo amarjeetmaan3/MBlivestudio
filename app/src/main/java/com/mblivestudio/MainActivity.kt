@@ -338,7 +338,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnCameraToggle.setOnClickListener {
             isCameraMuted = !isCameraMuted
             if (isCameraMuted) {
-                if (pendingThumbnailUri != null) { ivStreamSlate.setImageURI(pendingThumbnailUri) } else { ivStreamSlate.setImageResource(R.mipmap.ic_launcher) }
+                // फिक्स: अगर थंबनेल है तो वो दिखेगा, वरना डार्क स्क्रीन (बिना क्रैश के)
+                if (pendingThumbnailUri != null) { 
+                    ivStreamSlate.setImageURI(pendingThumbnailUri) 
+                } else { 
+                    ivStreamSlate.setImageDrawable(null) 
+                }
                 ivStreamSlate.visibility = View.VISIBLE
                 btnCameraToggle.setColorFilter(Color.RED)
             } else {
