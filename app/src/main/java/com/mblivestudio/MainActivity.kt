@@ -44,10 +44,13 @@ internal enum class MicRoute { PHONE, BLUETOOTH, WIRED }
 
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
-    // CRASH FIX: Singleton Camera
+    // GLOBAL MEMORY FIX: यह कभी डिलीट नहीं होगा, चाहे ऐप स्विच हो या घूमे
     companion object {
         @SuppressLint("StaticFieldLeak")
         var activeRtmpCamera: RtmpCamera2? = null
+        var globalPrivacyMode = false
+        var globalSlateBitmap: Bitmap? = null
+        var globalThumbnailUri: android.net.Uri? = null
     }
 
     internal lateinit var rtmpCamera: RtmpCamera2
@@ -56,10 +59,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal lateinit var imageFilterRender: ImageObjectFilterRender
     internal val cameraLayoutFilter = CameraLayoutFilterRender()
 
-    // THE BLIND SLATE: Privacy Mode System
     internal lateinit var ivStreamSlate: ImageView 
-    internal var isPrivacyMode = false 
-    internal var cachedSlateBitmap: Bitmap? = null
     internal var isBackgrounded = false
 
     internal lateinit var dragScoreboard: LinearLayout
@@ -133,7 +133,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal var pendingDesc: String = ""
     internal var pendingPrivacy: String = "unlisted"
     internal var pendingScheduleTimeMs: Long = 0L
-    internal var pendingThumbnailUri: android.net.Uri? = null
     internal var thumbnailPreviewImageView: ImageView? = null
 
     internal var youtubeClient: YouTube? = null
@@ -182,7 +181,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     internal fun showSlate() {
-        if (pendingThumbnailUri != null) ivStreamSlate.setImageURI(pendingThumbnailUri)
+        if (globalThumbnailUri != null) ivStreamSlate.setImageURI(globalThumbnailUri)
         else ivStreamSlate.setBackgroundColor(Color.parseColor("#121212"))
         ivStreamSlate.visibility = View.VISIBLE
         updateSnapshot(0)
@@ -193,8 +192,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         updateSnapshot(0)
     }
 
+    // SMART LOCK: अगर लैंडस्केप में लाइव किया है, तो ऐप लैंडस्केप में ही लॉक रहेगा (सेंसर से 180 घूमेगा, पर पोर्ट्रेट नहीं होगा)
     internal fun lockOrientation() {
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LOCKED
+        val isLandscape = streamWidth > streamHeight
+        requestedOrientation = if (isLandscape) {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+        }
     }
 
     internal fun unlockOrientation() {
@@ -244,7 +249,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         openGlView.layoutParams = openGlView.layoutParams.apply { width = ViewGroup.LayoutParams.MATCH_PARENT; height = ViewGroup.LayoutParams.MATCH_PARENT }
         openGlView.holder.addCallback(this)
         
-        // CRASH FIX: App Switch & Resume Clash Resolver
         if (activeRtmpCamera == null) {
             rtmpCamera = RtmpCamera2(openGlView, this)
             activeRtmpCamera = rtmpCamera
@@ -338,18 +342,18 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         // THE BLIND SLATE / PRIVACY MODE BUTTON
         val btnPrivacyMode: ImageButton = findViewById(R.id.btnOrientation)
         btnPrivacyMode.setImageResource(android.R.drawable.ic_menu_camera)
+        if (globalPrivacyMode) { btnPrivacyMode.setColorFilter(Color.RED); showSlate() }
+        
         btnPrivacyMode.setOnClickListener {
-            isPrivacyMode = !isPrivacyMode
-            if (isPrivacyMode) {
+            globalPrivacyMode = !globalPrivacyMode
+            if (globalPrivacyMode) {
                 btnPrivacyMode.setColorFilter(Color.RED)
                 rtmpCamera.disableAudio()
                 showSlate()
-                Toast.makeText(this, "STUDIO MODE ON: Mic Muted & Slate is live.", Toast.LENGTH_SHORT).show()
             } else {
                 btnPrivacyMode.clearColorFilter()
                 if (!isAudioMuted) rtmpCamera.enableAudio()
                 hideSlate()
-                Toast.makeText(this, "STUDIO MODE OFF: Stream Updated.", Toast.LENGTH_SHORT).show()
             }
             updateSnapshot(0)
         }
@@ -422,16 +426,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         ivProfilePhoto.setOnClickListener { 
             val acc = GoogleSignIn.getLastSignedInAccount(this)
             if (acc == null) { startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST) } 
-            else { AlertDialog.Builder(this).setTitle("Account Options").setMessage("Logged in as: ${acc.email}").setPositiveButton("Logout") { _, _ -> googleSignInClient.signOut().addOnCompleteListener { connectedAccountEmail = null; ivProfilePhoto.setImageResource(android.R.drawable.sym_def_app_icon); Toast.makeText(this, "Logged out.", Toast.LENGTH_LONG).show() } }.setNegativeButton("Cancel", null).show() }
+            else { AlertDialog.Builder(this).setTitle("Account Options").setMessage("Logged in as: ${acc.email}").setPositiveButton("Logout") { _, _ -> googleSignInClient.signOut().addOnCompleteListener { connectedAccountEmail = null; ivProfilePhoto.setImageResource(android.R.drawable.sym_def_app_icon); } }.setNegativeButton("Cancel", null).show() }
         }
 
         btnStreamsManager.setOnClickListener { showSavedStreamsManager() }
 
         btnGoLive.setOnClickListener {
             if (rtmpCamera.isStreaming) { AlertDialog.Builder(this).setTitle("Stop Live Stream?").setMessage("This will end your broadcast on YouTube.").setPositiveButton("End Stream") { _, _ -> stopLiveStream() }.setNegativeButton("Cancel", null).show(); return@setOnClickListener }
-            if (!rtmpCamera.isOnPreview) { tryStartCameraPreview(); Toast.makeText(this, "Camera starting, try LIVE again in a moment.", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
+            if (!rtmpCamera.isOnPreview) { tryStartCameraPreview(); return@setOnClickListener }
             val currentAccount = GoogleSignIn.getLastSignedInAccount(this)
-            if (currentAccount == null) { Toast.makeText(this, "Please Sign In with YouTube first!", Toast.LENGTH_SHORT).show(); startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST); return@setOnClickListener }
+            if (currentAccount == null) { startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST); return@setOnClickListener }
             if (!GoogleSignIn.hasPermissions(currentAccount, Scope("https://www.googleapis.com/auth/youtube"))) { GoogleSignIn.requestPermissions(this, REQUEST_AUTHORIZATION, currentAccount, Scope("https://www.googleapis.com/auth/youtube")); return@setOnClickListener }
             
             lockOrientation()
@@ -442,10 +446,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         tickerHandler.post(tickerRunnable)
     }
 
-    override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "Connected! Going live on YouTube...", Toast.LENGTH_LONG).show(); startStudioTimer() }; ensureBroadcastGoesLive() }
+    override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); startStudioTimer() }; ensureBroadcastGoesLive() }
     
     override fun onConnectionFailed(reason: String) {
-        if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { retryCount++; runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }; Thread { Thread.sleep(2000); try { rtmpCamera.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} }.start() } else { StreamingService.stop(this@MainActivity); runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; unlockOrientation(); tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show(); stopChatPolling(); stopStudioTimer() } }
+        if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { retryCount++; runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }; Thread { Thread.sleep(2000); try { rtmpCamera.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} }.start() } else { StreamingService.stop(this@MainActivity); runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; unlockOrientation(); tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; stopChatPolling(); stopStudioTimer() } }
     }
     
     override fun onDisconnect() { StreamingService.stop(this@MainActivity); runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F")); try { rtmpCamera.stopPreview() } catch (e: Exception) {}; unlockOrientation(); tryStartCameraPreview(); stopChatPolling(); stopStudioTimer() } }
@@ -456,15 +460,15 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         super.onActivityResult(requestCode, resultCode, data)
         if (resultCode == Activity.RESULT_OK && data != null) {
             when (requestCode) {
-                PICK_IMAGE_REQUEST -> { try { val imageUri = data.data; if (imageUri != null) { addImageOverlayToScreen(BitmapFactory.decodeStream(contentResolver.openInputStream(imageUri))) } } catch (e: Exception) { e.printStackTrace(); Toast.makeText(this, "Failed to load image", Toast.LENGTH_SHORT).show() } }
+                PICK_IMAGE_REQUEST -> { try { val imageUri = data.data; if (imageUri != null) { addImageOverlayToScreen(BitmapFactory.decodeStream(contentResolver.openInputStream(imageUri))) } } catch (e: Exception) { e.printStackTrace() } }
                 PICK_THUMBNAIL_REQUEST -> { 
-                    pendingThumbnailUri = data.data
-                    thumbnailPreviewImageView?.setImageURI(pendingThumbnailUri)
-                    pendingThumbnailUri?.let { uri ->
-                        try { cachedSlateBitmap = BitmapFactory.decodeStream(contentResolver.openInputStream(uri)) } catch (e: Exception) {}
+                    globalThumbnailUri = data.data
+                    thumbnailPreviewImageView?.setImageURI(globalThumbnailUri)
+                    globalThumbnailUri?.let { uri ->
+                        try { globalSlateBitmap = BitmapFactory.decodeStream(contentResolver.openInputStream(uri)) } catch (e: Exception) {}
                     }
                 }
-                SIGN_IN_REQUEST -> { val task = GoogleSignIn.getSignedInAccountFromIntent(data); try { val account = task.getResult(ApiException::class.java); connectedAccountEmail = account?.email; if (account != null) applyAccountToHeader(account); Toast.makeText(this, "Signed in as ${account?.email}", Toast.LENGTH_SHORT).show() } catch (e: ApiException) { e.printStackTrace(); Toast.makeText(this, "Sign-in failed", Toast.LENGTH_SHORT).show() } }
+                SIGN_IN_REQUEST -> { val task = GoogleSignIn.getSignedInAccountFromIntent(data); try { val account = task.getResult(ApiException::class.java); connectedAccountEmail = account?.email; if (account != null) applyAccountToHeader(account) } catch (e: ApiException) { e.printStackTrace() } }
             }
         }
     }
@@ -478,6 +482,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     
     override fun onResume() { 
         super.onResume() 
+        // SMART LOCK RE-APPLY: बैकग्राउंड से वापस आने पर भी ऐप को सही एंगल (लैंडस्केप) में धकेलो
+        if (activeRtmpCamera?.isStreaming == true) {
+            lockOrientation()
+        }
         if (surfaceReady && !rtmpCamera.isOnPreview && !rtmpCamera.isStreaming) {
             tryStartCameraPreview()
         } 
@@ -513,8 +521,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
     
-    override fun onAuthError() { runOnUiThread { Toast.makeText(this, "Auth Error", Toast.LENGTH_SHORT).show() } }
-    override fun onAuthSuccess() { runOnUiThread { Toast.makeText(this, "Auth Success", Toast.LENGTH_SHORT).show() } }
+    override fun onAuthError() { }
+    override fun onAuthSuccess() { }
     override fun onConnectionStarted(url: String) {}
     override fun onNewBitrate(bitrate: Long) { if (rtmpCamera.isStreaming) { try { rtmpCamera.setVideoBitrateOnFly(bitrate.toInt()) } catch (e: Exception) {} } }
 }
