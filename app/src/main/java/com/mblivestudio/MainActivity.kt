@@ -67,7 +67,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal lateinit var ivStreamSlate: ImageView 
     internal var isBackgrounded = false
 
-    // THE UNSTOPPABLE TIMER: फोन लॉक होने पर भी ओवरले को जिंदा रखेगा
     internal var overlayTimer: Timer? = null
 
     internal lateinit var dragScoreboard: LinearLayout
@@ -218,7 +217,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     internal fun showSlate() {
-        // FIX: लोकल स्टूडियो में भी थंबनेल 100% दिखेगा
         if (globalSlateBitmap != null) {
             ivStreamSlate.setImageBitmap(globalSlateBitmap)
         } else {
@@ -233,7 +231,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         updateSnapshot(0)
     }
 
-    // FIX: तुम्हारा पुराना SENSOR_LANDSCAPE वापस कर दिया गया है
     internal fun lockOrientation() {
         val isLandscape = streamWidth > streamHeight
         requestedOrientation = if (isLandscape) {
@@ -256,6 +253,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         updateSnapshot(0)
+        // FIX: Rotation par camera update (jab live na ho)
+        if (!rtmpCamera.isStreaming && rtmpCamera.isOnPreview) {
+            try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+            tryStartCameraPreview()
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -288,7 +290,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         setContentView(R.layout.activity_main)
 
         openGlView = findViewById(R.id.surfaceView)
-        openGlView.setAspectRatioMode(AspectRatioMode.Fill)
+        // FIX: WYSIWYG Mismatch Fix
+        openGlView.setAspectRatioMode(AspectRatioMode.Adjust) 
         openGlView.layoutParams = openGlView.layoutParams.apply { width = ViewGroup.LayoutParams.MATCH_PARENT; height = ViewGroup.LayoutParams.MATCH_PARENT }
         openGlView.holder.addCallback(this)
         
@@ -314,7 +317,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
         overlayContainer.addView(ivStreamSlate, 0)
 
-        // START THE UNSTOPPABLE TIMER
         overlayTimer = Timer()
         overlayTimer?.scheduleAtFixedRate(object : TimerTask() {
             override fun run() {
@@ -500,6 +502,18 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             showGoLiveDialog()
         }
         makeDraggableAndScalable(dragScoreboard)
+        
+        // FIX: Force Kill (Ghost Session) UI Recovery
+        if (rtmpCamera.isStreaming) {
+            btnGoLive.text = "STOP STREAM"
+            btnGoLive.setBackgroundColor(Color.parseColor("#E53935"))
+            lockOrientation()
+            if (!timerRunning) {
+                timerRunning = true
+                timerHandler.post(timerRunnable)
+            }
+        }
+        
         tickerHandler.post(tickerRunnable)
     }
 
@@ -510,7 +524,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             retryCount++
             runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }
             Thread { 
-                // CONNECTION FIX: यूट्यूब सर्वर को पुराना कनेक्शन काटने के लिए 4 सेकंड का समय मिलेगा, फिर ऑटो-कनेक्ट होगा
                 Thread.sleep(4000) 
                 try { rtmpCamera.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} 
             }.start() 
@@ -560,9 +573,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     override fun onDestroy() {
         super.onDestroy()
-        if (!rtmpCamera.isStreaming) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
+        // FIX: Force Kill (Ghost Session) - Sirf tab null karo jab live na ho
+        if (!rtmpCamera.isStreaming) { 
+            try { rtmpCamera.stopPreview() } catch (e: Exception) {} 
+            activeRtmpCamera = null 
+        }
         
-        activeRtmpCamera = null 
         overlayTimer?.cancel()
         overlayTimer = null
         
@@ -573,7 +589,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun surfaceCreated(holder: SurfaceHolder) {}
     
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) { 
-        openGlView.setAspectRatioMode(AspectRatioMode.Fill) 
+        // FIX: WYSIWYG Mismatch Fix
+        openGlView.setAspectRatioMode(AspectRatioMode.Adjust) 
         surfaceReady = true 
         if (isBackgrounded && rtmpCamera.isStreaming) {
             try { rtmpCamera.replaceView(openGlView) } catch (e: Exception) {}
