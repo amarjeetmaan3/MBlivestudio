@@ -50,9 +50,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal lateinit var imageFilterRender: ImageObjectFilterRender
     internal val cameraLayoutFilter = CameraLayoutFilterRender()
 
-    // Slate / Thumbnail Layer for Camera Mute / App Switch / Rotation
+    // THE VIRTUAL CURTAIN: Slate System
     internal lateinit var ivStreamSlate: ImageView 
     internal var isCameraMuted = false 
+    internal var isBackgrounded = false // ऐप स्विच ट्रैक करने के लिए
 
     internal lateinit var dragScoreboard: LinearLayout
     internal lateinit var scoreMainText: TextView
@@ -157,7 +158,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // Thermal Optimization: 150ms Loop for smooth UI without heating CPU
     internal val tickerHandler = Handler(Looper.getMainLooper())
     internal val tickerRunnable = object : Runnable {
         override fun run() {
@@ -174,13 +174,26 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // NEW LOGIC: Lock to FULL_SENSOR. Allows 180 flip but prevents crashes via our Slate System.
+    // SLATE CONTROLLERS
+    internal fun showSlate() {
+        if (pendingThumbnailUri != null) ivStreamSlate.setImageURI(pendingThumbnailUri)
+        else ivStreamSlate.setImageDrawable(null) // डार्क स्क्रीन, क्रैश से बचने के लिए
+        ivStreamSlate.visibility = View.VISIBLE
+        updateSnapshot(0)
+    }
+
+    internal fun hideSlate() {
+        ivStreamSlate.visibility = View.GONE
+        updateSnapshot(0)
+    }
+
     internal fun lockOrientation() {
+        // FULL_SENSOR Allows 180° rotation natively
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
     }
 
     internal fun unlockOrientation() {
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER
     }
 
     override fun attachBaseContext(newBase: Context?) {
@@ -189,15 +202,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         System.setProperty("java.net.preferIPv6Addresses", "false")
     }
 
-    // 180° ROTATION & SMART HOT-SWAP FIX
+    // SMART ROTATION: हॉट-स्वैप (बिना एनकोडर रोके)
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         
-        // फोन घूमते ही तुरंत स्लेट (Slate) शो करें ताकि दर्शकों को स्क्रीन रोटेशन का झटका न लगे
-        ivStreamSlate.visibility = View.VISIBLE
-        if (pendingThumbnailUri != null) ivStreamSlate.setImageURI(pendingThumbnailUri) 
-        else ivStreamSlate.setBackgroundColor(Color.parseColor("#121212"))
-
         val isLandscape = newConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         val maxDim = maxOf(streamWidth, streamHeight)
         val minDim = minOf(streamWidth, streamHeight)
@@ -206,18 +214,21 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         else { streamWidth = minDim; streamHeight = maxDim }
 
         if (surfaceReady && rtmpCamera.isOnPreview) {
-            // कैमरा रोकें (स्ट्रीम नहीं रुकेगी, वो स्लेट दिखाती रहेगी)
-            try { rtmpCamera.stopPreview() } catch (e: Exception) {}
-            
-            // 500ms का पॉज़ (Slate के पीछे) ताकि एनकोडर और कैमरा नए 180° एंगल पर सेट हो सकें
-            Handler(Looper.getMainLooper()).postDelayed({ 
-                tryStartCameraPreview() 
+            if (!rtmpCamera.isStreaming) {
+                // स्ट्रीम बंद है, नॉर्मल रीस्टार्ट करें
+                try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+                Handler(Looper.getMainLooper()).postDelayed({ tryStartCameraPreview() }, 300)
+            } else {
+                // स्ट्रीम चल रही है (Never Disconnect)!
+                // 1. पर्दा गिराएं 
+                showSlate()
                 
-                // अगर यूज़र ने खुद से कैमरा म्यूट नहीं किया है, तो 1.5 सेकंड बाद स्लेट हटा दें
+                // 2. हम कैमरे को stopPreview() बिल्कुल नहीं करेंगे। 
+                // 3. 1.5 सेकंड बाद, जब सिस्टम UI सेट कर ले, पर्दा हटा देंगे।
                 if (!isCameraMuted) {
-                    Handler(Looper.getMainLooper()).postDelayed({ ivStreamSlate.visibility = View.GONE }, 1500)
+                    Handler(Looper.getMainLooper()).postDelayed({ hideSlate() }, 1500)
                 }
-            }, 500)
+            }
         }
         updateSnapshot(0)
     }
@@ -237,8 +248,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER
 
         val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         val maxDim = maxOf(streamWidth, streamHeight)
@@ -262,11 +272,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         overlayContainer = findViewById(R.id.overlayContainer)
         
-        // SLATE/THUMBNAIL SETUP
+        // SLATE SETUP: सबसे पीछे डार्क लेयर
         ivStreamSlate = ImageView(this).apply {
             layoutParams = RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             scaleType = ImageView.ScaleType.CENTER_CROP
-            setBackgroundColor(Color.parseColor("#121212"))
+            setBackgroundColor(Color.parseColor("#121212")) // डार्क
             visibility = View.GONE
         }
         overlayContainer.addView(ivStreamSlate, 0)
@@ -322,46 +332,35 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnOverlayMenu.setOnClickListener {
             val target = selectedOverlay ?: return@setOnClickListener
             val popup = PopupMenu(this, btnOverlayMenu)
-            popup.menu.add("Resize")
-            if (target !is TextView && target.tag != "LOWER_THIRD") popup.menu.add("Crop")
+            popup.menu.add("Resize"); if (target !is TextView && target.tag != "LOWER_THIRD") popup.menu.add("Crop")
             if (target is TextView || target is EditText || target.tag == "LOWER_THIRD") popup.menu.add("Change Color")
-            popup.setOnMenuItemClickListener { item ->
-                when (item.title) { "Resize" -> enterResizeMode(target); "Crop" -> enterCropMode(target); "Change Color" -> showCustomColorPickerDialog() }
-                true
-            }
+            popup.setOnMenuItemClickListener { item -> when (item.title) { "Resize" -> enterResizeMode(target); "Crop" -> enterCropMode(target); "Change Color" -> showCustomColorPickerDialog() }; true }
             popup.show()
         }
 
         btnOverlayDone.setOnClickListener {
-            currentMode = "DRAG"
-            btnOverlayDone.visibility = View.GONE
-            val root = findViewById<RelativeLayout>(R.id.rootLayout)
-            resizeHandles.forEach { root.removeView(it) }; resizeHandles.clear()
-            cropFrameViews.forEach { root.removeView(it) }; cropFrameViews.clear()
+            currentMode = "DRAG"; btnOverlayDone.visibility = View.GONE; val root = findViewById<RelativeLayout>(R.id.rootLayout)
+            resizeHandles.forEach { root.removeView(it) }; resizeHandles.clear(); cropFrameViews.forEach { root.removeView(it) }; cropFrameViews.clear()
             selectedOverlay?.let { if (it is EditText) it.clearFocus(); it.setOnTouchListener(null); makeDraggableAndScalable(it) }
-            updateOverlayMenuButtonPosition()
-            updateSnapshot()
+            updateOverlayMenuButtonPosition(); updateSnapshot()
         }
 
         val btnSwitchCamera: ImageButton = findViewById(R.id.btnSwitchCamera)
         val btnMicToggle: ImageButton = findViewById(R.id.btnMicToggle)
         val btnBluetoothMic: ImageButton = findViewById(R.id.btnBluetoothMic)
         
-        // CAMERA OFF / MUTE BUTTON (Build Error Fixed)
+        // CAMERA OFF / MUTE BUTTON (Perfect Fix without mipmap error)
         val btnCameraToggle: ImageButton = findViewById(R.id.btnOrientation)
         btnCameraToggle.setImageResource(android.R.drawable.ic_menu_camera)
         btnCameraToggle.setOnClickListener {
             isCameraMuted = !isCameraMuted
             if (isCameraMuted) {
-                if (pendingThumbnailUri != null) { ivStreamSlate.setImageURI(pendingThumbnailUri) } 
-                else { ivStreamSlate.setBackgroundColor(Color.parseColor("#121212")) }
-                ivStreamSlate.visibility = View.VISIBLE
+                showSlate()
                 btnCameraToggle.setColorFilter(Color.RED)
             } else {
-                ivStreamSlate.visibility = View.GONE
+                hideSlate()
                 btnCameraToggle.clearColorFilter()
             }
-            updateSnapshot(0)
         }
 
         findViewById<Button>(R.id.btnToggleComments).setOnClickListener { popupSettings.visibility = View.GONE; commentsPanel.visibility = if (commentsPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
@@ -388,8 +387,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     if (it.tag == "LOWER_THIRD") tickerHandler.removeCallbacks(tickerRunnable)
                     if (it.tag == "WEB_OVERLAY") webSyncHandler.removeCallbacks(webSyncRunnable)
                     if (it is EditText) { it.clearFocus(); (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(it.windowToken, 0) }
-                    overlayContainer.removeView(it)
-                    if (selectedOverlay == it) selectedOverlay = null
+                    overlayContainer.removeView(it); if (selectedOverlay == it) selectedOverlay = null
                     updateOverlayMenuButtonPosition(); updateSnapshot() 
                 } 
             } 
@@ -398,137 +396,4 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnMicToggle.setImageResource(R.drawable.ic_mic_on)
         btnMicToggle.setOnClickListener {
             if (isAudioMuted) { rtmpCamera.enableAudio(); isAudioMuted = false; btnMicToggle.setImageResource(R.drawable.ic_mic_on) } 
-            else { rtmpCamera.disableAudio(); isAudioMuted = true; btnMicToggle.setImageResource(R.drawable.ic_mic_off) }
-        }
-
-        btnSwitchCamera.setOnClickListener { try { rtmpCamera.switchCamera() } catch (e: Exception) {} }
-
-        btnBluetoothMic.clearColorFilter()
-        btnBluetoothMic.setOnClickListener {
-            if (rtmpCamera.isStreaming) { Toast.makeText(this, "Stop the stream before switching mic source.", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) { requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 2); return@setOnClickListener }
-            toggleBluetoothMic(btnBluetoothMic)
-        }
-
-        var currentTouchEvent: MotionEvent? = null
-        val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            override fun onScale(detector: ScaleGestureDetector): Boolean { currentTouchEvent?.let { event -> try { rtmpCamera.setZoom(event, detector.scaleFactor) } catch (e: Exception) {} }; return true }
-        })
-
-        openGlView.setOnTouchListener { _, event ->
-            if (event.action == MotionEvent.ACTION_DOWN) { currentFocus?.clearFocus(); (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(openGlView.windowToken, 0) }
-            if (event.pointerCount > 1) { currentTouchEvent = event; scaleGestureDetector.onTouchEvent(event); true } else false
-        }
-        
-        findViewById<Button>(R.id.btnZoomIn).setOnClickListener { currentZoomDistance += 15f; sendSyntheticZoomEvent(MotionEvent.ACTION_MOVE, currentZoomDistance, 1f) }
-        findViewById<Button>(R.id.btnZoomOut).setOnClickListener { currentZoomDistance -= 15f; if (currentZoomDistance < 100f) currentZoomDistance = 100f; sendSyntheticZoomEvent(MotionEvent.ACTION_MOVE, currentZoomDistance, 1f) }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) { requestPermissions(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO), 1) }
-
-        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).requestEmail().requestProfile().requestScopes(Scope("https://www.googleapis.com/auth/youtube")).build()
-        googleSignInClient = GoogleSignIn.getClient(this, gso)
-        val account = GoogleSignIn.getLastSignedInAccount(this)
-        if (account != null) { connectedAccountEmail = account.email; applyAccountToHeader(account) }
-
-        ivProfilePhoto.setOnClickListener { 
-            val acc = GoogleSignIn.getLastSignedInAccount(this)
-            if (acc == null) { startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST) } 
-            else {
-                AlertDialog.Builder(this).setTitle("Account Options").setMessage("Logged in as: ${acc.email}").setPositiveButton("Logout") { _, _ -> googleSignInClient.signOut().addOnCompleteListener { connectedAccountEmail = null; ivProfilePhoto.setImageResource(android.R.drawable.sym_def_app_icon); Toast.makeText(this, "Logged out.", Toast.LENGTH_LONG).show() } }.setNegativeButton("Cancel", null).show()
-            }
-        }
-
-        btnStreamsManager.setOnClickListener { showSavedStreamsManager() }
-
-        btnGoLive.setOnClickListener {
-            if (rtmpCamera.isStreaming) { AlertDialog.Builder(this).setTitle("Stop Live Stream?").setMessage("This will end your broadcast on YouTube.").setPositiveButton("End Stream") { _, _ -> stopLiveStream() }.setNegativeButton("Cancel", null).show(); return@setOnClickListener }
-            if (!rtmpCamera.isOnPreview) { tryStartCameraPreview(); Toast.makeText(this, "Camera starting, try LIVE again in a moment.", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
-            val currentAccount = GoogleSignIn.getLastSignedInAccount(this)
-            if (currentAccount == null) { Toast.makeText(this, "Please Sign In with YouTube first!", Toast.LENGTH_SHORT).show(); startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST); return@setOnClickListener }
-            if (!GoogleSignIn.hasPermissions(currentAccount, Scope("https://www.googleapis.com/auth/youtube"))) { GoogleSignIn.requestPermissions(this, REQUEST_AUTHORIZATION, currentAccount, Scope("https://www.googleapis.com/auth/youtube")); return@setOnClickListener }
-            
-            lockOrientation() // Enables FULL_SENSOR for 180 flips without crash
-            showGoLiveDialog()
-        }
-        makeDraggableAndScalable(dragScoreboard)
-    }
-
-    override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "Connected! Going live on YouTube...", Toast.LENGTH_LONG).show(); startStudioTimer() }; ensureBroadcastGoesLive() }
-    
-    override fun onConnectionFailed(reason: String) {
-        if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { retryCount++; runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }; Thread { Thread.sleep(2000); try { rtmpCamera.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} }.start() } else { StreamingService.stop(this@MainActivity); runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; unlockOrientation(); tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show(); stopChatPolling(); stopStudioTimer() } }
-    }
-    
-    override fun onDisconnect() { StreamingService.stop(this@MainActivity); runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F")); try { rtmpCamera.stopPreview() } catch (e: Exception) {}; unlockOrientation(); tryStartCameraPreview(); stopChatPolling(); stopStudioTimer() } }
-    
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) { super.onRequestPermissionsResult(requestCode, permissions, grantResults); tryStartCameraPreview() }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (resultCode == Activity.RESULT_OK && data != null) {
-            when (requestCode) {
-                PICK_IMAGE_REQUEST -> { try { val imageUri = data.data; if (imageUri != null) { addImageOverlayToScreen(BitmapFactory.decodeStream(contentResolver.openInputStream(imageUri))) } } catch (e: Exception) { e.printStackTrace(); Toast.makeText(this, "Failed to load image", Toast.LENGTH_SHORT).show() } }
-                PICK_THUMBNAIL_REQUEST -> { pendingThumbnailUri = data.data; thumbnailPreviewImageView?.setImageURI(pendingThumbnailUri); ivStreamSlate.setImageURI(pendingThumbnailUri) }
-                SIGN_IN_REQUEST -> { val task = GoogleSignIn.getSignedInAccountFromIntent(data); try { val account = task.getResult(ApiException::class.java); connectedAccountEmail = account?.email; if (account != null) applyAccountToHeader(account); Toast.makeText(this, "Signed in as ${account?.email}", Toast.LENGTH_SHORT).show() } catch (e: ApiException) { e.printStackTrace(); Toast.makeText(this, "Sign-in failed", Toast.LENGTH_SHORT).show() } }
-            }
-        }
-    }
-
-    override fun onPause() { super.onPause(); if (!rtmpCamera.isStreaming && rtmpCamera.isOnPreview) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} } }
-    
-    // NEVER DISCONNECT FIX: Safe Resume
-    override fun onResume() { 
-        super.onResume() 
-        if (surfaceReady && !rtmpCamera.isOnPreview) {
-            if (rtmpCamera.isStreaming) {
-                tryStartCameraPreview() 
-            } else {
-                tryStartCameraPreview()
-            }
-        } 
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        if (!rtmpCamera.isStreaming) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
-        overlayHandler.removeCallbacksAndMessages(null); chatHandler.removeCallbacksAndMessages(null); timerHandler.removeCallbacksAndMessages(null); tickerHandler.removeCallbacksAndMessages(null); webSyncHandler.removeCallbacksAndMessages(null)
-        bitmapA?.let { if (!it.isRecycled) it.recycle() }; bitmapA = null; canvasA = null; bitmapB?.let { if (!it.isRecycled) it.recycle() }; bitmapB = null; canvasB = null
-    }
-
-    override fun surfaceCreated(holder: SurfaceHolder) {}
-    
-    // NEVER DISCONNECT FIX: Safe Restore from App Switch
-    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) { 
-        openGlView.setAspectRatioMode(AspectRatioMode.Fill) 
-        surfaceReady = true 
-        if (!rtmpCamera.isOnPreview) { 
-            tryStartCameraPreview() 
-            if (rtmpCamera.isStreaming && !isCameraMuted) {
-                // ऐप स्विच से वापस आने पर स्लेट हटाएं (अगर खुद से म्यूट न किया हो)
-                ivStreamSlate.visibility = View.GONE
-            }
-        } 
-    }
-    
-    // NEVER DISCONNECT FIX: Safe Backgrounding
-    override fun surfaceDestroyed(holder: SurfaceHolder) { 
-        surfaceReady = false
-        if (rtmpCamera.isStreaming) {
-            // स्ट्रीम को बचाएं (Never Disconnect)!
-            // सिर्फ कैमरा सरफेस रोकें। YouTube इसे 'Pause' मानेगा।
-            runOnUiThread {
-                ivStreamSlate.visibility = View.VISIBLE
-                if (pendingThumbnailUri != null) ivStreamSlate.setImageURI(pendingThumbnailUri) 
-                else ivStreamSlate.setBackgroundColor(Color.parseColor("#121212"))
-            }
-            try { rtmpCamera.stopPreview() } catch (e: Exception) {}
-        } else if (rtmpCamera.isOnPreview) {
-            try { rtmpCamera.stopPreview() } catch (e: Exception) {}
-        }
-    }
-    
-    override fun onAuthError() { runOnUiThread { Toast.makeText(this, "Auth Error", Toast.LENGTH_SHORT).show() } }
-    override fun onAuthSuccess() { runOnUiThread { Toast.makeText(this, "Auth Success", Toast.LENGTH_SHORT).show() } }
-    override fun onConnectionStarted(url: String) {}
-    override fun onNewBitrate(bitrate: Long) { if (rtmpCamera.isStreaming) { try { rtmpCamera.setVideoBitrateOnFly(bitrate.toInt()) } catch (e: Exception) {} } }
-}
+            else { rtmpCamera.disableAudio(); isAudioMuted = true; btnMicToggle.setImageResource(R.drawable.ic_mic_off)
