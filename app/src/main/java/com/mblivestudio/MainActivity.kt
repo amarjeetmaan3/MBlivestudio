@@ -46,7 +46,6 @@ internal enum class MicRoute { PHONE, BLUETOOTH, WIRED }
 
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
-    // PRIVACY SLATE VARIABLES ADDED
     companion object {
         var globalPrivacyMode = false
         var globalSlateBitmap: Bitmap? = null
@@ -59,8 +58,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal val cameraLayoutFilter = CameraLayoutFilterRender()
 
     internal lateinit var ivStreamSlate: ImageView
-
-    // BACKGROUND RUNNING TIMER ADDED
     internal var overlayTimer: Timer? = null
 
     internal lateinit var dragScoreboard: LinearLayout
@@ -118,6 +115,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal var pendingRefresh = false
     internal var refreshQueued = false
     internal var surfaceReady = false
+    internal var isBackgrounded = false // Lock screen surface safety
 
     internal var bitmapA: Bitmap? = null
     internal var canvasA: Canvas? = null
@@ -182,7 +180,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // PRIVACY SLATE LOGIC (For background/local cache)
     internal fun saveSlateToCache(uri: android.net.Uri) {
         try {
             val inputStream = contentResolver.openInputStream(uri)
@@ -220,7 +217,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         updateSnapshot(0)
     }
 
-    // ORIENTATION LOCK LOGIC: Locks to current mode allowing 180 flip
     internal fun lockOrientation() {
         val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         requestedOrientation = if (isLandscape) {
@@ -230,7 +226,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // ORIENTATION UNLOCK: Returns to free auto-rotation
     internal fun unlockOrientation() {
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER
     }
@@ -241,7 +236,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         System.setProperty("java.net.preferIPv6Addresses", "false")
     }
 
-    // AUTO ROTATE HANDLING
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         if (!rtmpCamera.isStreaming) {
@@ -282,12 +276,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         
-        loadSlateFromCache() // Load cached slate on start
-
-        // Let the device auto-rotate initially
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER
+        loadSlateFromCache()
 
-        // Set initial stream dimensions based on starting orientation
         val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         val maxDim = maxOf(streamWidth, streamHeight)
         val minDim = minOf(streamWidth, streamHeight)
@@ -337,7 +328,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
         overlayContainer.x = 0f; overlayContainer.y = 0f
 
-        // Add Slate View to container
         ivStreamSlate = ImageView(this).apply {
             layoutParams = RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             scaleType = ImageView.ScaleType.CENTER_CROP
@@ -346,7 +336,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
         overlayContainer.addView(ivStreamSlate, 0)
 
-        // START TIMER FOR BACKGROUND RUNNING (LOCK SCREEN OVERLAYS)
         overlayTimer = Timer()
         overlayTimer?.scheduleAtFixedRate(object : TimerTask() {
             override fun run() {
@@ -361,6 +350,20 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         scoreSubText = findViewById(R.id.scoreSubText)
 
         btnGoLive = findViewById(R.id.btnGoLive)
+        
+        val prefs = getSharedPreferences("LiveAppPrefs", Context.MODE_PRIVATE)
+        if (prefs.getBoolean("is_live", false)) {
+            val savedUrl = prefs.getString("rtmp_url", null)
+            if (savedUrl != null) {
+                generatedRtmpUrl = savedUrl
+                btnGoLive.text = "RECONNECTING..."
+                btnGoLive.isEnabled = false
+                Handler(Looper.getMainLooper()).postDelayed({
+                    try { rtmpCamera.startStream(savedUrl) } catch (e: Exception) {}
+                }, 4000)
+            }
+        }
+
         btnStreamsManager = findViewById(R.id.btnStreamsManager)
         ivProfilePhoto = findViewById(R.id.ivProfilePhoto)
         tvLiveTimer = findViewById(R.id.tvLiveTimer)
@@ -514,13 +517,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             toggleBluetoothMic(btnBluetoothMic)
         }
 
-        // BASE FILE LOGIC FOR btnOrientation MAINTAINED EXACTLY AS IS
         btnOrientation.setOnClickListener {
             if (rtmpCamera.isStreaming) {
                 Toast.makeText(this, "Stop stream to change orientation", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            // Manual toggle for requested orientation if auto-rotate is off
             val currentIsLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
             requestedOrientation = if (currentIsLandscape) ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE
         }
@@ -586,26 +587,68 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         btnStreamsManager.setOnClickListener { showSavedStreamsManager() }
 
         btnGoLive.setOnClickListener {
-            if (rtmpCamera.isStreaming) { AlertDialog.Builder(this).setTitle("Stop Live Stream?").setMessage("This will end your broadcast on YouTube.").setPositiveButton("End Stream") { _, _ -> stopLiveStream() }.setNegativeButton("Cancel", null).show(); return@setOnClickListener }
+            if (rtmpCamera.isStreaming) { 
+                AlertDialog.Builder(this).setTitle("Stop Live Stream?").setMessage("This will end your broadcast on YouTube.").setPositiveButton("End Stream") { _, _ -> 
+                    val prefs = getSharedPreferences("LiveAppPrefs", Context.MODE_PRIVATE)
+                    prefs.edit().clear().apply()
+                    stopLiveStream() 
+                }.setNegativeButton("Cancel", null).show()
+                return@setOnClickListener 
+            }
             if (!rtmpCamera.isOnPreview) { tryStartCameraPreview(); Toast.makeText(this, "Camera starting, try LIVE again in a moment.", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
             val currentAccount = GoogleSignIn.getLastSignedInAccount(this)
             if (currentAccount == null) { Toast.makeText(this, "Please Sign In with YouTube first!", Toast.LENGTH_SHORT).show(); startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST); return@setOnClickListener }
             if (!GoogleSignIn.hasPermissions(currentAccount, Scope("https://www.googleapis.com/auth/youtube"))) { GoogleSignIn.requestPermissions(this, REQUEST_AUTHORIZATION, currentAccount, Scope("https://www.googleapis.com/auth/youtube")); return@setOnClickListener }
             
-            // LOCK THE ORIENTATION BEFORE GOING LIVE
             lockOrientation()
             showGoLiveDialog()
         }
         makeDraggableAndScalable(dragScoreboard)
     }
 
-    override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "Connected! Going live on YouTube...", Toast.LENGTH_LONG).show(); startStudioTimer() }; ensureBroadcastGoesLive() }
-    
-    override fun onConnectionFailed(reason: String) {
-        if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { retryCount++; runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }; Thread { Thread.sleep(2000); try { rtmpCamera.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} }.start() } else { StreamingService.stop(this@MainActivity); runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; unlockOrientation(); tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show(); stopChatPolling(); stopStudioTimer() } }
+    override fun onConnectionSuccess() { 
+        runOnUiThread { 
+            retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935"))
+            val prefs = getSharedPreferences("LiveAppPrefs", Context.MODE_PRIVATE)
+            prefs.edit().putBoolean("is_live", true).putString("rtmp_url", generatedRtmpUrl).apply()
+            Toast.makeText(this@MainActivity, "Connected! Going live on YouTube...", Toast.LENGTH_LONG).show(); startStudioTimer() 
+        }
+        ensureBroadcastGoesLive() 
     }
     
-    override fun onDisconnect() { StreamingService.stop(this@MainActivity); runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F")); try { rtmpCamera.stopPreview() } catch (e: Exception) {}; unlockOrientation(); tryStartCameraPreview(); stopChatPolling(); stopStudioTimer() } }
+    override fun onConnectionFailed(reason: String) {
+        if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { 
+            retryCount++
+            runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }
+            Thread { Thread.sleep(2000); try { rtmpCamera.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} }.start() 
+        } else { 
+            StreamingService.stop(this@MainActivity)
+            runOnUiThread { 
+                val prefs = getSharedPreferences("LiveAppPrefs", Context.MODE_PRIVATE)
+                prefs.edit().clear().apply()
+                try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+                unlockOrientation()
+                tryStartCameraPreview()
+                btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true
+                try { rtmpCamera.stopStream() } catch (e: Exception) {}
+                Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show()
+                stopChatPolling(); stopStudioTimer() 
+            } 
+        }
+    }
+    
+    override fun onDisconnect() { 
+        StreamingService.stop(this@MainActivity)
+        runOnUiThread { 
+            val prefs = getSharedPreferences("LiveAppPrefs", Context.MODE_PRIVATE)
+            prefs.edit().clear().apply()
+            btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F"))
+            try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+            unlockOrientation()
+            tryStartCameraPreview()
+            stopChatPolling(); stopStudioTimer() 
+        } 
+    }
     
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) { super.onRequestPermissionsResult(requestCode, permissions, grantResults); tryStartCameraPreview() }
 
@@ -626,7 +669,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 PICK_THUMBNAIL_REQUEST -> { 
                     pendingThumbnailUri = data.data
                     thumbnailPreviewImageView?.setImageURI(pendingThumbnailUri)
-                    pendingThumbnailUri?.let { saveSlateToCache(it) } // Save slate for background cache
+                    pendingThumbnailUri?.let { saveSlateToCache(it) } 
                 }
                 SIGN_IN_REQUEST -> {
                     val task = GoogleSignIn.getSignedInAccountFromIntent(data)
@@ -636,9 +679,21 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    override fun onPause() { super.onPause(); if (!rtmpCamera.isStreaming) { if (rtmpCamera.isOnPreview) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} } } }
+    override fun onPause() { 
+        super.onPause()
+        if (!rtmpCamera.isStreaming && rtmpCamera.isOnPreview) { 
+            try { rtmpCamera.stopPreview() } catch (e: Exception) {} 
+        } 
+    }
 
-    override fun onResume() { super.onResume(); if (rtmpCamera.isStreaming) { if (surfaceReady) { try { rtmpCamera.startPreview() } catch (e: Exception) { e.printStackTrace() } } } else if (surfaceReady) { tryStartCameraPreview() } }
+    override fun onResume() { 
+        super.onResume() 
+        if (rtmpCamera.isStreaming) { 
+            // Lock screen se aane par replaceView surfaceChanged mein chalega
+        } else if (surfaceReady) { 
+            tryStartCameraPreview() 
+        } 
+    }
 
     override fun onDestroy() {
         super.onDestroy()
@@ -650,8 +705,29 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {}
-    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) { openGlView.setAspectRatioMode(AspectRatioMode.Fill); surfaceReady = true; if (!rtmpCamera.isOnPreview) { tryStartCameraPreview() } }
-    override fun surfaceDestroyed(holder: SurfaceHolder) { surfaceReady = false; if (!rtmpCamera.isStreaming && rtmpCamera.isOnPreview) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} } }
+    
+    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) { 
+        openGlView.setAspectRatioMode(AspectRatioMode.Fill) 
+        surfaceReady = true 
+        
+        if (isBackgrounded && rtmpCamera.isStreaming) {
+            try { rtmpCamera.replaceView(openGlView) } catch (e: Exception) {}
+            isBackgrounded = false
+        } else if (!rtmpCamera.isOnPreview) { 
+            tryStartCameraPreview() 
+        } 
+    }
+    
+    override fun surfaceDestroyed(holder: SurfaceHolder) { 
+        surfaceReady = false
+        isBackgrounded = true
+        if (rtmpCamera.isStreaming) {
+            try { rtmpCamera.replaceView(this) } catch (e: Exception) {}
+        } else if (rtmpCamera.isOnPreview) {
+            try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+        }
+    }
+    
     override fun onAuthError() { runOnUiThread { Toast.makeText(this, "Auth Error", Toast.LENGTH_SHORT).show() } }
     override fun onAuthSuccess() { runOnUiThread { Toast.makeText(this, "Auth Success", Toast.LENGTH_SHORT).show() } }
     override fun onConnectionStarted(url: String) {}
