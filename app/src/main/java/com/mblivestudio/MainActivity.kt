@@ -44,7 +44,7 @@ internal enum class MicRoute { PHONE, BLUETOOTH, WIRED }
 
 class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
-    // GLOBAL MEMORY FIX: यह कभी डिलीट नहीं होगा, चाहे ऐप स्विच हो या घूमे
+    // GLOBAL MEMORY: यह कभी डिलीट नहीं होगा, चाहे ऐप स्विच हो या घूमे
     companion object {
         @SuppressLint("StaticFieldLeak")
         var activeRtmpCamera: RtmpCamera2? = null
@@ -52,6 +52,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         var globalSlateBitmap: Bitmap? = null
         var globalThumbnailUri: android.net.Uri? = null
     }
+
+    // BACKWARD COMPATIBILITY: Dialogs.kt और YouTubeApi.kt के लिए लिंकर
+    internal var pendingThumbnailUri: android.net.Uri?
+        get() = globalThumbnailUri
+        set(value) { globalThumbnailUri = value }
 
     internal lateinit var rtmpCamera: RtmpCamera2
     internal lateinit var openGlView: OpenGlView
@@ -192,7 +197,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         updateSnapshot(0)
     }
 
-    // SMART LOCK: अगर लैंडस्केप में लाइव किया है, तो ऐप लैंडस्केप में ही लॉक रहेगा (सेंसर से 180 घूमेगा, पर पोर्ट्रेट नहीं होगा)
     internal fun lockOrientation() {
         val isLandscape = streamWidth > streamHeight
         requestedOrientation = if (isLandscape) {
@@ -482,7 +486,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     
     override fun onResume() { 
         super.onResume() 
-        // SMART LOCK RE-APPLY: बैकग्राउंड से वापस आने पर भी ऐप को सही एंगल (लैंडस्केप) में धकेलो
         if (activeRtmpCamera?.isStreaming == true) {
             lockOrientation()
         }
