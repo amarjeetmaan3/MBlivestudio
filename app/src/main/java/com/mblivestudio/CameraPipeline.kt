@@ -6,8 +6,11 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.os.Handler
+import android.os.Looper
 import android.view.MotionEvent
 import android.view.WindowManager
+import android.widget.Toast
 
 internal fun MainActivity.tryStartCameraPreview() {
     if (!surfaceReady || rtmpCamera.isOnPreview) return
@@ -81,12 +84,21 @@ internal fun MainActivity.tryStartCameraPreview() {
         imageFilterRender.setPosition(0f, 0f)
         rtmpCamera.getGlInterface().addFilter(imageFilterRender)
 
+        // GRACEFUL CAMERA RESET: अगर कैमरा अटका है तो क्रैश नहीं होगा, क्लीन स्टार्ट लेगा
         try {
             rtmpCamera.startPreview()
             updateSnapshot(1000)
         } catch (e: Exception) {
             e.printStackTrace()
             try { rtmpCamera.stopPreview() } catch (_: Exception) {}
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    rtmpCamera.startPreview()
+                    updateSnapshot(1000)
+                } catch (ex: Exception) {
+                    Toast.makeText(this, "CAMERA ERROR: Restart required", Toast.LENGTH_SHORT).show()
+                }
+            }, 500)
         }
     }
 }
@@ -109,9 +121,8 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
     canvas.scale(1f / fillScale, 1f / fillScale)
     canvas.translate(-xOffset, -yOffset)
     
-    // BLACK SCREEN FIX: अब हम `globalPrivacyMode` और `globalSlateBitmap` का इस्तेमाल कर रहे हैं।
     if (MainActivity.globalPrivacyMode) {
-        canvas.drawColor(Color.parseColor("#121212")) // Black background fallback
+        canvas.drawColor(Color.parseColor("#121212")) 
         MainActivity.globalSlateBitmap?.let { slate ->
             val scale = maxOf(sourceW / slate.width, sourceH / slate.height)
             val sw = slate.width * scale
@@ -136,7 +147,8 @@ internal fun MainActivity.canvasFor(bitmap: Bitmap): Canvas {
 }
 
 internal fun MainActivity.updateSnapshot(delay: Long = 0) {
-    if ((!rtmpCamera.isOnPreview && !rtmpCamera.isStreaming) || overlayContainer.width == 0 || overlayContainer.height == 0) return
+    // LOOP FREEZE FIX: ओवरले खाली होने पर भी लूप नहीं रुकेगा
+    if (!rtmpCamera.isOnPreview && !rtmpCamera.isStreaming) return
     if (pendingRefresh) { refreshQueued = true; return }
     pendingRefresh = true
     overlayHandler.postDelayed({
