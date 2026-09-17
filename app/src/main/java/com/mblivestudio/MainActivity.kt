@@ -50,7 +50,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal lateinit var imageFilterRender: ImageObjectFilterRender
     internal val cameraLayoutFilter = CameraLayoutFilterRender()
 
-    // Slate / Thumbnail Layer for Camera Mute / App Switch
+    // Slate / Thumbnail Layer for Camera Mute / App Switch / Rotation
     internal lateinit var ivStreamSlate: ImageView 
     internal var isCameraMuted = false 
 
@@ -174,14 +174,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // 100% STABLE ORIENTATION LOCK: Prevents 180-flip crashes during live
+    // NEW LOGIC: Lock to FULL_SENSOR. Allows 180 flip but prevents crashes via our Slate System.
     internal fun lockOrientation() {
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LOCKED
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
     }
 
-    // Smart Unlocking when Stream Stops
     internal fun unlockOrientation() {
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_USER
     }
 
     override fun attachBaseContext(newBase: Context?) {
@@ -190,20 +189,37 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         System.setProperty("java.net.preferIPv6Addresses", "false")
     }
 
-    // Pre-Live Auto Rotate Handling
+    // 180° ROTATION & SMART HOT-SWAP FIX
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
-        if (!rtmpCamera.isStreaming) {
-            val isLandscape = newConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-            val maxDim = maxOf(streamWidth, streamHeight)
-            val minDim = minOf(streamWidth, streamHeight)
-            if (isLandscape) { streamWidth = maxDim; streamHeight = minDim } else { streamWidth = minDim; streamHeight = maxDim }
-            if (surfaceReady && rtmpCamera.isOnPreview) {
-                try { rtmpCamera.stopPreview() } catch (e: Exception) {}
-                Handler(Looper.getMainLooper()).postDelayed({ tryStartCameraPreview() }, 300)
-            }
+        
+        // फोन घूमते ही तुरंत स्लेट (Slate) शो करें ताकि दर्शकों को स्क्रीन रोटेशन का झटका न लगे
+        ivStreamSlate.visibility = View.VISIBLE
+        if (pendingThumbnailUri != null) ivStreamSlate.setImageURI(pendingThumbnailUri) 
+        else ivStreamSlate.setBackgroundColor(Color.parseColor("#121212"))
+
+        val isLandscape = newConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        val maxDim = maxOf(streamWidth, streamHeight)
+        val minDim = minOf(streamWidth, streamHeight)
+        
+        if (isLandscape) { streamWidth = maxDim; streamHeight = minDim } 
+        else { streamWidth = minDim; streamHeight = maxDim }
+
+        if (surfaceReady && rtmpCamera.isOnPreview) {
+            // कैमरा रोकें (स्ट्रीम नहीं रुकेगी, वो स्लेट दिखाती रहेगी)
+            try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+            
+            // 500ms का पॉज़ (Slate के पीछे) ताकि एनकोडर और कैमरा नए 180° एंगल पर सेट हो सकें
+            Handler(Looper.getMainLooper()).postDelayed({ 
+                tryStartCameraPreview() 
+                
+                // अगर यूज़र ने खुद से कैमरा म्यूट नहीं किया है, तो 1.5 सेकंड बाद स्लेट हटा दें
+                if (!isCameraMuted) {
+                    Handler(Looper.getMainLooper()).postDelayed({ ivStreamSlate.visibility = View.GONE }, 1500)
+                }
+            }, 500)
         }
-        updateSnapshot()
+        updateSnapshot(0)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -222,8 +238,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         
-        // Start free (Auto Rotate Enabled)
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_USER
 
         val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         val maxDim = maxOf(streamWidth, streamHeight)
@@ -247,14 +262,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         overlayContainer = findViewById(R.id.overlayContainer)
         
-        // SLATE/THUMBNAIL SETUP: Dynamic injection to avoid XML edits
+        // SLATE/THUMBNAIL SETUP
         ivStreamSlate = ImageView(this).apply {
             layoutParams = RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             scaleType = ImageView.ScaleType.CENTER_CROP
-            setBackgroundColor(Color.parseColor("#121212")) // Dark background
+            setBackgroundColor(Color.parseColor("#121212"))
             visibility = View.GONE
         }
-        overlayContainer.addView(ivStreamSlate, 0) // Set behind everything else
+        overlayContainer.addView(ivStreamSlate, 0)
 
         dragScoreboard = findViewById(R.id.dragScoreboard)
         scoreMainText = findViewById(R.id.scoreMainText)
@@ -332,18 +347,14 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val btnMicToggle: ImageButton = findViewById(R.id.btnMicToggle)
         val btnBluetoothMic: ImageButton = findViewById(R.id.btnBluetoothMic)
         
-        // ORIENTATION BUTTON REPLACED WITH 'CAMERA OFF/SLATE' BUTTON
+        // CAMERA OFF / MUTE BUTTON (Build Error Fixed)
         val btnCameraToggle: ImageButton = findViewById(R.id.btnOrientation)
         btnCameraToggle.setImageResource(android.R.drawable.ic_menu_camera)
         btnCameraToggle.setOnClickListener {
             isCameraMuted = !isCameraMuted
             if (isCameraMuted) {
-                // फिक्स: अगर थंबनेल है तो वो दिखेगा, वरना डार्क स्क्रीन (बिना क्रैश के)
-                if (pendingThumbnailUri != null) { 
-                    ivStreamSlate.setImageURI(pendingThumbnailUri) 
-                } else { 
-                    ivStreamSlate.setImageDrawable(null) 
-                }
+                if (pendingThumbnailUri != null) { ivStreamSlate.setImageURI(pendingThumbnailUri) } 
+                else { ivStreamSlate.setBackgroundColor(Color.parseColor("#121212")) }
                 ivStreamSlate.visibility = View.VISIBLE
                 btnCameraToggle.setColorFilter(Color.RED)
             } else {
@@ -436,8 +447,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             if (currentAccount == null) { Toast.makeText(this, "Please Sign In with YouTube first!", Toast.LENGTH_SHORT).show(); startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST); return@setOnClickListener }
             if (!GoogleSignIn.hasPermissions(currentAccount, Scope("https://www.googleapis.com/auth/youtube"))) { GoogleSignIn.requestPermissions(this, REQUEST_AUTHORIZATION, currentAccount, Scope("https://www.googleapis.com/auth/youtube")); return@setOnClickListener }
             
-            // LOCK THE ORIENTATION BEFORE GOING LIVE (Zero Crashing)
-            lockOrientation()
+            lockOrientation() // Enables FULL_SENSOR for 180 flips without crash
             showGoLiveDialog()
         }
         makeDraggableAndScalable(dragScoreboard)
@@ -466,12 +476,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     override fun onPause() { super.onPause(); if (!rtmpCamera.isStreaming && rtmpCamera.isOnPreview) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} } }
     
-    // APP SWITCH FIX: Safe Resume
+    // NEVER DISCONNECT FIX: Safe Resume
     override fun onResume() { 
         super.onResume() 
         if (surfaceReady && !rtmpCamera.isOnPreview) {
             if (rtmpCamera.isStreaming) {
-                try { rtmpCamera.startPreview() } catch (e: Exception) {}
+                tryStartCameraPreview() 
             } else {
                 tryStartCameraPreview()
             }
@@ -487,23 +497,32 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     override fun surfaceCreated(holder: SurfaceHolder) {}
     
-    // APP SWITCH FIX: Safe Restore
+    // NEVER DISCONNECT FIX: Safe Restore from App Switch
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) { 
         openGlView.setAspectRatioMode(AspectRatioMode.Fill) 
         surfaceReady = true 
         if (!rtmpCamera.isOnPreview) { 
-            if (rtmpCamera.isStreaming) {
-                try { rtmpCamera.startPreview() } catch (e: Exception) {}
-            } else {
-                tryStartCameraPreview() 
+            tryStartCameraPreview() 
+            if (rtmpCamera.isStreaming && !isCameraMuted) {
+                // ऐप स्विच से वापस आने पर स्लेट हटाएं (अगर खुद से म्यूट न किया हो)
+                ivStreamSlate.visibility = View.GONE
             }
         } 
     }
     
-    // APP SWITCH FIX: Safe Pause without killing stream
+    // NEVER DISCONNECT FIX: Safe Backgrounding
     override fun surfaceDestroyed(holder: SurfaceHolder) { 
         surfaceReady = false
-        if (rtmpCamera.isOnPreview) {
+        if (rtmpCamera.isStreaming) {
+            // स्ट्रीम को बचाएं (Never Disconnect)!
+            // सिर्फ कैमरा सरफेस रोकें। YouTube इसे 'Pause' मानेगा।
+            runOnUiThread {
+                ivStreamSlate.visibility = View.VISIBLE
+                if (pendingThumbnailUri != null) ivStreamSlate.setImageURI(pendingThumbnailUri) 
+                else ivStreamSlate.setBackgroundColor(Color.parseColor("#121212"))
+            }
+            try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+        } else if (rtmpCamera.isOnPreview) {
             try { rtmpCamera.stopPreview() } catch (e: Exception) {}
         }
     }
