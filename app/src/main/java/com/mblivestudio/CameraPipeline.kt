@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.view.MotionEvent
+import android.view.View
 import android.widget.Toast
 
 internal fun MainActivity.tryStartCameraPreview() {
@@ -126,10 +127,27 @@ internal fun MainActivity.updateSnapshot(delay: Long = 100) {
     if (!rtmpCamera.isOnPreview || overlayContainer.width == 0 || overlayContainer.height == 0) return
     if (pendingRefresh) { refreshQueued = true; return }
     pendingRefresh = true
+    
+    // SMART REDRAW: Lock screen par 1 FPS (1000ms) ki speed, taaki phone garam na ho.
+    val smartDelay = if (isBackgrounded) maxOf(delay, 1000L) else delay
+
     overlayHandler.postDelayed({
         try {
             val w = streamWidth.coerceAtLeast(1)
             val h = streamHeight.coerceAtLeast(1)
+            
+            // FORCED LAYOUT & MEASURE (Lock Screen UI Hack)
+            if (isBackgrounded) {
+                val cw = if (overlayContainer.width > 0) overlayContainer.width else w
+                val ch = if (overlayContainer.height > 0) overlayContainer.height else h
+                
+                overlayContainer.measure(
+                    View.MeasureSpec.makeMeasureSpec(cw, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(ch, View.MeasureSpec.EXACTLY)
+                )
+                overlayContainer.layout(0, 0, cw, ch)
+            }
+
             useBufferA = !useBufferA
             if (useBufferA) {
                 if (bitmapA == null || bitmapA!!.isRecycled || bitmapA!!.width != w || bitmapA!!.height != h) {
@@ -146,7 +164,7 @@ internal fun MainActivity.updateSnapshot(delay: Long = 100) {
             pendingRefresh = false
             if (refreshQueued) { refreshQueued = false; updateSnapshot(0) }
         }
-    }, delay)
+    }, smartDelay)
 }
 
 internal fun MainActivity.sendSyntheticZoomEvent(action: Int, pointerDistance: Float, delta: Float) {
