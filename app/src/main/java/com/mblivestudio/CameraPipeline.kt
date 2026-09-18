@@ -18,8 +18,8 @@ internal fun MainActivity.tryStartCameraPreview() {
     val isPortrait = streamHeight > streamWidth
     
     // ENCODER ERROR FIX: 
-    // à¤¹à¤¾à¤°à¥à¤¡à¤µà¥‡à¤¯à¤° à¤à¤¨à¤•à¥‹à¤¡à¤° à¤•à¥‹ à¤¹à¤®à¥‡à¤¶à¤¾ à¤²à¥ˆà¤‚à¤¡à¤¸à¥à¤•à¥‡à¤ª à¤¡à¤¾à¤‡à¤®à¥‡à¤‚à¤¶à¤¨ à¤¦à¥‡à¤‚à¤—à¥‡ (à¤¤à¤¾à¤•à¤¿ à¤µà¤¹ à¤•à¥à¤°à¥ˆà¤¶ à¤¨ à¤¹à¥‹)à¥¤
-    // à¤²à¥‡à¤•à¤¿à¤¨ OpenGL à¤•à¥‹ à¤¬à¤¤à¤¾ à¤¦à¥‡à¤‚à¤—à¥‡ à¤•à¤¿ à¤•à¥ˆà¤®à¤°à¤¾ 90 à¤¡à¤¿à¤—à¥à¤°à¥€ à¤˜à¥à¤®à¤¾à¤¨à¤¾ à¤¹à¥ˆà¥¤
+    // हार्डवेयर एनकोडर को हमेशा लैंडस्केप डाइमेंशन देंगे (ताकि वह क्रैश न हो)।
+    // लेकिन OpenGL को बता देंगे कि कैमरा 90 डिग्री घुमाना है।
     val encWidth = if (isPortrait) streamHeight else streamWidth
     val encHeight = if (isPortrait) streamWidth else streamHeight
     val rotation = if (isPortrait) 90 else 0
@@ -35,10 +35,10 @@ internal fun MainActivity.tryStartCameraPreview() {
         val fpsCandidates = if (streamFps == 30) intArrayOf(30) else intArrayOf(streamFps, 30)
         for (fps in fpsCandidates) {
             try {
-                // OpenGL à¤°à¥‹à¤Ÿà¥‡à¤¶à¤¨ à¤•à¤¾ à¤‡à¤¸à¥à¤¤à¥‡à¤®à¤¾à¤² à¤•à¤°à¤•à¥‡ à¤¹à¤¾à¤°à¥à¤¡à¤µà¥‡à¤¯à¤° à¤•à¥‹ à¤šà¤•à¤®à¤¾ à¤¦à¥‡à¤¨à¤¾ (Bypass Hardware Restriction)
+                // OpenGL रोटेशन का इस्तेमाल करके हार्डवेयर को चकमा देना (Bypass Hardware Restriction)
                 if (rtmpCamera.prepareVideo(res.first, res.second, fps, res.third, 2, rotation)) {
                     
-                    // à¤µà¥‡à¤°à¤¿à¤à¤¬à¤²à¥à¤¸ à¤•à¥‹ à¤µà¤¾à¤ªà¤¸ à¤…à¤¸à¤²à¥€ à¤¸à¥à¤•à¥à¤°à¥€à¤¨ à¤¸à¤¾à¤‡à¤œà¤¼ à¤ªà¤° à¤¸à¥‡à¤Ÿ à¤•à¤°à¤¨à¤¾
+                    // वेरिएबल्स को वापस असली स्क्रीन साइज़ पर सेट करना
                     streamWidth = if (isPortrait) res.second else res.first
                     streamHeight = if (isPortrait) res.first else res.second
                     streamBitrate = res.third
