@@ -169,16 +169,15 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // MANUAL RECONNECT: Show manager dialog allowing user to resume an interrupted stream (API Check Added)
+    // MANUAL RECONNECT: Show manager dialog allowing user to resume an interrupted stream
     internal fun showSavedStreamsManager() {
         val prefs = getSharedPreferences("LiveAppPrefs", Context.MODE_PRIVATE)
         val isLive = prefs.getBoolean("is_live", false)
         val savedUrl = prefs.getString("rtmp_url", null)
-        val savedBroadcastId = prefs.getString("broadcast_id", null)
 
         val options = mutableListOf<String>()
         if (isLive && savedUrl != null) {
-            options.add("🔴 Resume Interrupted Stream")
+            options.add("ðŸ”´ Resume Interrupted Stream")
         }
         options.add("Create New Stream Schedule")
         options.add("View Past Streams")
@@ -187,61 +186,16 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             .setTitle("Streams Manager")
             .setItems(options.toTypedArray()) { _, which ->
                 val selected = options[which]
-                if (selected == "🔴 Resume Interrupted Stream" && savedUrl != null) {
-                    
-                    if (youtubeClient == null) {
-                        Toast.makeText(this, "YouTube client is not ready. Please tap 'GO LIVE' once to initialize, cancel, and try again.", Toast.LENGTH_LONG).show()
-                        return@setItems
-                    }
-
-                    btnGoLive.text = "CHECKING STATUS..."
+                if (selected == "ðŸ”´ Resume Interrupted Stream" && savedUrl != null) {
+                    generatedRtmpUrl = savedUrl
+                    btnGoLive.text = "CONNECTING..."
                     btnGoLive.isEnabled = false
                     lockOrientation()
-
                     Thread {
-                        var canResume = true
-                        var statusStr = "unknown"
-
-                        if (savedBroadcastId != null) {
-                            try {
-                                val response = youtubeClient!!.liveBroadcasts().list("status").setId(savedBroadcastId).execute()
-                                if (!response.items.isNullOrEmpty()) {
-                                    val status = response.items[0].status.lifeCycleStatus
-                                    statusStr = status ?: "unknown"
-                                    if (statusStr == "complete" || statusStr == "revoked" || statusStr == "rejected") {
-                                        canResume = false
-                                    }
-                                }
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
-                        }
-
-                        runOnUiThread {
-                            if (!canResume) {
-                                unlockOrientation()
-                                btnGoLive.text = "GO LIVE"
-                                btnGoLive.isEnabled = true
-                                prefs.edit().clear().apply()
-                                AlertDialog.Builder(this@MainActivity)
-                                    .setTitle("Stream Ended")
-                                    .setMessage("YouTube has already marked this broadcast as '$statusStr'. It cannot be resumed. Please create a new stream.")
-                                    .setPositiveButton("OK", null)
-                                    .show()
-                            } else {
-                                generatedRtmpUrl = savedUrl
-                                btnGoLive.text = "CONNECTING..."
-                                if (savedBroadcastId != null && statusStr != "unknown") {
-                                    Toast.makeText(this@MainActivity, "Broadcast is active ($statusStr). Resuming...", Toast.LENGTH_SHORT).show()
-                                }
-                                Thread {
-                                    try {
-                                        rtmpCamera.startStream(savedUrl)
-                                    } catch (e: Exception) {
-                                        e.printStackTrace()
-                                    }
-                                }.start()
-                            }
+                        try {
+                            rtmpCamera.startStream(savedUrl)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
                         }
                     }.start()
                 } else if (selected == "Create New Stream Schedule") {
@@ -630,14 +584,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         runOnUiThread { 
             retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935"))
             
-            // SAVE STATE FOR MANUAL RECONNECT (INCLUDING BROADCAST ID)
+            // SAVE STATE FOR MANUAL RECONNECT
             val prefs = getSharedPreferences("LiveAppPrefs", Context.MODE_PRIVATE)
-            prefs.edit()
-                .putBoolean("is_live", true)
-                .putString("rtmp_url", generatedRtmpUrl)
-                .putString("broadcast_id", currentBroadcastId)
-                .putString("stream_id", currentStreamId)
-                .apply()
+            prefs.edit().putBoolean("is_live", true).putString("rtmp_url", generatedRtmpUrl).apply()
             
             Toast.makeText(this@MainActivity, "Connected! Going live on YouTube...", Toast.LENGTH_LONG).show()
             startStudioTimer() 
@@ -734,4 +683,5 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onAuthSuccess() { runOnUiThread { Toast.makeText(this, "Auth Success", Toast.LENGTH_SHORT).show() } }
     override fun onConnectionStarted(url: String) {}
     override fun onNewBitrate(bitrate: Long) { if (rtmpCamera.isStreaming) { try { rtmpCamera.setVideoBitrateOnFly(bitrate.toInt()) } catch (e: Exception) {} } }
+}
 }
