@@ -105,6 +105,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal var pendingRefresh = false
     internal var refreshQueued = false
     internal var surfaceReady = false
+    internal var isBackgrounded = false // BACKGROUND FEATURE ADDED
 
     internal var bitmapA: Bitmap? = null
     internal var canvasA: Canvas? = null
@@ -526,7 +527,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         makeDraggableAndScalable(dragScoreboard)
     }
 
-    override fun onConnectionSuccess() { runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "Connected! Going live on YouTube...", Toast.LENGTH_LONG).show(); startStudioTimer() }; ensureBroadcastGoesLive() }
+    override fun onConnectionSuccess() { 
+        try { StreamingService.start(this@MainActivity) } catch (e: Exception) {} // BACKGROUND FEATURE ADDED
+        runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "Connected! Going live on YouTube...", Toast.LENGTH_LONG).show(); startStudioTimer() }; ensureBroadcastGoesLive() 
+    }
     
     override fun onConnectionFailed(reason: String) {
         if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { retryCount++; runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }; Thread { Thread.sleep(2000); try { rtmpCamera.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} }.start() } else { StreamingService.stop(this@MainActivity); runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; unlockOrientation(); tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show(); stopChatPolling(); stopStudioTimer() } }
@@ -571,8 +575,30 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {}
-    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) { openGlView.setAspectRatioMode(AspectRatioMode.Fill); surfaceReady = true; if (!rtmpCamera.isOnPreview) { tryStartCameraPreview() } }
-    override fun surfaceDestroyed(holder: SurfaceHolder) { surfaceReady = false; if (!rtmpCamera.isStreaming && rtmpCamera.isOnPreview) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} } }
+    
+    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) { 
+        openGlView.setAspectRatioMode(AspectRatioMode.Fill)
+        surfaceReady = true
+        
+        if (isBackgrounded && rtmpCamera.isStreaming) { // BACKGROUND FEATURE ADDED
+            try { rtmpCamera.replaceView(openGlView) } catch (e: Exception) {}
+            isBackgrounded = false
+        } else if (!rtmpCamera.isOnPreview) { 
+            tryStartCameraPreview() 
+        } 
+    }
+    
+    override fun surfaceDestroyed(holder: SurfaceHolder) { 
+        surfaceReady = false
+        isBackgrounded = true // BACKGROUND FEATURE ADDED
+        
+        if (rtmpCamera.isStreaming) {
+            try { rtmpCamera.replaceView(this) } catch (e: Exception) {}
+        } else if (rtmpCamera.isOnPreview) { 
+            try { rtmpCamera.stopPreview() } catch (e: Exception) {} 
+        } 
+    }
+    
     override fun onAuthError() { runOnUiThread { Toast.makeText(this, "Auth Error", Toast.LENGTH_SHORT).show() } }
     override fun onAuthSuccess() { runOnUiThread { Toast.makeText(this, "Auth Success", Toast.LENGTH_SHORT).show() } }
     override fun onConnectionStarted(url: String) {}
