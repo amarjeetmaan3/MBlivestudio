@@ -16,7 +16,7 @@ internal fun MainActivity.tryStartCameraPreview() {
     var isSuccess = false
 
     val isPortrait = streamHeight > streamWidth
-    
+
     val encWidth = if (isPortrait) streamHeight else streamWidth
     val encHeight = if (isPortrait) streamWidth else streamHeight
     val rotation = if (isPortrait) 90 else 0
@@ -89,19 +89,25 @@ internal fun MainActivity.tryStartCameraPreview() {
     }
 }
 
-// CLAUDE'S FIX: Hard-timeout stop so a stuck ghost-session socket can't crash the encoder.
+// ENCODER CRASH FIX (v2): stopStream() can hang forever if the RTMP sender
+// thread is stuck waiting on a server that has stopped ACKing (the YouTube
+// "ghost session" buffering case). A plain try/catch does not help there,
+// since the call never throws -- it just never returns. This runs the stop
+// on its own thread with a hard timeout: if it doesn't finish in 3s, we
+// abandon that thread and rebuild the camera pipeline instead of letting
+// the app hang or crash on a wedged MediaCodec.
 internal fun MainActivity.safeStopStream() {
     val stopper = Thread {
         try { rtmpCamera.stopStream() } catch (e: Exception) { e.printStackTrace() }
     }
     stopper.isDaemon = true
     stopper.start()
-    stopper.join(3000) // 3 seconds timeout
+    stopper.join(3000)
 
     if (stopper.isAlive) {
         try { rtmpCamera.stopPreview() } catch (_: Exception) {}
         runOnUiThread {
-            Toast.makeText(this, "Stream socket was stuck — pipeline reset.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Stream socket was stuck -- pipeline reset.", Toast.LENGTH_LONG).show()
             tryStartCameraPreview()
         }
     }
@@ -121,10 +127,10 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
 
     val save = canvasFor(bitmap).save()
     val canvas = canvasFor(bitmap)
-    
+
     canvas.scale(1f / fillScale, 1f / fillScale)
     canvas.translate(-xOffset, -yOffset)
-    
+
     overlayContainer.draw(canvas)
     canvas.restoreToCount(save)
 }
@@ -169,7 +175,7 @@ internal fun MainActivity.sendSyntheticZoomEvent(action: Int, pointerDistance: F
     event.recycle()
 }
 
-internal fun MainActivity.applyCameraLayout(rect: FloatArray) { 
+internal fun MainActivity.applyCameraLayout(rect: FloatArray) {
     cameraLayoutFilter.setRect(rect[0], rect[1], rect[2], rect[3])
-    cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f) 
+    cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f)
 }
