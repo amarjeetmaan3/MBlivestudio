@@ -16,7 +16,10 @@ internal fun MainActivity.tryStartCameraPreview() {
     var isSuccess = false
 
     val isPortrait = streamHeight > streamWidth
-
+    
+    // ENCODER ERROR FIX: 
+    // à¤¹à¤¾à¤°à¥à¤¡à¤µà¥‡à¤¯à¤° à¤à¤¨à¤•à¥‹à¤¡à¤° à¤•à¥‹ à¤¹à¤®à¥‡à¤¶à¤¾ à¤²à¥ˆà¤‚à¤¡à¤¸à¥à¤•à¥‡à¤ª à¤¡à¤¾à¤‡à¤®à¥‡à¤‚à¤¶à¤¨ à¤¦à¥‡à¤‚à¤—à¥‡ (à¤¤à¤¾à¤•à¤¿ à¤µà¤¹ à¤•à¥à¤°à¥ˆà¤¶ à¤¨ à¤¹à¥‹)à¥¤
+    // à¤²à¥‡à¤•à¤¿à¤¨ OpenGL à¤•à¥‹ à¤¬à¤¤à¤¾ à¤¦à¥‡à¤‚à¤—à¥‡ à¤•à¤¿ à¤•à¥ˆà¤®à¤°à¤¾ 90 à¤¡à¤¿à¤—à¥à¤°à¥€ à¤˜à¥à¤®à¤¾à¤¨à¤¾ à¤¹à¥ˆà¥¤
     val encWidth = if (isPortrait) streamHeight else streamWidth
     val encHeight = if (isPortrait) streamWidth else streamHeight
     val rotation = if (isPortrait) 90 else 0
@@ -32,7 +35,10 @@ internal fun MainActivity.tryStartCameraPreview() {
         val fpsCandidates = if (streamFps == 30) intArrayOf(30) else intArrayOf(streamFps, 30)
         for (fps in fpsCandidates) {
             try {
+                // OpenGL à¤°à¥‹à¤Ÿà¥‡à¤¶à¤¨ à¤•à¤¾ à¤‡à¤¸à¥à¤¤à¥‡à¤®à¤¾à¤² à¤•à¤°à¤•à¥‡ à¤¹à¤¾à¤°à¥à¤¡à¤µà¥‡à¤¯à¤° à¤•à¥‹ à¤šà¤•à¤®à¤¾ à¤¦à¥‡à¤¨à¤¾ (Bypass Hardware Restriction)
                 if (rtmpCamera.prepareVideo(res.first, res.second, fps, res.third, 2, rotation)) {
+                    
+                    // à¤µà¥‡à¤°à¤¿à¤à¤¬à¤²à¥à¤¸ à¤•à¥‹ à¤µà¤¾à¤ªà¤¸ à¤…à¤¸à¤²à¥€ à¤¸à¥à¤•à¥à¤°à¥€à¤¨ à¤¸à¤¾à¤‡à¤œà¤¼ à¤ªà¤° à¤¸à¥‡à¤Ÿ à¤•à¤°à¤¨à¤¾
                     streamWidth = if (isPortrait) res.second else res.first
                     streamHeight = if (isPortrait) res.first else res.second
                     streamBitrate = res.third
@@ -89,30 +95,6 @@ internal fun MainActivity.tryStartCameraPreview() {
     }
 }
 
-// ENCODER CRASH FIX (v2): stopStream() can hang forever if the RTMP sender
-// thread is stuck waiting on a server that has stopped ACKing (the YouTube
-// "ghost session" buffering case). A plain try/catch does not help there,
-// since the call never throws -- it just never returns. This runs the stop
-// on its own thread with a hard timeout: if it doesn't finish in 3s, we
-// abandon that thread and rebuild the camera pipeline instead of letting
-// the app hang or crash on a wedged MediaCodec.
-internal fun MainActivity.safeStopStream() {
-    val stopper = Thread {
-        try { rtmpCamera.stopStream() } catch (e: Exception) { e.printStackTrace() }
-    }
-    stopper.isDaemon = true
-    stopper.start()
-    stopper.join(3000)
-
-    if (stopper.isAlive) {
-        try { rtmpCamera.stopPreview() } catch (_: Exception) {}
-        runOnUiThread {
-            Toast.makeText(this, "Stream socket was stuck -- pipeline reset.", Toast.LENGTH_LONG).show()
-            tryStartCameraPreview()
-        }
-    }
-}
-
 internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
     val sourceW = overlayContainer.width.toFloat()
     val sourceH = overlayContainer.height.toFloat()
@@ -121,16 +103,17 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
     val targetW = bitmap.width.toFloat()
     val targetH = bitmap.height.toFloat()
 
+    // 100% "Full Fill View" Ghosting Fix (Mathematical Reverse Scale)
     val fillScale = maxOf(sourceW / targetW, sourceH / targetH)
     val xOffset = (sourceW - targetW * fillScale) / 2f
     val yOffset = (sourceH - targetH * fillScale) / 2f
 
     val save = canvasFor(bitmap).save()
     val canvas = canvasFor(bitmap)
-
+    
     canvas.scale(1f / fillScale, 1f / fillScale)
     canvas.translate(-xOffset, -yOffset)
-
+    
     overlayContainer.draw(canvas)
     canvas.restoreToCount(save)
 }
@@ -175,7 +158,7 @@ internal fun MainActivity.sendSyntheticZoomEvent(action: Int, pointerDistance: F
     event.recycle()
 }
 
-internal fun MainActivity.applyCameraLayout(rect: FloatArray) {
+internal fun MainActivity.applyCameraLayout(rect: FloatArray) { 
     cameraLayoutFilter.setRect(rect[0], rect[1], rect[2], rect[3])
-    cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f)
+    cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f) 
 }
