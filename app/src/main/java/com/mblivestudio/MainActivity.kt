@@ -684,4 +684,3 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onConnectionStarted(url: String) {}
     override fun onNewBitrate(bitrate: Long) { if (rtmpCamera.isStreaming) { try { rtmpCamera.setVideoBitrateOnFly(bitrate.toInt()) } catch (e: Exception) {} } }
 }
-}
