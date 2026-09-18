@@ -204,7 +204,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
                         if (savedBroadcastId != null) {
                             try {
-                                val response = youtubeClient!!.liveBroadcasts().list(listOf("status")).setId(listOf(savedBroadcastId)).execute()
+                                val response = youtubeClient!!.liveBroadcasts().list("status").setId(savedBroadcastId).execute()
                                 if (!response.items.isNullOrEmpty()) {
                                     val status = response.items[0].status.lifeCycleStatus
                                     statusStr = status ?: "unknown"
