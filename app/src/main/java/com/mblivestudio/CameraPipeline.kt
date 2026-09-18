@@ -17,9 +17,6 @@ internal fun MainActivity.tryStartCameraPreview() {
 
     val isPortrait = streamHeight > streamWidth
     
-    // ENCODER ERROR FIX: 
-    // हार्डवेयर एनकोडर को हमेशा लैंडस्केप डाइमेंशन देंगे (ताकि वह क्रैश न हो)।
-    // लेकिन OpenGL को बता देंगे कि कैमरा 90 डिग्री घुमाना है।
     val encWidth = if (isPortrait) streamHeight else streamWidth
     val encHeight = if (isPortrait) streamWidth else streamHeight
     val rotation = if (isPortrait) 90 else 0
@@ -35,10 +32,7 @@ internal fun MainActivity.tryStartCameraPreview() {
         val fpsCandidates = if (streamFps == 30) intArrayOf(30) else intArrayOf(streamFps, 30)
         for (fps in fpsCandidates) {
             try {
-                // OpenGL रोटेशन का इस्तेमाल करके हार्डवेयर को चकमा देना (Bypass Hardware Restriction)
                 if (rtmpCamera.prepareVideo(res.first, res.second, fps, res.third, 2, rotation)) {
-                    
-                    // वेरिएबल्स को वापस असली स्क्रीन साइज़ पर सेट करना
                     streamWidth = if (isPortrait) res.second else res.first
                     streamHeight = if (isPortrait) res.first else res.second
                     streamBitrate = res.third
@@ -95,6 +89,24 @@ internal fun MainActivity.tryStartCameraPreview() {
     }
 }
 
+// CLAUDE'S FIX: Hard-timeout stop so a stuck ghost-session socket can't crash the encoder.
+internal fun MainActivity.safeStopStream() {
+    val stopper = Thread {
+        try { rtmpCamera.stopStream() } catch (e: Exception) { e.printStackTrace() }
+    }
+    stopper.isDaemon = true
+    stopper.start()
+    stopper.join(3000) // 3 seconds timeout
+
+    if (stopper.isAlive) {
+        try { rtmpCamera.stopPreview() } catch (_: Exception) {}
+        runOnUiThread {
+            Toast.makeText(this, "Stream socket was stuck — pipeline reset.", Toast.LENGTH_LONG).show()
+            tryStartCameraPreview()
+        }
+    }
+}
+
 internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
     val sourceW = overlayContainer.width.toFloat()
     val sourceH = overlayContainer.height.toFloat()
@@ -103,7 +115,6 @@ internal fun MainActivity.drawOverlayToStreamBitmap(bitmap: Bitmap) {
     val targetW = bitmap.width.toFloat()
     val targetH = bitmap.height.toFloat()
 
-    // 100% "Full Fill View" Ghosting Fix (Mathematical Reverse Scale)
     val fillScale = maxOf(sourceW / targetW, sourceH / targetH)
     val xOffset = (sourceW - targetW * fillScale) / 2f
     val yOffset = (sourceH - targetH * fillScale) / 2f
