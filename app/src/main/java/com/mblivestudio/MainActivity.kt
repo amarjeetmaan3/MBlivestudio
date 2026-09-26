@@ -211,6 +211,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
         }
         updateSnapshot()
+        setupSmart16by9Layout()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -258,16 +259,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         setContentView(R.layout.activity_main)
 
         openGlView = findViewById(R.id.surfaceView)
-        openGlView.setAspectRatioMode(AspectRatioMode.Fill)
-        openGlView.layoutParams = openGlView.layoutParams.apply {
-            width = ViewGroup.LayoutParams.MATCH_PARENT
-            height = ViewGroup.LayoutParams.MATCH_PARENT
-            if (this is ViewGroup.MarginLayoutParams) {
-                leftMargin = 0; topMargin = 0; rightMargin = 0; bottomMargin = 0
-            }
-        }
-        openGlView.x = 0f
-        openGlView.y = 0f
         openGlView.holder.addCallback(this)
         
         rtmpCamera = RtmpCamera2(openGlView, this)
@@ -276,14 +267,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         registerAudioDeviceMonitoring()
 
         overlayContainer = findViewById(R.id.overlayContainer)
-        overlayContainer.layoutParams = overlayContainer.layoutParams.apply {
-            width = ViewGroup.LayoutParams.MATCH_PARENT
-            height = ViewGroup.LayoutParams.MATCH_PARENT
-            if (this is ViewGroup.MarginLayoutParams) {
-                leftMargin = 0; topMargin = 0; rightMargin = 0; bottomMargin = 0
-            }
-        }
-        overlayContainer.x = 0f; overlayContainer.y = 0f
+        
+        setupSmart16by9Layout()
 
         dragScoreboard = findViewById(R.id.dragScoreboard)
         scoreMainText = findViewById(R.id.scoreMainText)
@@ -603,4 +588,48 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onAuthSuccess() { runOnUiThread { Toast.makeText(this, "Auth Success", Toast.LENGTH_SHORT).show() } }
     override fun onConnectionStarted(url: String) {}
     override fun onNewBitrate(bitrate: Long) { if (rtmpCamera.isStreaming) { try { rtmpCamera.setVideoBitrateOnFly(bitrate.toInt()) } catch (e: Exception) {} } }
+}
+
+internal fun MainActivity.setupSmart16by9Layout() {
+    val rootLayout = findViewById<ViewGroup>(R.id.rootLayout)
+    
+    rootLayout.viewTreeObserver.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+        override fun onGlobalLayout() {
+            rootLayout.viewTreeObserver.removeOnGlobalLayoutListener(this)
+            
+            val screenW = rootLayout.width.toFloat()
+            val screenH = rootLayout.height.toFloat()
+            if (screenW == 0f || screenH == 0f) return
+
+            val targetRatio = 16f / 9f
+            val currentRatio = screenW / screenH
+
+            var finalW = screenW
+            var finalH = screenH
+
+            if (currentRatio > targetRatio) {
+                finalH = screenH
+                finalW = screenH * targetRatio
+            } else {
+                finalW = screenW
+                finalH = screenW / targetRatio
+            }
+
+            val glParams = openGlView.layoutParams as RelativeLayout.LayoutParams
+            glParams.width = finalW.toInt()
+            glParams.height = finalH.toInt()
+            glParams.addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE)
+            openGlView.layoutParams = glParams
+            
+            openGlView.setAspectRatioMode(com.pedro.encoder.utils.gl.AspectRatioMode.Adjust) 
+
+            val overlayParams = overlayContainer.layoutParams as RelativeLayout.LayoutParams
+            overlayParams.width = finalW.toInt()
+            overlayParams.height = finalH.toInt()
+            overlayParams.addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE)
+            overlayContainer.layoutParams = overlayParams
+            
+            updateSnapshot(100)
+        }
+    })
 }
