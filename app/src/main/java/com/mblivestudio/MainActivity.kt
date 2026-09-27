@@ -139,9 +139,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal var dailyQuotaUsed = 0
     internal var currentZoomDistance = 100f
 
-    internal val timerHandler = Handler(Looper.getMainLooper())
     internal var liveStartTimeMillis: Long = 0L
     internal var timerRunning = false
+    internal val timerHandler = Handler(Looper.getMainLooper())
     internal val timerRunnable = object : Runnable {
         override fun run() {
             if (!timerRunning) return
@@ -169,10 +169,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             webSyncHandler.postDelayed(this, 1000)
         }
     }
-
-    // NEW DEBOUNCE VARIABLES FOR CAMERA START
-    internal var previewRestartRunnable: Runnable? = null
-    internal val previewRestartHandler = Handler(Looper.getMainLooper())
 
     internal fun lockOrientation() {
         val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
@@ -206,7 +202,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 streamWidth = minDim
                 streamHeight = maxDim
             }
-            // Double Start Collision is avoided here. SurfaceChanged will handle the restart.
+            if (surfaceReady && rtmpCamera.isOnPreview) {
+                try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+                Handler(Looper.getMainLooper()).postDelayed({ tryStartCameraPreview() }, 300)
+            }
         }
         updateSnapshot()
         setupSmart16by9Layout()
@@ -255,8 +254,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         
         setContentView(R.layout.activity_main)
 
+        // 1. GHOST SERVICE CLEANUP
         try { StreamingService.stop(this) } catch (e: Exception) {}
 
+        // 2. AUDIO SYSTEM RESET
         try {
             val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
             am.mode = AudioManager.MODE_NORMAL
@@ -444,10 +445,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 Toast.makeText(this, "Stop stream to change orientation", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            
-            // CRITICAL FIX: कैमरा को घुमाने (Layout shift) से पहले ही सुरक्षित रूप से रोक दिया गया है
-            try { rtmpCamera.stopPreview() } catch (e: Exception) {}
-            
             val currentIsLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
             requestedOrientation = if (currentIsLandscape) ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE
         }
@@ -581,10 +578,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             try { rtmpCamera.replaceView(openGlView) } catch (e: Exception) {}
             isBackgrounded = false
         } else if (!rtmpCamera.isOnPreview) { 
-            // CRITICAL FIX: Debounce logic ताकि 800ms तक हार्डवेयर फ्री हो सके
-            previewRestartRunnable?.let { previewRestartHandler.removeCallbacks(it) }
-            previewRestartRunnable = Runnable { tryStartCameraPreview() }
-            previewRestartHandler.postDelayed(previewRestartRunnable!!, 800)
+            tryStartCameraPreview()
         } 
     }
     
