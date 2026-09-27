@@ -52,16 +52,18 @@ internal fun MainActivity.tryStartCameraPreview() {
         try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) { e.printStackTrace() }
     }
 
+    // UPDATED: Audio Setup to fix Tablet Crash and Audio Crackling
     var aReady = false
-    if (isBluetoothMicActive) {
+    val useEchoCanceler = detectedMicRoute == MicRoute.PHONE
+    
+    // हर हाल में पहले 44100 Hz ट्राई होगा ताकि क्वालिटी बनी रहे और क्रैश न हो
+    try { aReady = rtmpCamera.prepareAudio(64 * 1024, 44100, false, useEchoCanceler, true) } catch (_: Exception) {}
+    
+    if (!aReady) {
+        try { aReady = rtmpCamera.prepareAudio(64 * 1024, 32000, false, useEchoCanceler, true) } catch (_: Exception) {}
+    }
+    if (!aReady) {
         try { aReady = rtmpCamera.prepareAudio(64 * 1024, 16000, false, false, false) } catch (_: Exception) {}
-        if (!aReady) try { aReady = rtmpCamera.prepareAudio(64 * 1024, 32000, false, false, false) } catch (_: Exception) {}
-        if (!aReady) try { aReady = rtmpCamera.prepareAudio(64 * 1024, 44100, false, false, false) } catch (_: Exception) {}
-    } else {
-        val useEchoCanceler = detectedMicRoute == MicRoute.PHONE
-        try { aReady = rtmpCamera.prepareAudio(64 * 1024, 44100, false, useEchoCanceler, true) } catch (_: Exception) {}
-        if (!aReady) try { aReady = rtmpCamera.prepareAudio(64 * 1024, 32000, false, useEchoCanceler, true) } catch (_: Exception) {}
-        if (!aReady) try { aReady = rtmpCamera.prepareAudio(64 * 1024, 44100, false, false, false) } catch (_: Exception) {}
     }
     if (!aReady) {
         try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { e.printStackTrace() }
@@ -180,3 +182,4 @@ internal fun MainActivity.applyCameraLayout(rect: FloatArray) {
     cameraLayoutFilter.setRect(rect[0], rect[1], rect[2], rect[3])
     cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f) 
 }
+
