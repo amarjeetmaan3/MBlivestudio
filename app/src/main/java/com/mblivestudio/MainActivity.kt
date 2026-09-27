@@ -191,7 +191,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         System.setProperty("java.net.preferIPv6Addresses", "false")
     }
 
-    // AUTO ROTATE HANDLING
+    // AUTO ROTATE HANDLING (DOUBLE START COLLISION FIXED)
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         if (!rtmpCamera.isStreaming) {
@@ -207,11 +207,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
             if (surfaceReady && rtmpCamera.isOnPreview) {
                 try { rtmpCamera.stopPreview() } catch (e: Exception) {}
-                Handler(Looper.getMainLooper()).postDelayed({ tryStartCameraPreview() }, 300)
+                // यहाँ से 300ms वाला tryStartCameraPreview() हटा दिया गया है
+                // ताकि रोटेशन के टाइम 2 बार स्टार्ट का कमांड न जाए और क्रैश न हो।
             }
         }
         updateSnapshot()
-        // यहाँ हमने डायनामिक लेआउट को रोटेशन के साथ जोड़ दिया है
         setupSmart16by9Layout()
     }
 
@@ -234,10 +234,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         
-        // Let the device auto-rotate initially
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER
 
-        // Set initial stream dimensions based on starting orientation
         val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         val maxDim = maxOf(streamWidth, streamHeight)
         val minDim = minOf(streamWidth, streamHeight)
@@ -260,10 +258,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         
         setContentView(R.layout.activity_main)
 
-        // 1. GHOST SERVICE CLEANUP: पुरानी फंसी हुई बैकग्राउंड सर्विस को मारना
+        // 1. GHOST SERVICE CLEANUP
         try { StreamingService.stop(this) } catch (e: Exception) {}
 
-        // 2. AUDIO SYSTEM RESET: फँसे हुए ब्लूटूथ या कॉल मोड को नॉर्मल करना
+        // 2. AUDIO SYSTEM RESET
         try {
             val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
             am.mode = AudioManager.MODE_NORMAL
@@ -274,7 +272,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
         } catch (e: Exception) {}
 
-        // लेआउट का नया और क्लीन सेटअप
         openGlView = findViewById(R.id.surfaceView)
         openGlView.holder.addCallback(this)
         
@@ -285,7 +282,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         overlayContainer = findViewById(R.id.overlayContainer)
 
-        // स्क्रीन का साइज़ नापकर कैमरा और ओवरले दोनों को परफेक्ट अनुपात में लॉक करना
         setupSmart16by9Layout()
 
         dragScoreboard = findViewById(R.id.dragScoreboard)
@@ -441,7 +437,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         btnBluetoothMic.clearColorFilter()
         btnBluetoothMic.setOnClickListener {
-            // लाइव के दौरान माइक स्विच करने के लिए लॉक हटा दिया गया है
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) { 
                 requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 2)
                 return@setOnClickListener 
@@ -534,7 +529,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     override fun onConnectionSuccess() { 
-        try { StreamingService.start(this@MainActivity) } catch (e: Exception) {} // BACKGROUND FEATURE ADDED
+        try { StreamingService.start(this@MainActivity) } catch (e: Exception) {} 
         runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "Connected! Going live on YouTube...", Toast.LENGTH_LONG).show(); startStudioTimer() }; ensureBroadcastGoesLive() 
     }
     
@@ -582,21 +577,24 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     override fun surfaceCreated(holder: SurfaceHolder) {}
     
+    // FILL OVERRIDE और DOUBLE COLLISION FIXED
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) { 
-        openGlView.setAspectRatioMode(AspectRatioMode.Fill)
         surfaceReady = true
         
-        if (isBackgrounded && rtmpCamera.isStreaming) { // BACKGROUND FEATURE ADDED
+        if (isBackgrounded && rtmpCamera.isStreaming) { 
             try { rtmpCamera.replaceView(openGlView) } catch (e: Exception) {}
             isBackgrounded = false
         } else if (!rtmpCamera.isOnPreview) { 
-            tryStartCameraPreview() 
+            // 300ms का सेफ डिले यहाँ दिया ताकि नया 9:16 लेआउट सेट होने के बाद ही कैमरा एक बार चालू हो
+            Handler(Looper.getMainLooper()).postDelayed({
+                tryStartCameraPreview()
+            }, 300)
         } 
     }
     
     override fun surfaceDestroyed(holder: SurfaceHolder) { 
         surfaceReady = false
-        isBackgrounded = true // BACKGROUND FEATURE ADDED
+        isBackgrounded = true 
         
         if (rtmpCamera.isStreaming) {
             try { rtmpCamera.replaceView(this) } catch (e: Exception) {}
@@ -611,7 +609,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onNewBitrate(bitrate: Long) { if (rtmpCamera.isStreaming) { try { rtmpCamera.setVideoBitrateOnFly(bitrate.toInt()) } catch (e: Exception) {} } }
 }
 
-// नया डायनामिक लेआउट फंक्शन जो स्ट्रीम के असली ओरिएंटेशन (Landscape/Portrait) के हिसाब से काम करेगा
 internal fun MainActivity.setupSmart16by9Layout() {
     val rootLayout = findViewById<ViewGroup>(R.id.rootLayout)
     
@@ -623,7 +620,6 @@ internal fun MainActivity.setupSmart16by9Layout() {
             val screenH = rootLayout.height.toFloat()
             if (screenW == 0f || screenH == 0f) return
 
-            // streamWidth और streamHeight पहले से ही ओरिएंटेशन के हिसाब से सही सेट होते हैं (9:16 या 16:9)
             val targetRatio = streamWidth.toFloat() / streamHeight.toFloat()
             val currentRatio = screenW / screenH
 
