@@ -5,12 +5,13 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.os.Handler
+import android.os.Looper
 import android.view.MotionEvent
 import android.view.View
 import android.widget.Toast
 
-// यहाँ हमने retryAttempts = 0 जोड़ दिया है
-internal fun MainActivity.tryStartCameraPreview(retryAttempts: Int = 0) {
+internal fun MainActivity.tryStartCameraPreview() {
     if (!surfaceReady || rtmpCamera.isOnPreview) return
     if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ||
         checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return
@@ -53,6 +54,24 @@ internal fun MainActivity.tryStartCameraPreview(retryAttempts: Int = 0) {
         try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) { e.printStackTrace() }
     }
 
+    // TABLET HARDWARE FAIL-SAFE:
+    // अगर टैबलेट का हार्डवेयर पोर्ट्रेट एनकोडिंग को पूरी तरह रिजेक्ट कर देता है, 
+    // तो ब्लैक स्क्रीन या क्रैश होने के बजाय हम इसे सुरक्षित लैंडस्केप मोड में चालू रखेंगे।
+    if (!isSuccess && isPortrait) {
+        for (res in fallback) {
+            try {
+                if (rtmpCamera.prepareVideo(res.first, res.second, 30, res.third, 2, 0)) {
+                    streamWidth = res.first
+                    streamHeight = res.second
+                    streamBitrate = res.third
+                    streamFps = 30
+                    isSuccess = true
+                    break
+                }
+            } catch (e: Exception) {}
+        }
+    }
+
     var aReady = false
     val useEchoCanceler = detectedMicRoute == MicRoute.PHONE
     
@@ -81,19 +100,12 @@ internal fun MainActivity.tryStartCameraPreview(retryAttempts: Int = 0) {
         try {
             rtmpCamera.startPreview()
             updateSnapshot(1000)
+            // अगर फेल-सेफ ने डायमेंशन चेंज की हैं तो UI को भी अपडेट कर दो
+            Handler(Looper.getMainLooper()).post { setupSmart16by9Layout() }
         } catch (e: Exception) {
             e.printStackTrace()
             try { rtmpCamera.stopPreview() } catch (_: Exception) {}
-            
-            // नया ऑटो-रिट्राई लॉजिक: अगर हार्डवेयर बिज़ी है तो क्रैश मत करो, दोबारा ट्राई करो
-            if (retryAttempts < 2) {
-                Toast.makeText(this, "Hardware busy, retrying in 1s...", Toast.LENGTH_SHORT).show()
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    tryStartCameraPreview(retryAttempts + 1)
-                }, 1000)
-            } else {
-                Toast.makeText(this, "CAMERA ERROR: Please restart app.", Toast.LENGTH_LONG).show()
-            }
+            Toast.makeText(this, "CAMERA ERROR: ${e.message ?: "Preview failed"}", Toast.LENGTH_LONG).show()
         }
     } else {
         Toast.makeText(this, "CAMERA ERROR: Device encoder not supported.", Toast.LENGTH_LONG).show()
