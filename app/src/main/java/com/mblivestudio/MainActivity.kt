@@ -257,7 +257,22 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
+        
         setContentView(R.layout.activity_main)
+
+        // 1. GHOST SERVICE CLEANUP: पुरानी फंसी हुई बैकग्राउंड सर्विस को मारना
+        try { StreamingService.stop(this) } catch (e: Exception) {}
+
+        // 2. AUDIO SYSTEM RESET: फँसे हुए ब्लूटूथ या कॉल मोड को नॉर्मल करना
+        try {
+            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            am.mode = AudioManager.MODE_NORMAL
+            am.stopBluetoothSco()
+            am.isBluetoothScoOn = false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                am.clearCommunicationDevice()
+            }
+        } catch (e: Exception) {}
 
         // लेआउट का नया और क्लीन सेटअप
         openGlView = findViewById(R.id.surfaceView)
@@ -426,7 +441,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         btnBluetoothMic.clearColorFilter()
         btnBluetoothMic.setOnClickListener {
-            // UPDATED: 'Stop the stream' वाली रोक हटा दी गई है ताकि लाइव के दौरान भी माइक स्विच हो सके
+            // लाइव के दौरान माइक स्विच करने के लिए लॉक हटा दिया गया है
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) { 
                 requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 2)
                 return@setOnClickListener 
