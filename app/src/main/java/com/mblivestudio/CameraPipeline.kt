@@ -9,7 +9,8 @@ import android.view.MotionEvent
 import android.view.View
 import android.widget.Toast
 
-internal fun MainActivity.tryStartCameraPreview() {
+// यहाँ हमने retryAttempts = 0 जोड़ दिया है
+internal fun MainActivity.tryStartCameraPreview(retryAttempts: Int = 0) {
     if (!surfaceReady || rtmpCamera.isOnPreview) return
     if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ||
         checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return
@@ -52,11 +53,9 @@ internal fun MainActivity.tryStartCameraPreview() {
         try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) { e.printStackTrace() }
     }
 
-    // UPDATED: Audio Setup to fix Tablet Crash and Audio Crackling
     var aReady = false
     val useEchoCanceler = detectedMicRoute == MicRoute.PHONE
     
-    // हर हाल में पहले 44100 Hz ट्राई होगा ताकि क्वालिटी बनी रहे और क्रैश न हो
     try { aReady = rtmpCamera.prepareAudio(64 * 1024, 44100, false, useEchoCanceler, true) } catch (_: Exception) {}
     
     if (!aReady) {
@@ -85,7 +84,16 @@ internal fun MainActivity.tryStartCameraPreview() {
         } catch (e: Exception) {
             e.printStackTrace()
             try { rtmpCamera.stopPreview() } catch (_: Exception) {}
-            Toast.makeText(this, "CAMERA ERROR: ${e.message ?: "Preview failed"}", Toast.LENGTH_LONG).show()
+            
+            // नया ऑटो-रिट्राई लॉजिक: अगर हार्डवेयर बिज़ी है तो क्रैश मत करो, दोबारा ट्राई करो
+            if (retryAttempts < 2) {
+                Toast.makeText(this, "Hardware busy, retrying in 1s...", Toast.LENGTH_SHORT).show()
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    tryStartCameraPreview(retryAttempts + 1)
+                }, 1000)
+            } else {
+                Toast.makeText(this, "CAMERA ERROR: Please restart app.", Toast.LENGTH_LONG).show()
+            }
         }
     } else {
         Toast.makeText(this, "CAMERA ERROR: Device encoder not supported.", Toast.LENGTH_LONG).show()
@@ -119,7 +127,6 @@ internal fun MainActivity.canvasFor(bitmap: Bitmap): Canvas {
 }
 
 internal fun MainActivity.updateSnapshot(delay: Long = 100) {
-    // BUG FIX: Removed width/height == 0 check here so it doesn't instantly fail on lock screen
     if (!rtmpCamera.isOnPreview) return
     if (pendingRefresh) { refreshQueued = true; return }
     pendingRefresh = true
@@ -131,9 +138,7 @@ internal fun MainActivity.updateSnapshot(delay: Long = 100) {
             val w = streamWidth.coerceAtLeast(1)
             val h = streamHeight.coerceAtLeast(1)
             
-            // FORCED LAYOUT (Lock Screen UI Hack)
             if (isBackgrounded) {
-                // Background me 0 nahi hone dena hai, video ki height/width de do
                 val cw = if (overlayContainer.width > 0) overlayContainer.width else w
                 val ch = if (overlayContainer.height > 0) overlayContainer.height else h
                 
@@ -143,10 +148,8 @@ internal fun MainActivity.updateSnapshot(delay: Long = 100) {
                 )
                 overlayContainer.layout(0, 0, cw, ch)
                 
-                // UI Views ko zabardasti update (invalidate) karna
                 overlayContainer.invalidate() 
             } else if (overlayContainer.width == 0 || overlayContainer.height == 0) {
-                // Agar screen on hai par layout zero hai, toh draw mat karo
                 return@postDelayed 
             }
 
@@ -182,4 +185,3 @@ internal fun MainActivity.applyCameraLayout(rect: FloatArray) {
     cameraLayoutFilter.setRect(rect[0], rect[1], rect[2], rect[3])
     cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f) 
 }
-
