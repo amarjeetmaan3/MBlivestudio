@@ -211,6 +211,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
         }
         updateSnapshot()
+        // यहाँ हमने डायनामिक लेआउट को रोटेशन के साथ जोड़ दिया है
         setupSmart16by9Layout()
     }
 
@@ -258,6 +259,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
         setContentView(R.layout.activity_main)
 
+        // लेआउट का नया और क्लीन सेटअप
         openGlView = findViewById(R.id.surfaceView)
         openGlView.holder.addCallback(this)
         
@@ -267,7 +269,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         registerAudioDeviceMonitoring()
 
         overlayContainer = findViewById(R.id.overlayContainer)
-        
+
+        // स्क्रीन का साइज़ नापकर कैमरा और ओवरले दोनों को परफेक्ट अनुपात में लॉक करना
         setupSmart16by9Layout()
 
         dragScoreboard = findViewById(R.id.dragScoreboard)
@@ -590,6 +593,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onNewBitrate(bitrate: Long) { if (rtmpCamera.isStreaming) { try { rtmpCamera.setVideoBitrateOnFly(bitrate.toInt()) } catch (e: Exception) {} } }
 }
 
+// नया डायनामिक लेआउट फंक्शन जो स्ट्रीम के असली ओरिएंटेशन (Landscape/Portrait) के हिसाब से काम करेगा
 internal fun MainActivity.setupSmart16by9Layout() {
     val rootLayout = findViewById<ViewGroup>(R.id.rootLayout)
     
@@ -601,7 +605,8 @@ internal fun MainActivity.setupSmart16by9Layout() {
             val screenH = rootLayout.height.toFloat()
             if (screenW == 0f || screenH == 0f) return
 
-            val targetRatio = 16f / 9f
+            // streamWidth और streamHeight पहले से ही ओरिएंटेशन के हिसाब से सही सेट होते हैं (9:16 या 16:9)
+            val targetRatio = streamWidth.toFloat() / streamHeight.toFloat()
             val currentRatio = screenW / screenH
 
             var finalW = screenW
