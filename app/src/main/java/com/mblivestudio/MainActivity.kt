@@ -105,7 +105,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal var pendingRefresh = false
     internal var refreshQueued = false
     internal var surfaceReady = false
-    internal var isBackgrounded = false // BACKGROUND FEATURE ADDED
+    internal var isBackgrounded = false
 
     internal var bitmapA: Bitmap? = null
     internal var canvasA: Canvas? = null
@@ -170,7 +170,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // ORIENTATION LOCK LOGIC: Locks to current mode allowing 180 flip
     internal fun lockOrientation() {
         val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         requestedOrientation = if (isLandscape) {
@@ -180,7 +179,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // ORIENTATION UNLOCK: Returns to free auto-rotation
     internal fun unlockOrientation() {
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER
     }
@@ -191,7 +189,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         System.setProperty("java.net.preferIPv6Addresses", "false")
     }
 
-    // AUTO ROTATE HANDLING
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         if (!rtmpCamera.isStreaming) {
@@ -211,7 +208,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
         }
         updateSnapshot()
-        // यहाँ हमने डायनामिक लेआउट को रोटेशन के साथ जोड़ दिया है
         setupSmart16by9Layout()
     }
 
@@ -234,10 +230,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         
-        // Let the device auto-rotate initially
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER
 
-        // Set initial stream dimensions based on starting orientation
         val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         val maxDim = maxOf(streamWidth, streamHeight)
         val minDim = minOf(streamWidth, streamHeight)
@@ -257,9 +251,21 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
+        
         setContentView(R.layout.activity_main)
 
-        // लेआउट का नया और क्लीन सेटअप
+        try { StreamingService.stop(this) } catch (e: Exception) {}
+
+        try {
+            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            am.mode = AudioManager.MODE_NORMAL
+            am.stopBluetoothSco()
+            am.isBluetoothScoOn = false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                am.clearCommunicationDevice()
+            }
+        } catch (e: Exception) {}
+
         openGlView = findViewById(R.id.surfaceView)
         openGlView.holder.addCallback(this)
         
@@ -270,7 +276,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         overlayContainer = findViewById(R.id.overlayContainer)
 
-        // स्क्रीन का साइज़ नापकर कैमरा और ओवरले दोनों को परफेक्ट अनुपात में लॉक करना
         setupSmart16by9Layout()
 
         dragScoreboard = findViewById(R.id.dragScoreboard)
@@ -358,7 +363,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val btnSwitchCamera: ImageButton = findViewById(R.id.btnSwitchCamera)
         val btnMicToggle: ImageButton = findViewById(R.id.btnMicToggle)
         val btnBluetoothMic: ImageButton = findViewById(R.id.btnBluetoothMic)
-        val btnOrientation: ImageButton = findViewById(R.id.btnOrientation)
         
         findViewById<Button>(R.id.btnToggleComments).setOnClickListener {
             popupSettings.visibility = View.GONE
@@ -426,22 +430,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         btnBluetoothMic.clearColorFilter()
         btnBluetoothMic.setOnClickListener {
-            // UPDATED: 'Stop the stream' वाली रोक हटा दी गई है ताकि लाइव के दौरान भी माइक स्विच हो सके
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) { 
                 requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 2)
                 return@setOnClickListener 
             }
             toggleBluetoothMic(btnBluetoothMic)
-        }
-
-        btnOrientation.setOnClickListener {
-            if (rtmpCamera.isStreaming) {
-                Toast.makeText(this, "Stop stream to change orientation", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            // Manual toggle for requested orientation if auto-rotate is off
-            val currentIsLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-            requestedOrientation = if (currentIsLandscape) ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE
         }
 
         var currentTouchEvent: MotionEvent? = null
@@ -511,7 +504,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             if (currentAccount == null) { Toast.makeText(this, "Please Sign In with YouTube first!", Toast.LENGTH_SHORT).show(); startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST); return@setOnClickListener }
             if (!GoogleSignIn.hasPermissions(currentAccount, Scope("https://www.googleapis.com/auth/youtube"))) { GoogleSignIn.requestPermissions(this, REQUEST_AUTHORIZATION, currentAccount, Scope("https://www.googleapis.com/auth/youtube")); return@setOnClickListener }
             
-            // LOCK THE ORIENTATION BEFORE GOING LIVE
             lockOrientation()
             showGoLiveDialog()
         }
@@ -519,7 +511,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     }
 
     override fun onConnectionSuccess() { 
-        try { StreamingService.start(this@MainActivity) } catch (e: Exception) {} // BACKGROUND FEATURE ADDED
+        try { StreamingService.start(this@MainActivity) } catch (e: Exception) {} 
         runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "Connected! Going live on YouTube...", Toast.LENGTH_LONG).show(); startStudioTimer() }; ensureBroadcastGoesLive() 
     }
     
@@ -571,7 +563,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         openGlView.setAspectRatioMode(AspectRatioMode.Fill)
         surfaceReady = true
         
-        if (isBackgrounded && rtmpCamera.isStreaming) { // BACKGROUND FEATURE ADDED
+        if (isBackgrounded && rtmpCamera.isStreaming) { 
             try { rtmpCamera.replaceView(openGlView) } catch (e: Exception) {}
             isBackgrounded = false
         } else if (!rtmpCamera.isOnPreview) { 
@@ -581,7 +573,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     
     override fun surfaceDestroyed(holder: SurfaceHolder) { 
         surfaceReady = false
-        isBackgrounded = true // BACKGROUND FEATURE ADDED
+        isBackgrounded = true 
         
         if (rtmpCamera.isStreaming) {
             try { rtmpCamera.replaceView(this) } catch (e: Exception) {}
@@ -596,7 +588,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onNewBitrate(bitrate: Long) { if (rtmpCamera.isStreaming) { try { rtmpCamera.setVideoBitrateOnFly(bitrate.toInt()) } catch (e: Exception) {} } }
 }
 
-// नया डायनामिक लेआउट फंक्शन जो स्ट्रीम के असली ओरिएंटेशन (Landscape/Portrait) के हिसाब से काम करेगा
 internal fun MainActivity.setupSmart16by9Layout() {
     val rootLayout = findViewById<ViewGroup>(R.id.rootLayout)
     
@@ -608,7 +599,6 @@ internal fun MainActivity.setupSmart16by9Layout() {
             val screenH = rootLayout.height.toFloat()
             if (screenW == 0f || screenH == 0f) return
 
-            // streamWidth और streamHeight पहले से ही ओरिएंटेशन के हिसाब से सही सेट होते हैं (9:16 या 16:9)
             val targetRatio = streamWidth.toFloat() / streamHeight.toFloat()
             val currentRatio = screenW / screenH
 
