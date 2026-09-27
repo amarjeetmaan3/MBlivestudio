@@ -105,7 +105,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal var pendingRefresh = false
     internal var refreshQueued = false
     internal var surfaceReady = false
-    internal var isBackgrounded = false // BACKGROUND FEATURE ADDED
+    internal var isBackgrounded = false 
 
     internal var bitmapA: Bitmap? = null
     internal var canvasA: Canvas? = null
@@ -139,9 +139,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal var dailyQuotaUsed = 0
     internal var currentZoomDistance = 100f
 
+    internal val timerHandler = Handler(Looper.getMainLooper())
     internal var liveStartTimeMillis: Long = 0L
     internal var timerRunning = false
-    internal val timerHandler = Handler(Looper.getMainLooper())
     internal val timerRunnable = object : Runnable {
         override fun run() {
             if (!timerRunning) return
@@ -170,7 +170,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // ORIENTATION LOCK LOGIC: Locks to current mode allowing 180 flip
+    // NEW DEBOUNCE VARIABLES FOR CAMERA START
+    internal var previewRestartRunnable: Runnable? = null
+    internal val previewRestartHandler = Handler(Looper.getMainLooper())
+
     internal fun lockOrientation() {
         val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         requestedOrientation = if (isLandscape) {
@@ -180,7 +183,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // ORIENTATION UNLOCK: Returns to free auto-rotation
     internal fun unlockOrientation() {
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER
     }
@@ -191,7 +193,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         System.setProperty("java.net.preferIPv6Addresses", "false")
     }
 
-    // AUTO ROTATE HANDLING (DOUBLE START COLLISION FIXED)
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         if (!rtmpCamera.isStreaming) {
@@ -205,11 +206,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 streamWidth = minDim
                 streamHeight = maxDim
             }
-            if (surfaceReady && rtmpCamera.isOnPreview) {
-                try { rtmpCamera.stopPreview() } catch (e: Exception) {}
-                // यहाँ से 300ms वाला tryStartCameraPreview() हटा दिया गया है
-                // ताकि रोटेशन के टाइम 2 बार स्टार्ट का कमांड न जाए और क्रैश न हो।
-            }
+            // Double Start Collision is avoided here. SurfaceChanged will handle the restart.
         }
         updateSnapshot()
         setupSmart16by9Layout()
@@ -258,10 +255,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         
         setContentView(R.layout.activity_main)
 
-        // 1. GHOST SERVICE CLEANUP
         try { StreamingService.stop(this) } catch (e: Exception) {}
 
-        // 2. AUDIO SYSTEM RESET
         try {
             val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
             am.mode = AudioManager.MODE_NORMAL
@@ -449,7 +444,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 Toast.makeText(this, "Stop stream to change orientation", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            // Manual toggle for requested orientation if auto-rotate is off
+            
+            // CRITICAL FIX: कैमरा को घुमाने (Layout shift) से पहले ही सुरक्षित रूप से रोक दिया गया है
+            try { rtmpCamera.stopPreview() } catch (e: Exception) {}
+            
             val currentIsLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
             requestedOrientation = if (currentIsLandscape) ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE
         }
@@ -521,7 +519,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             if (currentAccount == null) { Toast.makeText(this, "Please Sign In with YouTube first!", Toast.LENGTH_SHORT).show(); startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST); return@setOnClickListener }
             if (!GoogleSignIn.hasPermissions(currentAccount, Scope("https://www.googleapis.com/auth/youtube"))) { GoogleSignIn.requestPermissions(this, REQUEST_AUTHORIZATION, currentAccount, Scope("https://www.googleapis.com/auth/youtube")); return@setOnClickListener }
             
-            // LOCK THE ORIENTATION BEFORE GOING LIVE
             lockOrientation()
             showGoLiveDialog()
         }
@@ -577,7 +574,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     override fun surfaceCreated(holder: SurfaceHolder) {}
     
-    // FILL OVERRIDE और DOUBLE COLLISION FIXED
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) { 
         surfaceReady = true
         
@@ -585,10 +581,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             try { rtmpCamera.replaceView(openGlView) } catch (e: Exception) {}
             isBackgrounded = false
         } else if (!rtmpCamera.isOnPreview) { 
-            // 300ms का सेफ डिले यहाँ दिया ताकि नया 9:16 लेआउट सेट होने के बाद ही कैमरा एक बार चालू हो
-            Handler(Looper.getMainLooper()).postDelayed({
-                tryStartCameraPreview()
-            }, 300)
+            // CRITICAL FIX: Debounce logic ताकि 800ms तक हार्डवेयर फ्री हो सके
+            previewRestartRunnable?.let { previewRestartHandler.removeCallbacks(it) }
+            previewRestartRunnable = Runnable { tryStartCameraPreview() }
+            previewRestartHandler.postDelayed(previewRestartRunnable!!, 800)
         } 
     }
     
