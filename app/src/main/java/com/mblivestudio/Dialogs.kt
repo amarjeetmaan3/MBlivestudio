@@ -179,7 +179,7 @@ internal fun MainActivity.showAddLowerThirdDialog() {
             }
             wrapper.addView(tvTitle); wrapper.addView(tvMsg)
             overlayContainer.addView(wrapper); makeDraggableAndScalable(wrapper); selectedOverlay = wrapper
-            tickerHandler.post(tickerRunnable); updateOverlayMenuButtonPosition(); updateSnapshot()
+            updateOverlayMenuButtonPosition(); updateSnapshot()
         }.setNegativeButton("Cancel", null).show()
 }
 
