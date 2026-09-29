@@ -154,13 +154,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    internal val tickerHandler = Handler(Looper.getMainLooper())
-    internal val tickerRunnable = object : Runnable {
-        override fun run() {
-            this@MainActivity.updateSnapshot(50) 
-            tickerHandler.postDelayed(this, 100)
-        }
-    }
+    // Ticker handler/runnable (50ms loop) completely removed to save CPU
 
     internal val webSyncHandler = Handler(Looper.getMainLooper())
     internal val webSyncRunnable = object : Runnable {
@@ -405,7 +399,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             }
             target?.let { 
                 if (it != dragScoreboard) { 
-                    if (it.tag == "LOWER_THIRD") tickerHandler.removeCallbacks(tickerRunnable)
                     if (it.tag == "WEB_OVERLAY") webSyncHandler.removeCallbacks(webSyncRunnable)
                     if (it is EditText) {
                         it.clearFocus()
@@ -553,7 +546,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onDestroy() {
         super.onDestroy()
         if (!rtmpCamera.isStreaming) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
-        overlayHandler.removeCallbacksAndMessages(null); chatHandler.removeCallbacksAndMessages(null); timerHandler.removeCallbacksAndMessages(null); tickerHandler.removeCallbacksAndMessages(null); webSyncHandler.removeCallbacksAndMessages(null)
+        overlayHandler.removeCallbacksAndMessages(null); chatHandler.removeCallbacksAndMessages(null); timerHandler.removeCallbacksAndMessages(null); webSyncHandler.removeCallbacksAndMessages(null)
         bitmapA?.let { if (!it.isRecycled) it.recycle() }; bitmapA = null; canvasA = null; bitmapB?.let { if (!it.isRecycled) it.recycle() }; bitmapB = null; canvasB = null
     }
 
@@ -585,7 +578,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onAuthError() { runOnUiThread { Toast.makeText(this, "Auth Error", Toast.LENGTH_SHORT).show() } }
     override fun onAuthSuccess() { runOnUiThread { Toast.makeText(this, "Auth Success", Toast.LENGTH_SHORT).show() } }
     override fun onConnectionStarted(url: String) {}
-    override fun onNewBitrate(bitrate: Long) { if (rtmpCamera.isStreaming) { try { rtmpCamera.setVideoBitrateOnFly(bitrate.toInt()) } catch (e: Exception) {} } }
+    
+    // Adaptive Bitrate Logic yahi se stream ko girne se bachaega
+    override fun onNewBitrate(bitrate: Long) { 
+        if (rtmpCamera.isStreaming) { 
+            try { rtmpCamera.setVideoBitrateOnFly(bitrate.toInt()) } catch (e: Exception) {} 
+        } 
+    }
 }
 
 internal fun MainActivity.setupSmart16by9Layout() {
