@@ -52,18 +52,23 @@ internal fun MainActivity.tryStartCameraPreview() {
         try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) { e.printStackTrace() }
     }
 
-    // UPDATED: Audio Setup to fix Tablet Crash and Audio Crackling
+    // UPDATED: Studio Quality Audio Setup & Anti-Crackling Logic
     var aReady = false
-    val useEchoCanceler = detectedMicRoute == MicRoute.PHONE
     
-    // हर हाल में पहले 44100 Hz ट्राई होगा ताकि क्वालिटी बनी रहे और क्रैश न हो
-    try { aReady = rtmpCamera.prepareAudio(64 * 1024, 44100, false, useEchoCanceler, true) } catch (_: Exception) {}
+    // Agar phone ka mic hai tabhi echo canceller aur noise suppressor chalega
+    val useSystemFilters = detectedMicRoute == MicRoute.PHONE
+    val audioBitrate = 192 * 1024 // 192kbps (Studio Quality)
+    
+    // Har haal mein pehle 44100 Hz try hoga taaki quality bani rahe
+    try { 
+        aReady = rtmpCamera.prepareAudio(audioBitrate, 44100, false, useSystemFilters, useSystemFilters) 
+    } catch (_: Exception) {}
     
     if (!aReady) {
-        try { aReady = rtmpCamera.prepareAudio(64 * 1024, 32000, false, useEchoCanceler, true) } catch (_: Exception) {}
+        try { aReady = rtmpCamera.prepareAudio(audioBitrate, 32000, false, useSystemFilters, useSystemFilters) } catch (_: Exception) {}
     }
     if (!aReady) {
-        try { aReady = rtmpCamera.prepareAudio(64 * 1024, 16000, false, false, false) } catch (_: Exception) {}
+        try { aReady = rtmpCamera.prepareAudio(128 * 1024, 16000, false, false, false) } catch (_: Exception) {}
     }
     if (!aReady) {
         try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { e.printStackTrace() }
@@ -119,7 +124,6 @@ internal fun MainActivity.canvasFor(bitmap: Bitmap): Canvas {
 }
 
 internal fun MainActivity.updateSnapshot(delay: Long = 100) {
-    // BUG FIX: Removed width/height == 0 check here so it doesn't instantly fail on lock screen
     if (!rtmpCamera.isOnPreview) return
     if (pendingRefresh) { refreshQueued = true; return }
     pendingRefresh = true
@@ -131,9 +135,7 @@ internal fun MainActivity.updateSnapshot(delay: Long = 100) {
             val w = streamWidth.coerceAtLeast(1)
             val h = streamHeight.coerceAtLeast(1)
             
-            // FORCED LAYOUT (Lock Screen UI Hack)
             if (isBackgrounded) {
-                // Background me 0 nahi hone dena hai, video ki height/width de do
                 val cw = if (overlayContainer.width > 0) overlayContainer.width else w
                 val ch = if (overlayContainer.height > 0) overlayContainer.height else h
                 
@@ -143,10 +145,8 @@ internal fun MainActivity.updateSnapshot(delay: Long = 100) {
                 )
                 overlayContainer.layout(0, 0, cw, ch)
                 
-                // UI Views ko zabardasti update (invalidate) karna
                 overlayContainer.invalidate() 
             } else if (overlayContainer.width == 0 || overlayContainer.height == 0) {
-                // Agar screen on hai par layout zero hai, toh draw mat karo
                 return@postDelayed 
             }
 
