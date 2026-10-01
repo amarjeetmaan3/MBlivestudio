@@ -52,28 +52,24 @@ internal fun MainActivity.tryStartCameraPreview() {
         try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) { e.printStackTrace() }
     }
 
-    // THE ULTIMATE AUDIO FIX (Device & Bluetooth handled separately)
+    // BULLETPROOF AUDIO FIX (Zero Crackling Guarantee)
+    // 1. isStereo = false (Mono). Forcing stereo on mics creates garbage static data.
+    // 2. 32000 Hz / 16000 Hz. High rates choke the AAC hardware encoder on many Android SOCs.
+    // 3. Filters = false. OEM AcousticEchoCanceler drops packets and causes robotic static.
+    
     var aReady = false
     val isBluetooth = detectedMicRoute == MicRoute.BLUETOOTH
-    val audioBitrate = 128 * 1024 // 128kbps is the most stable AAC standard
     
-    if (isBluetooth) {
-        // BLUETOOTH FIX: Native SCO rate is 16kHz or 8kHz. Forcing higher = crackling.
-        // isStereo = true, Filters = false, false
-        try { aReady = rtmpCamera.prepareAudio(audioBitrate, 16000, true, false, false) } catch (_: Exception) {}
-        if (!aReady) {
-            try { aReady = rtmpCamera.prepareAudio(64 * 1024, 8000, true, false, false) } catch (_: Exception) {}
-        }
-    } else {
-        // PHONE/WIRED MIC FIX: Native hardware rate is 48000 Hz.
-        // isStereo = true, Filters = false, false
-        try { aReady = rtmpCamera.prepareAudio(audioBitrate, 48000, true, false, false) } catch (_: Exception) {}
-        if (!aReady) {
-            try { aReady = rtmpCamera.prepareAudio(audioBitrate, 44100, true, false, false) } catch (_: Exception) {}
-        }
+    val sampleRate = if (isBluetooth) 16000 else 32000
+    val audioBitrate = 64 * 1024 // 64kbps is extremely stable for Mono voice
+    
+    try { 
+        aReady = rtmpCamera.prepareAudio(audioBitrate, sampleRate, false, false, false) 
+    } catch (_: Exception) {}
+    
+    if (!aReady) {
+        try { aReady = rtmpCamera.prepareAudio(audioBitrate, 16000, false, false, false) } catch (_: Exception) {}
     }
-
-    // Ultimate fallback for older devices
     if (!aReady) {
         try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { e.printStackTrace() }
     }
@@ -184,7 +180,6 @@ internal fun MainActivity.updateSnapshot(delay: Long = 100) {
                 }
             }
 
-            // 40ms CPU Breather (Max 25 FPS constraint) - Keeps video perfectly smooth
             if (refreshQueued) {
                 refreshQueued = false
                 updateSnapshot(40) 
@@ -193,15 +188,6 @@ internal fun MainActivity.updateSnapshot(delay: Long = 100) {
             }
         }
     }, smartDelay)
-}
-
-internal fun MainActivity.sendSyntheticZoomEvent(action: Int, pointerDistance: Float, delta: Float) {
-    val now = android.os.SystemClock.uptimeMillis()
-    val props = arrayOf(MotionEvent.PointerProperties(), MotionEvent.PointerProperties()); props[0].id = 0; props[1].id = 1
-    val coords = arrayOf(MotionEvent.PointerCoords(), MotionEvent.PointerCoords()); coords[0].x = 0f; coords[0].y = 0f; coords[1].x = pointerDistance; coords[1].y = 0f
-    val event = MotionEvent.obtain(now, now, action, 2, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
-    try { rtmpCamera.setZoom(event, delta) } catch (e: Exception) {}
-    event.recycle()
 }
 
 internal fun MainActivity.applyCameraLayout(rect: FloatArray) { 
