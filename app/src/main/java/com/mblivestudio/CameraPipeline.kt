@@ -52,24 +52,28 @@ internal fun MainActivity.tryStartCameraPreview() {
         try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) { e.printStackTrace() }
     }
 
-    // UPDATED: Studio Quality Audio Setup & Anti-Crackling Logic
+    // UPDATED: Hardware-Synced Audio Setup (Anti-Crackling Fix)
     var aReady = false
     
-    // Agar phone ka mic hai tabhi echo canceller aur noise suppressor chalega
+    val isBluetooth = detectedMicRoute == MicRoute.BLUETOOTH
     val useSystemFilters = detectedMicRoute == MicRoute.PHONE
-    val audioBitrate = 192 * 1024 // 192kbps (Studio Quality)
     
-    // Har haal mein pehle 44100 Hz try hoga taaki quality bani rahe
-    try { 
-        aReady = rtmpCamera.prepareAudio(audioBitrate, 44100, false, useSystemFilters, useSystemFilters) 
-    } catch (_: Exception) {}
-    
-    if (!aReady) {
-        try { aReady = rtmpCamera.prepareAudio(audioBitrate, 32000, false, useSystemFilters, useSystemFilters) } catch (_: Exception) {}
-    }
-    if (!aReady) {
+    if (isBluetooth) {
+        // Bluetooth (SCO) hardware limit is typically 8kHz/16kHz. 
+        // Forcing higher rates or active AEC causes robotic voice and crackling.
         try { aReady = rtmpCamera.prepareAudio(128 * 1024, 16000, false, false, false) } catch (_: Exception) {}
+    } else {
+        // Phone/Wired Mic: Native hardware rate on modern Android is 48000 Hz.
+        // Bypassing the 44100 Hz forced resampling prevents buffer underflow (Crackling).
+        try { aReady = rtmpCamera.prepareAudio(192 * 1024, 48000, false, useSystemFilters, useSystemFilters) } catch (_: Exception) {}
+        
+        // Safe Fallback if device strictly requires 44.1kHz
+        if (!aReady) {
+            try { aReady = rtmpCamera.prepareAudio(192 * 1024, 44100, false, useSystemFilters, useSystemFilters) } catch (_: Exception) {}
+        }
     }
+
+    // Ultimate fallback for older devices
     if (!aReady) {
         try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { e.printStackTrace() }
     }
