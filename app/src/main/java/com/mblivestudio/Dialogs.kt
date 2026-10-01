@@ -241,14 +241,31 @@ internal fun MainActivity.showAddWebDialog() {
         val url = input.text.toString().trim()
         if (url.isNotEmpty()) {
             val finalUrl = if (!url.startsWith("http")) "https://$url" else url
-            val targetWebWidth = 1920; val targetWebHeight = 1080
+            
+            // BUG FIX: Dynamic Viewport & Uniform Scaling
+            // Check if stream is portrait or landscape
+            val isPortrait = streamHeight > streamWidth
+            val targetWebWidth = if (isPortrait) 1080 else 1920
+            val targetWebHeight = if (isPortrait) 1920 else 1080
+            
             val webView = WebView(activity).apply {
                 tag = "WEB_OVERLAY"
                 layoutParams = RelativeLayout.LayoutParams(targetWebWidth, targetWebHeight).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) }
-                val containerW = overlayContainer.width.toFloat(); val containerH = overlayContainer.height.toFloat()
+                
+                val containerW = overlayContainer.width.toFloat()
+                val containerH = overlayContainer.height.toFloat()
                 val displayMetrics = resources.displayMetrics
-                scaleX = if (containerW > 0f) containerW / targetWebWidth else displayMetrics.widthPixels.toFloat() / targetWebWidth
-                scaleY = if (containerH > 0f) containerH / targetWebHeight else displayMetrics.heightPixels.toFloat() / targetWebHeight
+                
+                // Uniform Scaling to prevent "squishing" and "ghosting"
+                val scaleFactor = if (containerW > 0f && containerH > 0f) {
+                    minOf(containerW / targetWebWidth, containerH / targetWebHeight)
+                } else {
+                    minOf(displayMetrics.widthPixels.toFloat() / targetWebWidth, displayMetrics.heightPixels.toFloat() / targetWebHeight)
+                }
+                
+                scaleX = scaleFactor
+                scaleY = scaleFactor
+                
                 setBackgroundColor(Color.TRANSPARENT); setLayerType(View.LAYER_TYPE_SOFTWARE, null)
                 isVerticalScrollBarEnabled = false; isHorizontalScrollBarEnabled = false
                 settings.apply { javaScriptEnabled = true; domStorageEnabled = true; useWideViewPort = true; loadWithOverviewMode = true; textZoom = 100; setSupportZoom(false); builtInZoomControls = false; displayZoomControls = false }
