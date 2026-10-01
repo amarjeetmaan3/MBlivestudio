@@ -137,7 +137,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal val streamChatHistory = mutableListOf<String>()
 
     internal var dailyQuotaUsed = 0
-    internal var currentZoomDistance = 100f
 
     internal var liveStartTimeMillis: Long = 0L
     internal var timerRunning = false
@@ -154,14 +153,54 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    // Ticker handler/runnable (50ms loop) completely removed to save CPU
-
     internal val webSyncHandler = Handler(Looper.getMainLooper())
     internal val webSyncRunnable = object : Runnable {
         override fun run() {
             this@MainActivity.updateSnapshot(100)
             webSyncHandler.postDelayed(this, 1000)
         }
+    }
+
+    // PERFECT ZOOM FIX: Simulate a proper pinch gesture to prevent huge math jumps
+    internal fun sendSyntheticZoomEvent(zoomIn: Boolean) {
+        val now = android.os.SystemClock.uptimeMillis()
+        val props = arrayOf(MotionEvent.PointerProperties(), MotionEvent.PointerProperties())
+        props[0].id = 0; props[1].id = 1
+        val coords = arrayOf(MotionEvent.PointerCoords(), MotionEvent.PointerCoords())
+        
+        val baseSpan = 200f
+        val moveSpan = if (zoomIn) 210f else 190f // 5% incremental zoom per click
+        val delta = if (zoomIn) 1.05f else 0.95f
+        
+        coords[0].x = 0f; coords[0].y = 0f
+        
+        // 1. ACTION_DOWN
+        coords[1].x = 0f; coords[1].y = 0f
+        var event = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, 1, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
+        try { rtmpCamera.setZoom(event, 1f) } catch(e: Exception){}
+        event.recycle()
+        
+        // 2. ACTION_POINTER_DOWN (Sets the base distance for Android's Gesture Detector)
+        coords[1].x = baseSpan; coords[1].y = 0f
+        event = MotionEvent.obtain(now + 10, now + 10, MotionEvent.ACTION_POINTER_DOWN or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), 2, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
+        try { rtmpCamera.setZoom(event, 1f) } catch(e: Exception){}
+        event.recycle()
+        
+        // 3. ACTION_MOVE (Triggers the smooth zoom calculation)
+        coords[1].x = moveSpan; coords[1].y = 0f
+        event = MotionEvent.obtain(now + 20, now + 20, MotionEvent.ACTION_MOVE, 2, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
+        try { rtmpCamera.setZoom(event, delta) } catch(e: Exception){}
+        event.recycle()
+        
+        // 4. ACTION_POINTER_UP
+        event = MotionEvent.obtain(now + 30, now + 30, MotionEvent.ACTION_POINTER_UP or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), 2, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
+        try { rtmpCamera.setZoom(event, 1f) } catch(e: Exception){}
+        event.recycle()
+        
+        // 5. ACTION_UP
+        event = MotionEvent.obtain(now + 40, now + 40, MotionEvent.ACTION_UP, 1, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
+        try { rtmpCamera.setZoom(event, 1f) } catch(e: Exception){}
+        event.recycle()
     }
 
     internal fun lockOrientation() {
@@ -451,15 +490,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             } else false
         }
         
-        // ZOOM FIX: Reduced massive 15f jump down to a smooth 2f step
+        // ZOOM FIX APPLIED HERE
         findViewById<Button>(R.id.btnZoomIn).setOnClickListener { 
-            currentZoomDistance += 2f
-            sendSyntheticZoomEvent(MotionEvent.ACTION_MOVE, currentZoomDistance, 1f)
+            sendSyntheticZoomEvent(true) 
         }
         findViewById<Button>(R.id.btnZoomOut).setOnClickListener { 
-             currentZoomDistance -= 2f
-             if (currentZoomDistance < 100f) currentZoomDistance = 100f
-             sendSyntheticZoomEvent(MotionEvent.ACTION_MOVE, currentZoomDistance, 1f)
+            sendSyntheticZoomEvent(false) 
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
@@ -580,7 +616,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onAuthSuccess() { runOnUiThread { Toast.makeText(this, "Auth Success", Toast.LENGTH_SHORT).show() } }
     override fun onConnectionStarted(url: String) {}
     
-    // Adaptive Bitrate Logic yahi se stream ko girne se bachaega
     override fun onNewBitrate(bitrate: Long) { 
         if (rtmpCamera.isStreaming) { 
             try { rtmpCamera.setVideoBitrateOnFly(bitrate.toInt()) } catch (e: Exception) {} 
