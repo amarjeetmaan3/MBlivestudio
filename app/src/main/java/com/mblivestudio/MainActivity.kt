@@ -451,12 +451,13 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             } else false
         }
         
+        // ZOOM FIX: Reduced massive 15f jump down to a smooth 2f step
         findViewById<Button>(R.id.btnZoomIn).setOnClickListener { 
-            currentZoomDistance += 15f
+            currentZoomDistance += 2f
             sendSyntheticZoomEvent(MotionEvent.ACTION_MOVE, currentZoomDistance, 1f)
         }
         findViewById<Button>(R.id.btnZoomOut).setOnClickListener { 
-             currentZoomDistance -= 15f
+             currentZoomDistance -= 2f
              if (currentZoomDistance < 100f) currentZoomDistance = 100f
              sendSyntheticZoomEvent(MotionEvent.ACTION_MOVE, currentZoomDistance, 1f)
         }
