@@ -52,21 +52,24 @@ internal fun MainActivity.tryStartCameraPreview() {
         try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) { e.printStackTrace() }
     }
 
-    // PHASE 1 FIX: Hardware-Synced Audio Setup (Anti-Crackling)
+    // THE ULTIMATE AUDIO FIX (Device & Bluetooth handled separately)
     var aReady = false
     val isBluetooth = detectedMicRoute == MicRoute.BLUETOOTH
-    val useSystemFilters = detectedMicRoute == MicRoute.PHONE
+    val audioBitrate = 128 * 1024 // 128kbps is the most stable AAC standard
     
     if (isBluetooth) {
-        // Bluetooth (SCO) hardware limit is typically 8kHz/16kHz. 
-        try { aReady = rtmpCamera.prepareAudio(128 * 1024, 16000, false, false, false) } catch (_: Exception) {}
-    } else {
-        // Phone/Wired Mic: Native hardware rate on modern Android is 48000 Hz.
-        try { aReady = rtmpCamera.prepareAudio(192 * 1024, 48000, false, useSystemFilters, useSystemFilters) } catch (_: Exception) {}
-        
-        // Safe Fallback
+        // BLUETOOTH FIX: Native SCO rate is 16kHz or 8kHz. Forcing higher = crackling.
+        // isStereo = true, Filters = false, false
+        try { aReady = rtmpCamera.prepareAudio(audioBitrate, 16000, true, false, false) } catch (_: Exception) {}
         if (!aReady) {
-            try { aReady = rtmpCamera.prepareAudio(192 * 1024, 44100, false, useSystemFilters, useSystemFilters) } catch (_: Exception) {}
+            try { aReady = rtmpCamera.prepareAudio(64 * 1024, 8000, true, false, false) } catch (_: Exception) {}
+        }
+    } else {
+        // PHONE/WIRED MIC FIX: Native hardware rate is 48000 Hz.
+        // isStereo = true, Filters = false, false
+        try { aReady = rtmpCamera.prepareAudio(audioBitrate, 48000, true, false, false) } catch (_: Exception) {}
+        if (!aReady) {
+            try { aReady = rtmpCamera.prepareAudio(audioBitrate, 44100, true, false, false) } catch (_: Exception) {}
         }
     }
 
@@ -124,7 +127,7 @@ internal fun MainActivity.canvasFor(bitmap: Bitmap): Canvas {
     return if (bitmap === bitmapA) canvasA!! else canvasB!!
 }
 
-// PHASE 2 FIX: Smart Render Engine (Fixes Video Pause & Overlay Stutter)
+// SMART RENDER ENGINE (Prevents Video Pause & Stuttering)
 internal fun MainActivity.updateSnapshot(delay: Long = 100) {
     if (!rtmpCamera.isOnPreview) return
     if (pendingRefresh) { refreshQueued = true; return }
@@ -172,7 +175,6 @@ internal fun MainActivity.updateSnapshot(delay: Long = 100) {
         } finally {
             pendingRefresh = false
             
-            // Auto-detect dynamic overlays
             var needsContinuousLoop = false
             for (i in 0 until overlayContainer.childCount) {
                 val tag = overlayContainer.getChildAt(i).tag
@@ -182,8 +184,7 @@ internal fun MainActivity.updateSnapshot(delay: Long = 100) {
                 }
             }
 
-            // The 40ms CPU Breather (Max 25 FPS constraint)
-            // Ensures the Camera Encoder never starves and video never pauses on YouTube.
+            // 40ms CPU Breather (Max 25 FPS constraint) - Keeps video perfectly smooth
             if (refreshQueued) {
                 refreshQueued = false
                 updateSnapshot(40) 
