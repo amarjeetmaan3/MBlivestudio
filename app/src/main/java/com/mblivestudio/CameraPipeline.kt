@@ -52,22 +52,19 @@ internal fun MainActivity.tryStartCameraPreview() {
         try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) { e.printStackTrace() }
     }
 
-    // UPDATED: Hardware-Synced Audio Setup (Anti-Crackling Fix)
+    // PHASE 1 FIX: Hardware-Synced Audio Setup (Anti-Crackling)
     var aReady = false
-    
     val isBluetooth = detectedMicRoute == MicRoute.BLUETOOTH
     val useSystemFilters = detectedMicRoute == MicRoute.PHONE
     
     if (isBluetooth) {
         // Bluetooth (SCO) hardware limit is typically 8kHz/16kHz. 
-        // Forcing higher rates or active AEC causes robotic voice and crackling.
         try { aReady = rtmpCamera.prepareAudio(128 * 1024, 16000, false, false, false) } catch (_: Exception) {}
     } else {
         // Phone/Wired Mic: Native hardware rate on modern Android is 48000 Hz.
-        // Bypassing the 44100 Hz forced resampling prevents buffer underflow (Crackling).
         try { aReady = rtmpCamera.prepareAudio(192 * 1024, 48000, false, useSystemFilters, useSystemFilters) } catch (_: Exception) {}
         
-        // Safe Fallback if device strictly requires 44.1kHz
+        // Safe Fallback
         if (!aReady) {
             try { aReady = rtmpCamera.prepareAudio(192 * 1024, 44100, false, useSystemFilters, useSystemFilters) } catch (_: Exception) {}
         }
@@ -127,6 +124,7 @@ internal fun MainActivity.canvasFor(bitmap: Bitmap): Canvas {
     return if (bitmap === bitmapA) canvasA!! else canvasB!!
 }
 
+// PHASE 2 FIX: Smart Render Engine (Fixes Video Pause & Overlay Stutter)
 internal fun MainActivity.updateSnapshot(delay: Long = 100) {
     if (!rtmpCamera.isOnPreview) return
     if (pendingRefresh) { refreshQueued = true; return }
@@ -148,27 +146,50 @@ internal fun MainActivity.updateSnapshot(delay: Long = 100) {
                     View.MeasureSpec.makeMeasureSpec(ch, View.MeasureSpec.EXACTLY)
                 )
                 overlayContainer.layout(0, 0, cw, ch)
-                
                 overlayContainer.invalidate() 
             } else if (overlayContainer.width == 0 || overlayContainer.height == 0) {
                 return@postDelayed 
             }
 
             useBufferA = !useBufferA
-            if (useBufferA) {
+            val targetBitmap = if (useBufferA) {
                 if (bitmapA == null || bitmapA!!.isRecycled || bitmapA!!.width != w || bitmapA!!.height != h) {
                     bitmapA?.recycle(); bitmapA = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888); canvasA = Canvas(bitmapA!!)
                 }
-                bitmapA!!.eraseColor(Color.TRANSPARENT); drawOverlayToStreamBitmap(bitmapA!!); imageFilterRender.setImage(bitmapA!!)
+                bitmapA!!
             } else {
                 if (bitmapB == null || bitmapB!!.isRecycled || bitmapB!!.width != w || bitmapB!!.height != h) {
                     bitmapB?.recycle(); bitmapB = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888); canvasB = Canvas(bitmapB!!)
                 }
-                bitmapB!!.eraseColor(Color.TRANSPARENT); drawOverlayToStreamBitmap(bitmapB!!); imageFilterRender.setImage(bitmapB!!)
+                bitmapB!!
             }
-        } catch (e: Exception) { e.printStackTrace() } finally {
+            
+            targetBitmap.eraseColor(Color.TRANSPARENT)
+            drawOverlayToStreamBitmap(targetBitmap)
+            imageFilterRender.setImage(targetBitmap)
+        } catch (e: Exception) { 
+            e.printStackTrace() 
+        } finally {
             pendingRefresh = false
-            if (refreshQueued) { refreshQueued = false; updateSnapshot(0) }
+            
+            // Auto-detect dynamic overlays
+            var needsContinuousLoop = false
+            for (i in 0 until overlayContainer.childCount) {
+                val tag = overlayContainer.getChildAt(i).tag
+                if (tag == "WEB_OVERLAY" || tag == "LOWER_THIRD") {
+                    needsContinuousLoop = true
+                    break
+                }
+            }
+
+            // The 40ms CPU Breather (Max 25 FPS constraint)
+            // Ensures the Camera Encoder never starves and video never pauses on YouTube.
+            if (refreshQueued) {
+                refreshQueued = false
+                updateSnapshot(40) 
+            } else if (needsContinuousLoop && !isBackgrounded) {
+                updateSnapshot(40)
+            }
         }
     }, smartDelay)
 }
