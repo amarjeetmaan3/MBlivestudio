@@ -101,7 +101,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal val MAX_RETRIES = 3
     internal var generatedRtmpUrl: String? = null
 
-    // DEEPSEEK FIX: Dedicated Background Thread for Overlays to save Audio CPU Buffer[cite: 4]
+    // Background Thread for Overlays to save Audio CPU Buffer
     internal val overlayThread = android.os.HandlerThread("OverlayThread").apply { start() }
     internal val backgroundOverlayHandler = android.os.Handler(overlayThread.looper)
     
@@ -140,9 +140,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal val streamChatHistory = mutableListOf<String>()
 
     internal var dailyQuotaUsed = 0
-
-    // DEEPSEEK FIX: Safe Integer Zoom State[cite: 4]
-    internal var currentZoomLevel = 0
 
     internal var liveStartTimeMillis: Long = 0L
     internal var timerRunning = false
@@ -433,23 +430,17 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             toggleBluetoothMic(btnBluetoothMic)
         }
 
-// DEEPSEEK FIX: Proper, direct Zoom API with correct Float cast
+        // PERFECT ZOOM FIX: Sending scale multipliers (5% per click) instead of huge absolute numbers
         findViewById<Button>(R.id.btnZoomIn).setOnClickListener { 
-            currentZoomLevel += 2 
-            if (currentZoomLevel > 100) currentZoomLevel = 100
-            try { rtmpCamera.setZoom(currentZoomLevel.toFloat()) } catch (e: Exception) {}
+            try { rtmpCamera.setZoom(1.05f) } catch (e: Exception) {} 
         }
         findViewById<Button>(R.id.btnZoomOut).setOnClickListener { 
-            currentZoomLevel -= 2
-            if (currentZoomLevel < 0) currentZoomLevel = 0
-            try { rtmpCamera.setZoom(currentZoomLevel.toFloat()) } catch (e: Exception) {}
+            try { rtmpCamera.setZoom(0.95f) } catch (e: Exception) {} 
         }
 
-        var currentTouchEvent: MotionEvent? = null
         val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
-                // Changed from setZoom(event, scale) to just setZoom(event) as required by the library
-                currentTouchEvent?.let { event -> try { rtmpCamera.setZoom(event) } catch (e: Exception) {} }
+                try { rtmpCamera.setZoom(detector.scaleFactor) } catch (e: Exception) {}
                 return true
             }
         })
@@ -461,7 +452,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 imm.hideSoftInputFromWindow(openGlView.windowToken, 0)
             }
             if (event.pointerCount > 1) {
-                currentTouchEvent = event
                 scaleGestureDetector.onTouchEvent(event)
                 true
             } else false
@@ -477,9 +467,15 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).requestEmail().requestProfile().requestScopes(Scope("https://www.googleapis.com/auth/youtube")).build()
         googleSignInClient = GoogleSignIn.getClient(this, gso)
         val account = GoogleSignIn.getLastSignedInAccount(this)
-        if (account != null) { connectedAccountEmail = account.email; applyAccountToHeader(account) }
+        
+        if (account != null) { 
+            connectedAccountEmail = account.email
+            applyAccountToHeader(account) 
+            // On fresh open, fetch the avatar if already logged in
+            fetchYouTubeChannelProfile()
+        }
 
-       ivProfilePhoto.setOnClickListener { 
+        ivProfilePhoto.setOnClickListener { 
             val acc = GoogleSignIn.getLastSignedInAccount(this)
             if (acc == null) {
                 startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST) 
@@ -549,7 +545,18 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 PICK_THUMBNAIL_REQUEST -> { pendingThumbnailUri = data.data; thumbnailPreviewImageView?.setImageURI(pendingThumbnailUri) }
                 SIGN_IN_REQUEST -> {
                     val task = GoogleSignIn.getSignedInAccountFromIntent(data)
-                    try { val account = task.getResult(ApiException::class.java); connectedAccountEmail = account?.email; if (account != null) applyAccountToHeader(account); Toast.makeText(this, "Signed in as ${account?.email}", Toast.LENGTH_SHORT).show() } catch (e: ApiException) { e.printStackTrace(); Toast.makeText(this, "Sign-in failed", Toast.LENGTH_SHORT).show() }
+                    try { 
+                        val account = task.getResult(ApiException::class.java)
+                        connectedAccountEmail = account?.email
+                        Toast.makeText(this, "Signed in as ${account?.email}", Toast.LENGTH_SHORT).show()
+                        
+                        // FETCH BRAND ACCOUNT PHOTO FIX
+                        fetchYouTubeChannelProfile()
+                        
+                    } catch (e: ApiException) { 
+                        e.printStackTrace()
+                        Toast.makeText(this, "Sign-in failed", Toast.LENGTH_SHORT).show() 
+                    }
                 }
             }
         }
@@ -563,7 +570,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         super.onDestroy()
         if (!rtmpCamera.isStreaming) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
         
-        // DEEPSEEK FIX: Proper cleanup of Background Thread[cite: 4]
         backgroundOverlayHandler.removeCallbacksAndMessages(null)
         overlayThread.quitSafely()
         
