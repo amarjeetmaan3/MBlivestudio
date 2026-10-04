@@ -433,22 +433,23 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             toggleBluetoothMic(btnBluetoothMic)
         }
 
-        // DEEPSEEK FIX: Proper, direct, integer-based Zoom API[cite: 4]
+// DEEPSEEK FIX: Proper, direct Zoom API with correct Float cast
         findViewById<Button>(R.id.btnZoomIn).setOnClickListener { 
             currentZoomLevel += 2 
             if (currentZoomLevel > 100) currentZoomLevel = 100
-            try { rtmpCamera.setZoom(currentZoomLevel) } catch (e: Exception) {}
+            try { rtmpCamera.setZoom(currentZoomLevel.toFloat()) } catch (e: Exception) {}
         }
         findViewById<Button>(R.id.btnZoomOut).setOnClickListener { 
             currentZoomLevel -= 2
             if (currentZoomLevel < 0) currentZoomLevel = 0
-            try { rtmpCamera.setZoom(currentZoomLevel) } catch (e: Exception) {}
+            try { rtmpCamera.setZoom(currentZoomLevel.toFloat()) } catch (e: Exception) {}
         }
 
         var currentTouchEvent: MotionEvent? = null
         val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
-                currentTouchEvent?.let { event -> try { rtmpCamera.setZoom(event, detector.scaleFactor) } catch (e: Exception) {} }
+                // Changed from setZoom(event, scale) to just setZoom(event) as required by the library
+                currentTouchEvent?.let { event -> try { rtmpCamera.setZoom(event) } catch (e: Exception) {} }
                 return true
             }
         })
