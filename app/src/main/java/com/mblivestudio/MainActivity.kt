@@ -101,7 +101,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal val MAX_RETRIES = 3
     internal var generatedRtmpUrl: String? = null
 
-    internal val overlayHandler = Handler(Looper.getMainLooper())
+    // DEEPSEEK FIX: Dedicated Background Thread for Overlays to save Audio CPU Buffer[cite: 4]
+    internal val overlayThread = android.os.HandlerThread("OverlayThread").apply { start() }
+    internal val backgroundOverlayHandler = android.os.Handler(overlayThread.looper)
+    
     internal var pendingRefresh = false
     internal var refreshQueued = false
     internal var surfaceReady = false
@@ -138,6 +141,9 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     internal var dailyQuotaUsed = 0
 
+    // DEEPSEEK FIX: Safe Integer Zoom State[cite: 4]
+    internal var currentZoomLevel = 0
+
     internal var liveStartTimeMillis: Long = 0L
     internal var timerRunning = false
     internal val timerHandler = Handler(Looper.getMainLooper())
@@ -159,48 +165,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             this@MainActivity.updateSnapshot(100)
             webSyncHandler.postDelayed(this, 1000)
         }
-    }
-
-    // PERFECT ZOOM FIX: Simulate a proper pinch gesture to prevent huge math jumps
-    internal fun sendSyntheticZoomEvent(zoomIn: Boolean) {
-        val now = android.os.SystemClock.uptimeMillis()
-        val props = arrayOf(MotionEvent.PointerProperties(), MotionEvent.PointerProperties())
-        props[0].id = 0; props[1].id = 1
-        val coords = arrayOf(MotionEvent.PointerCoords(), MotionEvent.PointerCoords())
-        
-        val baseSpan = 200f
-        val moveSpan = if (zoomIn) 210f else 190f // 5% incremental zoom per click
-        val delta = if (zoomIn) 1.05f else 0.95f
-        
-        coords[0].x = 0f; coords[0].y = 0f
-        
-        // 1. ACTION_DOWN
-        coords[1].x = 0f; coords[1].y = 0f
-        var event = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, 1, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
-        try { rtmpCamera.setZoom(event, 1f) } catch(e: Exception){}
-        event.recycle()
-        
-        // 2. ACTION_POINTER_DOWN (Sets the base distance for Android's Gesture Detector)
-        coords[1].x = baseSpan; coords[1].y = 0f
-        event = MotionEvent.obtain(now + 10, now + 10, MotionEvent.ACTION_POINTER_DOWN or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), 2, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
-        try { rtmpCamera.setZoom(event, 1f) } catch(e: Exception){}
-        event.recycle()
-        
-        // 3. ACTION_MOVE (Triggers the smooth zoom calculation)
-        coords[1].x = moveSpan; coords[1].y = 0f
-        event = MotionEvent.obtain(now + 20, now + 20, MotionEvent.ACTION_MOVE, 2, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
-        try { rtmpCamera.setZoom(event, delta) } catch(e: Exception){}
-        event.recycle()
-        
-        // 4. ACTION_POINTER_UP
-        event = MotionEvent.obtain(now + 30, now + 30, MotionEvent.ACTION_POINTER_UP or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), 2, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
-        try { rtmpCamera.setZoom(event, 1f) } catch(e: Exception){}
-        event.recycle()
-        
-        // 5. ACTION_UP
-        event = MotionEvent.obtain(now + 40, now + 40, MotionEvent.ACTION_UP, 1, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
-        try { rtmpCamera.setZoom(event, 1f) } catch(e: Exception){}
-        event.recycle()
     }
 
     internal fun lockOrientation() {
@@ -469,6 +433,18 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             toggleBluetoothMic(btnBluetoothMic)
         }
 
+        // DEEPSEEK FIX: Proper, direct, integer-based Zoom API[cite: 4]
+        findViewById<Button>(R.id.btnZoomIn).setOnClickListener { 
+            currentZoomLevel += 2 
+            if (currentZoomLevel > 100) currentZoomLevel = 100
+            try { rtmpCamera.setZoom(currentZoomLevel) } catch (e: Exception) {}
+        }
+        findViewById<Button>(R.id.btnZoomOut).setOnClickListener { 
+            currentZoomLevel -= 2
+            if (currentZoomLevel < 0) currentZoomLevel = 0
+            try { rtmpCamera.setZoom(currentZoomLevel) } catch (e: Exception) {}
+        }
+
         var currentTouchEvent: MotionEvent? = null
         val scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
@@ -488,14 +464,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 scaleGestureDetector.onTouchEvent(event)
                 true
             } else false
-        }
-        
-        // ZOOM FIX APPLIED HERE
-        findViewById<Button>(R.id.btnZoomIn).setOnClickListener { 
-            sendSyntheticZoomEvent(true) 
-        }
-        findViewById<Button>(R.id.btnZoomOut).setOnClickListener { 
-            sendSyntheticZoomEvent(false) 
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
@@ -583,7 +551,12 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onDestroy() {
         super.onDestroy()
         if (!rtmpCamera.isStreaming) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} }
-        overlayHandler.removeCallbacksAndMessages(null); chatHandler.removeCallbacksAndMessages(null); timerHandler.removeCallbacksAndMessages(null); webSyncHandler.removeCallbacksAndMessages(null)
+        
+        // DEEPSEEK FIX: Proper cleanup of Background Thread[cite: 4]
+        backgroundOverlayHandler.removeCallbacksAndMessages(null)
+        overlayThread.quitSafely()
+        
+        chatHandler.removeCallbacksAndMessages(null); timerHandler.removeCallbacksAndMessages(null); webSyncHandler.removeCallbacksAndMessages(null)
         bitmapA?.let { if (!it.isRecycled) it.recycle() }; bitmapA = null; canvasA = null; bitmapB?.let { if (!it.isRecycled) it.recycle() }; bitmapB = null; canvasB = null
     }
 
