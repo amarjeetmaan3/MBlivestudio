@@ -6,7 +6,7 @@ plugins {
 val runNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
 
 // ================= PASTE YOUR VALUES HERE =================
-val oauthClientId = "Client: 3754995309-oi297jlj89cq0nn9rqv54f7h0pcnf1tr.apps.googleusercontent.com"   // Google Cloud > Credentials > Android client
+val oauthClientId = "3754995309-oi297jlj89cq0nn9rqv54f7h0pcnf1tr.apps.googleusercontent.com"   // Google Cloud > Credentials > Android client
 val githubRepo = "amarjeetmaan3/MBlivestudio"                                      // e.g. amar/MBlivestudio (must be a PUBLIC repo)
 // ==========================================================
 val redirectScheme = "com.googleusercontent.apps." + oauthClientId.removeSuffix(".apps.googleusercontent.com")
