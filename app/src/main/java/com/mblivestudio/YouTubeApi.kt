@@ -235,3 +235,40 @@ internal fun MainActivity.stopStudioTimer() {
     tvLiveTimer.visibility = View.GONE
     tvLiveTimer.text = "00:00:00" 
 }
+
+// NEW FIX: Fetch and set the actual Brand Account Logo and Name in the app header
+internal fun MainActivity.fetchYouTubeChannelProfile() {
+    Thread {
+        try {
+            val credential = GoogleAccountCredential.usingOAuth2(this, listOf("https://www.googleapis.com/auth/youtube.readonly"))
+            val signInAccount = GoogleSignIn.getLastSignedInAccount(this)
+            if (signInAccount?.account != null) credential.selectedAccount = signInAccount.account else credential.selectedAccountName = connectedAccountEmail
+            
+            val youtube = YouTube.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), credential).setApplicationName("MBLiveStudio").build()
+            
+            // Fetching the currently selected Brand Account/Channel
+            val response = youtube.channels().list("snippet").setMine(true).execute()
+            val channel = response.items?.firstOrNull()
+            
+            val channelName = channel?.snippet?.title ?: "Unknown Channel"
+            val channelLogoUrl = channel?.snippet?.thumbnails?.default?.url
+            
+            runOnUiThread {
+                Toast.makeText(this, "Channel Linked: $channelName", Toast.LENGTH_LONG).show()
+                
+                // Downloading and setting the Brand Account Logo
+                if (channelLogoUrl != null) {
+                    Thread {
+                        try {
+                            val url = java.net.URL(channelLogoUrl)
+                            val bmp = android.graphics.BitmapFactory.decodeStream(url.openConnection().getInputStream())
+                            runOnUiThread { ivProfilePhoto.setImageBitmap(bmp) }
+                        } catch (e: Exception) { e.printStackTrace() }
+                    }.start()
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }.start()
+}
