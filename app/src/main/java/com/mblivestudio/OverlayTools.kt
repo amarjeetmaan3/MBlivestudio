@@ -21,7 +21,6 @@ import android.webkit.WebView
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.RelativeLayout
-import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 
 internal fun MainActivity.addImageOverlayToScreen(bitmap: Bitmap) {
     val imageView = ImageView(this).apply { setImageBitmap(bitmap); layoutParams = RelativeLayout.LayoutParams(300, 300).apply { addRule(RelativeLayout.CENTER_IN_PARENT, RelativeLayout.TRUE) } }
@@ -145,9 +144,6 @@ internal fun MainActivity.addLiveTextOverlay() {
     val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager; imm.showSoftInput(liveEditText, InputMethodManager.SHOW_IMPLICIT)
 }
 
-internal fun MainActivity.applyAccountToHeader(account: GoogleSignInAccount) {
-    account.photoUrl?.let { url -> Thread { try { val input = java.net.URL(url.toString()).openStream(); val bmp = BitmapFactory.decodeStream(input); input.close(); val circular = cropToCircle(bmp); runOnUiThread { findViewById<ImageView>(R.id.ivProfilePhoto).setImageBitmap(circular) } } catch (e: Exception) { e.printStackTrace() } }.start() }
-}
 
 internal fun MainActivity.cropToCircle(bitmap: Bitmap): Bitmap {
     val size = minOf(bitmap.width, bitmap.height); val output = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)

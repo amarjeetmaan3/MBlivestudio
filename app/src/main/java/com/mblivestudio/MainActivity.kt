@@ -32,11 +32,6 @@ import com.pedro.common.ConnectChecker
 import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
 import com.pedro.encoder.utils.gl.AspectRatioMode
 import com.pedro.library.rtmp.RtmpCamera2
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInClient
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import com.google.android.gms.common.api.Scope
-import com.google.android.gms.common.api.ApiException
 import com.google.api.services.youtube.YouTube
 import com.pedro.library.view.OpenGlView
 
@@ -94,8 +89,6 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal val REQUEST_AUTHORIZATION = 1001
     internal val PICK_THUMBNAIL_REQUEST = 103
 
-    internal lateinit var googleSignInClient: GoogleSignInClient
-    internal var connectedAccountEmail: String? = null
 
     internal var retryCount = 0
     internal val MAX_RETRIES = 3
@@ -464,50 +457,17 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 3)
         }
 
-        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).requestEmail().requestProfile().requestScopes(Scope("https://www.googleapis.com/auth/youtube")).build()
-        googleSignInClient = GoogleSignIn.getClient(this, gso)
-        val account = GoogleSignIn.getLastSignedInAccount(this)
-        
-        if (account != null) { 
-            connectedAccountEmail = account.email
-            applyAccountToHeader(account) 
-            // On fresh open, fetch the avatar if already logged in
-            fetchYouTubeChannelProfile()
-        }
-
-        ivProfilePhoto.setOnClickListener { 
-            val acc = GoogleSignIn.getLastSignedInAccount(this)
-            if (acc == null) {
-                startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST) 
-            } else {
-                AlertDialog.Builder(this)
-                    .setTitle("Account Options")
-                    .setMessage("Logged in as: ${acc.email}\n\nDo you want to switch your YouTube Channel?")
-                    .setPositiveButton("Switch Channel") { _, _ ->
-                        
-                        // THE OFFICIAL FIX: Revoke Access forces Google to ask for permissions again
-                        googleSignInClient.revokeAccess().addOnCompleteListener {
-                            connectedAccountEmail = null
-                            ivProfilePhoto.setImageResource(android.R.drawable.sym_def_app_icon)
-                            
-                            // Safe cleanup of local session
-                            googleSignInClient.signOut()
-                            
-                            Toast.makeText(this, "Session cleared! Click profile again to login and choose a channel.", Toast.LENGTH_LONG).show()
-                        }
-                        
-                    }.setNegativeButton("Cancel", null).show()
-            }
-        }
+        AuthManager.init(this)
+        if (AuthManager.activeChannel() != null) { fetchYouTubeChannelProfile() }
+        ivProfilePhoto.setOnClickListener { AuthManager.showChannelPicker(this) }
+        Updater.checkForUpdate(this)
 
         btnStreamsManager.setOnClickListener { showSavedStreamsManager() }
 
         btnGoLive.setOnClickListener {
             if (rtmpCamera.isStreaming) { AlertDialog.Builder(this).setTitle("Stop Live Stream?").setMessage("This will end your broadcast on YouTube.").setPositiveButton("End Stream") { _, _ -> stopLiveStream() }.setNegativeButton("Cancel", null).show(); return@setOnClickListener }
             if (!rtmpCamera.isOnPreview) { tryStartCameraPreview(); Toast.makeText(this, "Camera starting, try LIVE again in a moment.", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
-            val currentAccount = GoogleSignIn.getLastSignedInAccount(this)
-            if (currentAccount == null) { Toast.makeText(this, "Please Sign In with YouTube first!", Toast.LENGTH_SHORT).show(); startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST); return@setOnClickListener }
-            if (!GoogleSignIn.hasPermissions(currentAccount, Scope("https://www.googleapis.com/auth/youtube"))) { GoogleSignIn.requestPermissions(this, REQUEST_AUTHORIZATION, currentAccount, Scope("https://www.googleapis.com/auth/youtube")); return@setOnClickListener }
+            if (AuthManager.activeChannel() == null) { Toast.makeText(this, "Please add a YouTube channel first!", Toast.LENGTH_SHORT).show(); AuthManager.showChannelPicker(this); return@setOnClickListener }
             
             lockOrientation()
             showGoLiveDialog()
@@ -543,21 +503,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                     } catch (e: Exception) { e.printStackTrace(); Toast.makeText(this, "Failed to load image", Toast.LENGTH_SHORT).show() }
                 }
                 PICK_THUMBNAIL_REQUEST -> { pendingThumbnailUri = data.data; thumbnailPreviewImageView?.setImageURI(pendingThumbnailUri) }
-                SIGN_IN_REQUEST -> {
-                    val task = GoogleSignIn.getSignedInAccountFromIntent(data)
-                    try { 
-                        val account = task.getResult(ApiException::class.java)
-                        connectedAccountEmail = account?.email
-                        Toast.makeText(this, "Signed in as ${account?.email}", Toast.LENGTH_SHORT).show()
-                        
-                        // FETCH BRAND ACCOUNT PHOTO FIX
-                        fetchYouTubeChannelProfile()
-                        
-                    } catch (e: ApiException) { 
-                        e.printStackTrace()
-                        Toast.makeText(this, "Sign-in failed", Toast.LENGTH_SHORT).show() 
-                    }
-                }
+                AuthManager.AUTH_REQUEST -> AuthManager.handleAuthResult(this, data)
             }
         }
     }
