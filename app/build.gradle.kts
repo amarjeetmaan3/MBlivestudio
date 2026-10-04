@@ -5,6 +5,12 @@ plugins {
 
 val runNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
 
+// ================= PASTE YOUR VALUES HERE =================
+val oauthClientId = "PASTE_CLIENT_ID.apps.googleusercontent.com"   // Google Cloud > Credentials > Android client
+val githubRepo = "OWNER/REPO"                                      // e.g. amar/MBlivestudio (must be a PUBLIC repo)
+// ==========================================================
+val redirectScheme = "com.googleusercontent.apps." + oauthClientId.removeSuffix(".apps.googleusercontent.com")
+
 android {
     namespace = "com.mblivestudio"
     compileSdk = 34
@@ -24,12 +30,20 @@ android {
         targetSdk = 34
         versionCode = runNumber
         versionName = "2.0.$runNumber"
+        buildConfigField("String", "OAUTH_CLIENT_ID", "\"$oauthClientId\"")
+        buildConfigField("String", "GITHUB_REPO", "\"$githubRepo\"")
+        buildConfigField("String", "REDIRECT_URI", "\"$redirectScheme:/oauth2redirect\"")
+        manifestPlaceholders["appAuthRedirectScheme"] = redirectScheme
     }
 
     buildTypes {
         getByName("debug") {
             signingConfig = signingConfigs.getByName("permanentDebug")
         }
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     compileOptions {
@@ -75,6 +89,8 @@ dependencies {
     // StreamPack 3.2.0
     implementation("io.github.thibaultbee.streampack:streampack-core:3.2.0")
     implementation("io.github.thibaultbee.streampack:streampack-rtmp:3.2.0")
+
+    implementation("net.openid:appauth:0.11.1")
 
     implementation("com.google.android.gms:play-services-auth:20.7.0")
     implementation("com.google.api-client:google-api-client-android:1.32.2")
