@@ -56,3 +56,11 @@ jobs:
         with:
           name: mblivestudio-apk
           path: app/build/outputs/apk/debug/*.apk
+      - name: Publish GitHub Release (for in-app updater)
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v2.0.${{ github.run_number }}
+          name: M.B. Live Studio 2.0.${{ github.run_number }}
+          files: app/build/outputs/apk/debug/*.apk
+          make_latest: true
