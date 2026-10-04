@@ -52,11 +52,8 @@ internal fun MainActivity.tryStartCameraPreview() {
         try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) { e.printStackTrace() }
     }
 
-    // BULLETPROOF AUDIO FIX (Zero Crackling Guarantee)
-    // 1. isStereo = false (Mono). Forcing stereo on mics creates garbage static data.
-    // 2. 32000 Hz / 16000 Hz. High rates choke the AAC hardware encoder on many Android SOCs.
-    // 3. Filters = false. OEM AcousticEchoCanceler drops packets and causes robotic static.
-    
+    // BULLETPROOF AUDIO FIX: 
+    // strictly Mono (false) and correct sample rates to prevent hardware artifacts[cite: 3]
     var aReady = false
     val isBluetooth = detectedMicRoute == MicRoute.BLUETOOTH
     
@@ -123,7 +120,7 @@ internal fun MainActivity.canvasFor(bitmap: Bitmap): Canvas {
     return if (bitmap === bitmapA) canvasA!! else canvasB!!
 }
 
-// SMART RENDER ENGINE (Prevents Video Pause & Stuttering)
+// SMART RENDER ENGINE: Shifted to Background Thread to save CPU & Audio Buffer[cite: 3]
 internal fun MainActivity.updateSnapshot(delay: Long = 100) {
     if (!rtmpCamera.isOnPreview) return
     if (pendingRefresh) { refreshQueued = true; return }
@@ -131,22 +128,27 @@ internal fun MainActivity.updateSnapshot(delay: Long = 100) {
     
     val smartDelay = if (isBackgrounded) maxOf(delay, 1000L) else delay
 
-    overlayHandler.postDelayed({
+    // Executing the heavy bitmap creation on a completely separate background thread
+    backgroundOverlayHandler.postDelayed({
         try {
             val w = streamWidth.coerceAtLeast(1)
             val h = streamHeight.coerceAtLeast(1)
             
             if (isBackgrounded) {
-                val cw = if (overlayContainer.width > 0) overlayContainer.width else w
-                val ch = if (overlayContainer.height > 0) overlayContainer.height else h
-                
-                overlayContainer.measure(
-                    View.MeasureSpec.makeMeasureSpec(cw, View.MeasureSpec.EXACTLY),
-                    View.MeasureSpec.makeMeasureSpec(ch, View.MeasureSpec.EXACTLY)
-                )
-                overlayContainer.layout(0, 0, cw, ch)
-                overlayContainer.invalidate() 
+                // UI measurements must briefly ping the main thread
+                runOnUiThread {
+                    try {
+                        val cw = if (overlayContainer.width > 0) overlayContainer.width else w
+                        val ch = if (overlayContainer.height > 0) overlayContainer.height else h
+                        overlayContainer.measure(
+                            View.MeasureSpec.makeMeasureSpec(cw, View.MeasureSpec.EXACTLY),
+                            View.MeasureSpec.makeMeasureSpec(ch, View.MeasureSpec.EXACTLY)
+                        )
+                        overlayContainer.layout(0, 0, cw, ch)
+                    } catch (e: Exception) {}
+                }
             } else if (overlayContainer.width == 0 || overlayContainer.height == 0) {
+                pendingRefresh = false
                 return@postDelayed 
             }
 
@@ -164,7 +166,7 @@ internal fun MainActivity.updateSnapshot(delay: Long = 100) {
             }
             
             targetBitmap.eraseColor(Color.TRANSPARENT)
-            drawOverlayToStreamBitmap(targetBitmap)
+            drawOverlayToStreamBitmap(targetBitmap) // Heavy drawing happens off the Main Thread!
             imageFilterRender.setImage(targetBitmap)
         } catch (e: Exception) { 
             e.printStackTrace() 
@@ -172,13 +174,15 @@ internal fun MainActivity.updateSnapshot(delay: Long = 100) {
             pendingRefresh = false
             
             var needsContinuousLoop = false
-            for (i in 0 until overlayContainer.childCount) {
-                val tag = overlayContainer.getChildAt(i).tag
-                if (tag == "WEB_OVERLAY" || tag == "LOWER_THIRD") {
-                    needsContinuousLoop = true
-                    break
+            try {
+                for (i in 0 until overlayContainer.childCount) {
+                    val tag = overlayContainer.getChildAt(i)?.tag
+                    if (tag == "WEB_OVERLAY" || tag == "LOWER_THIRD") {
+                        needsContinuousLoop = true
+                        break
+                    }
                 }
-            }
+            } catch (e: Exception) {}
 
             if (refreshQueued) {
                 refreshQueued = false
