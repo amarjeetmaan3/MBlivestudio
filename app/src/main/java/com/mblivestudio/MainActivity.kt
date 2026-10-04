@@ -478,18 +478,28 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         val account = GoogleSignIn.getLastSignedInAccount(this)
         if (account != null) { connectedAccountEmail = account.email; applyAccountToHeader(account) }
 
-        ivProfilePhoto.setOnClickListener { 
+       ivProfilePhoto.setOnClickListener { 
             val acc = GoogleSignIn.getLastSignedInAccount(this)
             if (acc == null) {
                 startActivityForResult(googleSignInClient.signInIntent, SIGN_IN_REQUEST) 
             } else {
-                AlertDialog.Builder(this).setTitle("Account Options").setMessage("Logged in as: ${acc.email}").setPositiveButton("Logout / Switch Channel") { _, _ ->
-                    googleSignInClient.signOut().addOnCompleteListener {
-                        connectedAccountEmail = null
-                        ivProfilePhoto.setImageResource(android.R.drawable.sym_def_app_icon)
-                        Toast.makeText(this, "Logged out. You can now login with another channel.", Toast.LENGTH_LONG).show()
-                    }
-                }.setNegativeButton("Cancel", null).show()
+                AlertDialog.Builder(this)
+                    .setTitle("Account Options")
+                    .setMessage("Logged in as: ${acc.email}\n\nDo you want to switch your YouTube Channel?")
+                    .setPositiveButton("Switch Channel") { _, _ ->
+                        
+                        // THE OFFICIAL FIX: Revoke Access forces Google to ask for permissions again
+                        googleSignInClient.revokeAccess().addOnCompleteListener {
+                            connectedAccountEmail = null
+                            ivProfilePhoto.setImageResource(android.R.drawable.sym_def_app_icon)
+                            
+                            // Safe cleanup of local session
+                            googleSignInClient.signOut()
+                            
+                            Toast.makeText(this, "Session cleared! Click profile again to login and choose a channel.", Toast.LENGTH_LONG).show()
+                        }
+                        
+                    }.setNegativeButton("Cancel", null).show()
             }
         }
 
