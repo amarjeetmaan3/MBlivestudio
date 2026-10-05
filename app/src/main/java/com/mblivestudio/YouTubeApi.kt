@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Color
 import android.view.View
 import android.widget.Toast
+import com.google.api.client.googleapis.json.GoogleJsonResponseException
 import com.google.api.client.http.HttpRequestInitializer
 import com.google.api.client.http.InputStreamContent
 import com.google.api.client.http.javanet.NetHttpTransport
@@ -181,6 +182,11 @@ internal fun MainActivity.pollViewersOnce() {
                 tvViewerCount.text = "Viewers: $viewers"
                 if (switchShowViewers.isChecked) tvViewerCount.visibility = View.VISIBLE 
             }
+        } catch (e: GoogleJsonResponseException) {
+            if (e.statusCode == 401) {
+                try { AuthManager.refreshToken(this@pollViewersOnce) { if (it && chatPollingActive) chatHandler.postDelayed({ pollViewersOnce() }, 2000L) } } catch (e: Exception) {}
+                return@Thread
+            }
         } catch (e: Exception) { e.printStackTrace() }
         if (chatPollingActive) chatHandler.postDelayed({ pollViewersOnce() }, 5000L)
     }.start()
@@ -210,6 +216,23 @@ internal fun MainActivity.pollChatOnce() {
             val youtubeDelay = response.pollingIntervalMillis ?: 5000L
             val finalDelay = if (youtubeDelay > 5000L) youtubeDelay else 5000L
             if (chatPollingActive) chatHandler.postDelayed({ pollChatOnce() }, finalDelay)
+        } catch (e: GoogleJsonResponseException) {
+            e.printStackTrace()
+            // CHAT FIX: Catch 401 Unauthorized errors caused by expired tokens and trigger a silent refresh
+            if (e.statusCode == 401) {
+                try {
+                    AuthManager.refreshToken(this@pollChatOnce) { success -> 
+                        // Once token is refreshed, build a new youtubeClient instance to apply it and resume polling
+                        if (success && chatPollingActive) {
+                            val newYoutube = YouTube.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), HttpRequestInitializer { req -> req.headers.setAuthorization("Bearer " + AuthManager.accessToken()); req.connectTimeout = 10000; req.readTimeout = 10000; req.numberOfRetries = 0 }).setApplicationName("MBLiveStudio").build()
+                            this@pollChatOnce.youtubeClient = newYoutube
+                            chatHandler.postDelayed({ pollChatOnce() }, 2000L) 
+                        }
+                    }
+                } catch (e: Exception) {}
+                return@Thread
+            }
+            if (chatPollingActive) chatHandler.postDelayed({ pollChatOnce() }, 10000L)
         } catch (e: Exception) {
             e.printStackTrace()
             if (chatPollingActive) chatHandler.postDelayed({ pollChatOnce() }, 10000L)
@@ -231,7 +254,6 @@ internal fun MainActivity.stopStudioTimer() {
     tvLiveTimer.text = "00:00:00" 
 }
 
-// Shows the active channel logo + name in the app header (data comes from AuthManager)
 internal fun MainActivity.fetchYouTubeChannelProfile() {
     val ch = AuthManager.activeChannel() ?: return
     Toast.makeText(this, "Channel Linked: ${ch.name}", Toast.LENGTH_LONG).show()
