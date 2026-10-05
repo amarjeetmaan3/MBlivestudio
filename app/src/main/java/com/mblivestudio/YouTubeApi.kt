@@ -184,7 +184,12 @@ internal fun MainActivity.pollViewersOnce() {
             }
         } catch (e: GoogleJsonResponseException) {
             if (e.statusCode == 401) {
-                try { AuthManager.refreshToken(this@pollViewersOnce) { if (it && chatPollingActive) chatHandler.postDelayed({ pollViewersOnce() }, 2000L) } } catch (e: Exception) {}
+                try { 
+                    // Automatically fetches a fresh token if expired and rebuilds the client
+                    val newYoutube = YouTube.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), HttpRequestInitializer { req -> req.headers.setAuthorization("Bearer " + AuthManager.accessToken()); req.connectTimeout = 10000; req.readTimeout = 10000; req.numberOfRetries = 0 }).setApplicationName("MBLiveStudio").build()
+                    this@pollViewersOnce.youtubeClient = newYoutube
+                    if (chatPollingActive) chatHandler.postDelayed({ pollViewersOnce() }, 2000L) 
+                } catch (ex: Exception) {}
                 return@Thread
             }
         } catch (e: Exception) { e.printStackTrace() }
@@ -218,18 +223,15 @@ internal fun MainActivity.pollChatOnce() {
             if (chatPollingActive) chatHandler.postDelayed({ pollChatOnce() }, finalDelay)
         } catch (e: GoogleJsonResponseException) {
             e.printStackTrace()
-            // CHAT FIX: Catch 401 Unauthorized errors caused by expired tokens and trigger a silent refresh
+            // Catch 401 Unauthorized errors caused by expired tokens and trigger a silent refresh
             if (e.statusCode == 401) {
                 try {
-                    AuthManager.refreshToken(this@pollChatOnce) { success -> 
-                        // Once token is refreshed, build a new youtubeClient instance to apply it and resume polling
-                        if (success && chatPollingActive) {
-                            val newYoutube = YouTube.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), HttpRequestInitializer { req -> req.headers.setAuthorization("Bearer " + AuthManager.accessToken()); req.connectTimeout = 10000; req.readTimeout = 10000; req.numberOfRetries = 0 }).setApplicationName("MBLiveStudio").build()
-                            this@pollChatOnce.youtubeClient = newYoutube
-                            chatHandler.postDelayed({ pollChatOnce() }, 2000L) 
-                        }
-                    }
-                } catch (e: Exception) {}
+                    // AuthManager.accessToken() handles its own refresh internally.
+                    // We just rebuild the client with the fresh token and resume polling.
+                    val newYoutube = YouTube.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), HttpRequestInitializer { req -> req.headers.setAuthorization("Bearer " + AuthManager.accessToken()); req.connectTimeout = 10000; req.readTimeout = 10000; req.numberOfRetries = 0 }).setApplicationName("MBLiveStudio").build()
+                    this@pollChatOnce.youtubeClient = newYoutube
+                    if (chatPollingActive) chatHandler.postDelayed({ pollChatOnce() }, 2000L) 
+                } catch (ex: Exception) {}
                 return@Thread
             }
             if (chatPollingActive) chatHandler.postDelayed({ pollChatOnce() }, 10000L)
