@@ -69,7 +69,25 @@ internal fun MainActivity.showGoLiveDialog() {
         }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
     }
 
-    listOf(etTitle, etDesc, spinner, sectionTitle, TextView(activity).apply { text = "Resolution:" }, resSpinner, TextView(activity).apply { text = "Frame Rate:" }, fpsSpinner, TextView(activity).apply { text = "Bitrate:" }, bitSpinner, btnTime, thumbWrapper, btnThumbnail, btnConfirmLive).forEach { 
+    // ---- performance switches (saved; they take effect after the app is restarted) ----
+    val settingsPrefs = activity.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+    val cbMicFx = CheckBox(activity).apply {
+        text = "Mic noise + echo filter (restart app to apply)"
+        isChecked = settingsPrefs.getBoolean("mic_fx", true)
+        setOnCheckedChangeListener { _, on -> settingsPrefs.edit().putBoolean("mic_fx", on).apply() }
+    }
+    val cbHwOverlay = CheckBox(activity).apply {
+        text = "Hardware overlay - beta (restart app to apply)"
+        isChecked = settingsPrefs.getBoolean("hw_overlay", false)
+        setOnCheckedChangeListener { _, on -> settingsPrefs.edit().putBoolean("hw_overlay", on).apply() }
+    }
+    val cbFlip = CheckBox(activity).apply {
+        text = "Flip hardware overlay (only if it looks upside-down)"
+        isChecked = settingsPrefs.getBoolean("hw_overlay_flip", false)
+        setOnCheckedChangeListener { _, on -> settingsPrefs.edit().putBoolean("hw_overlay_flip", on).apply() }
+    }
+
+    listOf(etTitle, etDesc, spinner, sectionTitle, TextView(activity).apply { text = "Resolution:" }, resSpinner, TextView(activity).apply { text = "Frame Rate:" }, fpsSpinner, TextView(activity).apply { text = "Bitrate:" }, bitSpinner, btnTime, thumbWrapper, btnThumbnail, cbMicFx, cbHwOverlay, cbFlip, btnConfirmLive).forEach { 
         val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         lp.bottomMargin = (8 * resources.displayMetrics.density).toInt()
         it.layoutParams = lp
@@ -266,7 +284,7 @@ internal fun MainActivity.showAddWebDialog() {
                 scaleX = scaleFactor
                 scaleY = scaleFactor
                 
-                setBackgroundColor(Color.TRANSPARENT); setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+                setBackgroundColor(Color.TRANSPARENT); setLayerType(if (useHardwareOverlay) View.LAYER_TYPE_NONE else View.LAYER_TYPE_SOFTWARE, null)
                 isVerticalScrollBarEnabled = false; isHorizontalScrollBarEnabled = false
                 settings.apply { javaScriptEnabled = true; domStorageEnabled = true; useWideViewPort = true; loadWithOverviewMode = true; textZoom = 100; setSupportZoom(false); builtInZoomControls = false; displayZoomControls = false }
                 alpha = 0f; webChromeClient = WebChromeClient()
