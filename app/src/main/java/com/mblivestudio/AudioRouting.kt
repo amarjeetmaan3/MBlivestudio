@@ -19,7 +19,6 @@ internal fun MainActivity.registerAudioDeviceMonitoring() {
         override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
             val btAdded = addedDevices.any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && it.type == AudioDeviceInfo.TYPE_BLE_HEADSET) }
             if (btAdded && !isBluetoothMicActive) {
-                // Bluetooth mics are low quality (call-grade audio), so never switch to them automatically.
                 activity.runOnUiThread { Toast.makeText(activity, "Bluetooth connected. Phone mic stays in use - tap the Bluetooth mic button only if you want the buds' mic.", Toast.LENGTH_LONG).show() }
             }
             updateDetectedMicRoute(false)
@@ -54,7 +53,15 @@ internal fun MainActivity.toggleBluetoothMic(button: ImageButton) {
         val btInput = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS).firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && it.type == AudioDeviceInfo.TYPE_BLE_HEADSET) } else null
         if (btInput == null) { Toast.makeText(activity, "Bluetooth mic not found.", Toast.LENGTH_SHORT).show(); return }
         try {
-            audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+            val isTablet = activity.resources.configuration.smallestScreenWidthDp >= 600
+            
+            // FIX: Prevent tablets from dropping packets in communication mode
+            if (!isTablet) {
+                audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+            } else {
+                audioManager.mode = AudioManager.MODE_NORMAL
+            }
+            
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val commDevice = audioManager.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO || it.type == AudioDeviceInfo.TYPE_BLE_HEADSET } ?: return
                 audioManager.setCommunicationDevice(commDevice)
@@ -115,8 +122,6 @@ internal fun MainActivity.findBluetoothMic(): AudioDeviceInfo? {
 @SuppressLint("MissingPermission")
 internal fun MainActivity.applyCurrentMicrophoneDevice(): Boolean {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
-    // FIX: With RtmpCamera2, the OS-level routing (AudioManager) forces the route,
-    // so we don't need direct access to audioSource to call setPreferredDevice.
     return true
 }
 
