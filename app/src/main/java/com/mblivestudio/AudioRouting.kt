@@ -18,7 +18,10 @@ internal fun MainActivity.registerAudioDeviceMonitoring() {
     audioDeviceCallback = object : AudioDeviceCallback() {
         override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
             val btAdded = addedDevices.any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && it.type == AudioDeviceInfo.TYPE_BLE_HEADSET) }
-            if (btAdded && !isBluetoothMicActive) { toggleBluetoothMic(activity.findViewById(R.id.btnBluetoothMic)) }
+            if (btAdded && !isBluetoothMicActive) {
+                // Bluetooth mics are low quality (call-grade audio), so never switch to them automatically.
+                activity.runOnUiThread { Toast.makeText(activity, "Bluetooth connected. Phone mic stays in use - tap the Bluetooth mic button only if you want the buds' mic.", Toast.LENGTH_LONG).show() }
+            }
             updateDetectedMicRoute(false)
         }
         override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
@@ -122,7 +125,7 @@ internal fun MainActivity.switchAudioLive() {
     if (!rtmpCamera.isStreaming) return
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
     if (applyCurrentMicrophoneDevice()) {
-        runOnUiThread { Toast.makeText(activity, if (isBluetoothMicActive) "Bluetooth mic active" else "Phone mic active", Toast.LENGTH_SHORT).show() }
+        runOnUiThread { Toast.makeText(activity, if (isBluetoothMicActive) "Bluetooth mic requested - fully applies after the next stream start" else "Phone mic requested - fully applies after the next stream start", Toast.LENGTH_LONG).show() }
     } else {
         runOnUiThread { Toast.makeText(activity, "Mic route could not be changed.", Toast.LENGTH_SHORT).show() }
     }
