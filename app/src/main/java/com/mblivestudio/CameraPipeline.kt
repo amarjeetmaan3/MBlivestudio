@@ -60,28 +60,31 @@ internal fun MainActivity.tryStartCameraPreview() {
         try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) { e.printStackTrace() }
     }
 
-    // AUDIO CLACKING FIX: Detect if device is a Tablet (Width >= 600dp)
+    // AUDIO CLACKING FIX: Handle Sample Rate Mismatch & Tablet Overload
     val isTablet = resources.configuration.smallestScreenWidthDp >= 600
-    val useHardwareEffects = !isTablet
-
-    var aReady = false
     val isBluetooth = detectedMicRoute == MicRoute.BLUETOOTH
-
-    val sampleRate = if (isBluetooth) 16000 else 44100
     val audioBitrate = if (isBluetooth) 64 * 1024 else 128 * 1024
 
-    // 1) Phone: Clean rate + noise suppressor + echo canceller
-    if (useHardwareEffects) {
-        try { aReady = rtmpCamera.prepareAudio(audioBitrate, sampleRate, false, true, true) } catch (_: Exception) {}
+    // Tablets natively prefer 48000Hz. Forcing 44100Hz causes resampling crackles.
+    val sampleRatesToTry = if (isBluetooth) intArrayOf(16000, 8000) else intArrayOf(48000, 44100)
+    var aReady = false
+
+    for (rate in sampleRatesToTry) {
+        // 1) Phone: Try with Hardware Noise Suppressor and Echo Canceller
+        if (!isTablet) {
+            try { 
+                aReady = rtmpCamera.prepareAudio(audioBitrate, rate, false, true, true)
+                if (aReady) break 
+            } catch (_: Exception) {}
+        }
+        // 2) Tablet (or Phone Fallback): No hardware filters to save CPU
+        try { 
+            aReady = rtmpCamera.prepareAudio(audioBitrate, rate, false, false, false)
+            if (aReady) break 
+        } catch (_: Exception) {}
     }
-    // 2) Tablet (or Phone Fallback): Same rate without the hardware effects to prevent processor overload/crackling
-    if (!aReady) {
-        try { aReady = rtmpCamera.prepareAudio(audioBitrate, sampleRate, false, false, false) } catch (_: Exception) {}
-    }
-    // 3) Old safe settings fallback
-    if (!aReady) {
-        try { aReady = rtmpCamera.prepareAudio(64 * 1024, 16000, false, false, false) } catch (_: Exception) {}
-    }
+
+    // 3) Absolute safe fallback: Let Pedro library auto-detect device capabilities
     if (!aReady) {
         try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { e.printStackTrace() }
     }
