@@ -36,7 +36,6 @@ internal fun MainActivity.tryStartCameraPreview() {
         val fpsCandidates = if (streamFps == 30) intArrayOf(30) else intArrayOf(streamFps, 30)
         for (fps in fpsCandidates) {
             try {
-                // keyframe every 2 seconds (YouTube recommendation)
                 if (rtmpCamera.prepareVideo(res.first, res.second, fps, res.third, 2, rotation)) {
                     streamWidth = if (isPortrait) res.second else res.first
                     streamHeight = if (isPortrait) res.first else res.second
@@ -53,7 +52,6 @@ internal fun MainActivity.tryStartCameraPreview() {
         if (isSuccess) break
     }
 
-    // Never lower quality silently: tell the user what the device actually gave.
     if (isSuccess && (usedTier > 0 || streamFps != requestedFps)) {
         Toast.makeText(this, "Quality reduced by device limit: ${if (isPortrait) streamHeight else streamWidth}x${if (isPortrait) streamWidth else streamHeight} @ ${streamFps}fps, ${streamBitrate / 1_000_000.0} Mbps", Toast.LENGTH_LONG).show()
     }
@@ -62,23 +60,25 @@ internal fun MainActivity.tryStartCameraPreview() {
         try { isSuccess = rtmpCamera.prepareVideo() } catch (e: Exception) { e.printStackTrace() }
     }
 
-    // AUDIO: clean sample rate + the microphone's own noise suppressor and echo canceller.
-    // - 44100 Hz is natively supported by phone/tablet audio hardware (32000 had to be resampled -> crackle)
-    // - 128 kbps AAC mono = YouTube's recommended audio bitrate
-    // - Bluetooth (call-grade) mics only deliver 16 kHz, so keep 16 kHz / 64 kbps there
+    // AUDIO CLACKING FIX: Detect if device is a Tablet (Width >= 600dp)
+    val isTablet = resources.configuration.smallestScreenWidthDp >= 600
+    val useHardwareEffects = !isTablet
+
     var aReady = false
     val isBluetooth = detectedMicRoute == MicRoute.BLUETOOTH
 
     val sampleRate = if (isBluetooth) 16000 else 44100
     val audioBitrate = if (isBluetooth) 64 * 1024 else 128 * 1024
 
-    // 1) best: clean rate + noise suppressor + echo canceller
-    try { aReady = rtmpCamera.prepareAudio(audioBitrate, sampleRate, false, true, true) } catch (_: Exception) {}
-    // 2) same rate without the hardware effects (some devices refuse them)
+    // 1) Phone: Clean rate + noise suppressor + echo canceller
+    if (useHardwareEffects) {
+        try { aReady = rtmpCamera.prepareAudio(audioBitrate, sampleRate, false, true, true) } catch (_: Exception) {}
+    }
+    // 2) Tablet (or Phone Fallback): Same rate without the hardware effects to prevent processor overload/crackling
     if (!aReady) {
         try { aReady = rtmpCamera.prepareAudio(audioBitrate, sampleRate, false, false, false) } catch (_: Exception) {}
     }
-    // 3) old safe settings
+    // 3) Old safe settings fallback
     if (!aReady) {
         try { aReady = rtmpCamera.prepareAudio(64 * 1024, 16000, false, false, false) } catch (_: Exception) {}
     }
@@ -135,13 +135,7 @@ internal fun MainActivity.canvasFor(bitmap: Bitmap): Canvas {
     return if (bitmap === bitmapA) canvasA!! else canvasB!!
 }
 
-// SMART RENDER ENGINE v2
-// Goals: (1) moving overlays (ticker, lower third, web graphics) move at an EVEN pace,
-//        (2) the device never gets overloaded by overlay drawing - audio & video come first.
-// How: frames are scheduled on a fixed clock (start-to-start, not "after the last one finished"),
-//      the overlay thread runs at a slightly lower priority, and the frame rate steps down
-//      automatically when drawing gets slow (30 -> 24 -> 20 -> 15 -> 10 fps) and back up when it is easy again.
-private val OVERLAY_INTERVALS_MS = longArrayOf(33L, 42L, 50L, 67L, 100L)   // 30, 24, 20, 15, 10 fps
+private val OVERLAY_INTERVALS_MS = longArrayOf(33L, 42L, 50L, 67L, 100L)
 @Volatile private var overlayLevel = 0
 @Volatile private var overlayCostAvgMs = 0f
 @Volatile private var overlayEasyStreak = 0
@@ -154,7 +148,6 @@ internal fun MainActivity.updateSnapshot(delay: Long = 100) {
 
     val smartDelay = if (isBackgrounded) maxOf(delay, 1000L) else delay
 
-    // Executing the heavy bitmap creation on a separate, lower-priority background thread
     backgroundOverlayHandler.postDelayed({
         val frameStart = SystemClock.uptimeMillis()
         try {
@@ -162,7 +155,6 @@ internal fun MainActivity.updateSnapshot(delay: Long = 100) {
             val h = streamHeight.coerceAtLeast(1)
 
             if (isBackgrounded) {
-                // UI measurements must briefly ping the main thread
                 runOnUiThread {
                     try {
                         val cw = if (overlayContainer.width > 0) overlayContainer.width else w
@@ -179,7 +171,6 @@ internal fun MainActivity.updateSnapshot(delay: Long = 100) {
                 return@postDelayed
             }
 
-            // Nothing on screen and the last frame was already empty -> no work at all
             val isEmpty = overlayContainer.childCount == 0
             if (!(isEmpty && overlayLastWasEmpty)) {
                 useBufferA = !useBufferA
@@ -196,7 +187,7 @@ internal fun MainActivity.updateSnapshot(delay: Long = 100) {
                 }
 
                 targetBitmap.eraseColor(Color.TRANSPARENT)
-                drawOverlayToStreamBitmap(targetBitmap) // heavy drawing happens off the main thread
+                drawOverlayToStreamBitmap(targetBitmap)
                 imageFilterRender.setImage(targetBitmap)
                 overlayLastWasEmpty = isEmpty
             }
@@ -205,21 +196,19 @@ internal fun MainActivity.updateSnapshot(delay: Long = 100) {
         } finally {
             pendingRefresh = false
 
-            // ---- adapt the frame rate to how expensive drawing is on THIS device ----
             val cost = (SystemClock.uptimeMillis() - frameStart).toFloat()
             overlayCostAvgMs = if (overlayCostAvgMs == 0f) cost else overlayCostAvgMs * 0.8f + cost * 0.2f
             val interval = OVERLAY_INTERVALS_MS[overlayLevel]
             if (overlayCostAvgMs > interval * 0.7f && overlayLevel < OVERLAY_INTERVALS_MS.size - 1) {
-                overlayLevel++            // too slow -> fewer, evenly spaced frames
+                overlayLevel++
                 overlayEasyStreak = 0
             } else if (overlayCostAvgMs < interval * 0.3f) {
                 overlayEasyStreak++
-                if (overlayEasyStreak >= 90 && overlayLevel > 0) { overlayLevel--; overlayEasyStreak = 0 }   // plenty of room -> smoother again
+                if (overlayEasyStreak >= 90 && overlayLevel > 0) { overlayLevel--; overlayEasyStreak = 0 }
             } else {
                 overlayEasyStreak = 0
             }
 
-            // ---- do we need another frame? (moving things: web overlay, lower-third ticker) ----
             var needsContinuousLoop = false
             try {
                 for (i in 0 until overlayContainer.childCount) {
@@ -233,7 +222,6 @@ internal fun MainActivity.updateSnapshot(delay: Long = 100) {
 
             if (refreshQueued || (needsContinuousLoop && !isBackgrounded)) {
                 refreshQueued = false
-                // fixed clock: next frame starts one interval after THIS frame started
                 val elapsed = SystemClock.uptimeMillis() - frameStart
                 updateSnapshot(maxOf(2L, OVERLAY_INTERVALS_MS[overlayLevel] - elapsed))
             }
