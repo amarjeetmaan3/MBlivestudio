@@ -436,7 +436,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 try { rtmpCamera.setZoom(detector.scaleFactor) } catch (e: Exception) {}
                 return true
             }
- })
+        })
 
         openGlView.setOnTouchListener { _, event ->
             if (event.action == MotionEvent.ACTION_DOWN) {
