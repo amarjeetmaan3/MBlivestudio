@@ -266,7 +266,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             appPrefs.edit().putBoolean("hw_overlay", false).putBoolean("hw_overlay_pending", false).apply()
             Toast.makeText(this, "Hardware overlay was switched off (app closed unexpectedly).", Toast.LENGTH_LONG).show()
         }
-        useHardwareOverlay = appPrefs.getBoolean("hw_overlay", false)
+        useHardwareOverlay = appPrefs.getBoolean("hw_overlay", true)
         overlaySurfaceFilter.flipY = appPrefs.getBoolean("hw_overlay_flip", false)
 
         imageFilterRender = ImageObjectFilterRender()
@@ -489,7 +489,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     override fun onConnectionSuccess() { 
         try { StreamingService.start(this@MainActivity) } catch (e: Exception) {} 
-        runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "Connected! Going live on YouTube...", Toast.LENGTH_LONG).show(); if (!timerRunning) startStudioTimer() }; ensureBroadcastGoesLive() 
+        runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "Connected! Going live on YouTube...", Toast.LENGTH_LONG).show(); if (!timerRunning) startStudioTimer() }
+        // keep the microphone threads from ever being starved (ticks / crackle); a second pass once everything has started
+        val boosted = AudioBoost.apply()
+        runOnUiThread { Toast.makeText(this, "Audio priority boosted: $boosted thread(s)", Toast.LENGTH_SHORT).show() }
+        Handler(Looper.getMainLooper()).postDelayed({ AudioBoost.apply() }, 3000); ensureBroadcastGoesLive() 
     }
     
     override fun onConnectionFailed(reason: String) {
