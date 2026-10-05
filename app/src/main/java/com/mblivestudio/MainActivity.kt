@@ -28,6 +28,7 @@ import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.*
 import com.mblivestudio.filters.CameraLayoutFilterRender
+import com.mblivestudio.filters.OverlaySurfaceFilterRender
 import com.pedro.common.ConnectChecker
 import com.pedro.encoder.input.gl.render.filters.`object`.ImageObjectFilterRender
 import com.pedro.encoder.utils.gl.AspectRatioMode
@@ -44,6 +45,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     internal lateinit var overlayContainer: RelativeLayout
     internal lateinit var imageFilterRender: ImageObjectFilterRender
     internal val cameraLayoutFilter = CameraLayoutFilterRender()
+    internal val overlaySurfaceFilter = OverlaySurfaceFilterRender()   // hardware overlay (beta)
+    internal var useHardwareOverlay = false
 
     internal lateinit var dragScoreboard: LinearLayout
     internal lateinit var scoreMainText: TextView
@@ -257,6 +260,15 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         openGlView.holder.addCallback(this)
         
         rtmpCamera = RtmpCamera2(openGlView, this)
+        val appPrefs = getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+        if (appPrefs.getBoolean("hw_overlay_pending", false)) {
+            // the app closed unexpectedly right after starting in hardware-overlay mode -> switch it off automatically
+            appPrefs.edit().putBoolean("hw_overlay", false).putBoolean("hw_overlay_pending", false).apply()
+            Toast.makeText(this, "Hardware overlay was switched off (app closed unexpectedly).", Toast.LENGTH_LONG).show()
+        }
+        useHardwareOverlay = appPrefs.getBoolean("hw_overlay", false)
+        overlaySurfaceFilter.flipY = appPrefs.getBoolean("hw_overlay_flip", false)
+
         imageFilterRender = ImageObjectFilterRender()
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         registerAudioDeviceMonitoring()
@@ -517,7 +529,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         }
     }
 
-    override fun onPause() { super.onPause(); if (!rtmpCamera.isStreaming) { if (rtmpCamera.isOnPreview) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} } } }
+    override fun onPause() { super.onPause(); getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE).edit().putBoolean("hw_overlay_pending", false).apply(); if (!rtmpCamera.isStreaming) { if (rtmpCamera.isOnPreview) { try { rtmpCamera.stopPreview() } catch (e: Exception) {} } } }
 
     override fun onResume() { super.onResume(); if (rtmpCamera.isStreaming) { if (surfaceReady) { try { rtmpCamera.startPreview() } catch (e: Exception) { e.printStackTrace() } } } else if (surfaceReady) { tryStartCameraPreview() } }
 
