@@ -71,14 +71,18 @@ internal fun MainActivity.showGoLiveDialog() {
 
     // ---- performance switches (saved; they take effect after the app is restarted) ----
     val settingsPrefs = activity.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+    val perfHeading = TextView(activity).apply {
+        text = "Performance settings (apply to ALL streams; restart the app after changing)"
+        setTypeface(typeface, Typeface.BOLD)
+    }
     val cbMicFx = CheckBox(activity).apply {
         text = "Mic noise + echo filter (restart app to apply)"
         isChecked = settingsPrefs.getBoolean("mic_fx", true)
         setOnCheckedChangeListener { _, on -> settingsPrefs.edit().putBoolean("mic_fx", on).apply() }
     }
     val cbHwOverlay = CheckBox(activity).apply {
-        text = "Hardware overlay - beta (restart app to apply)"
-        isChecked = settingsPrefs.getBoolean("hw_overlay", false)
+        text = "Hardware overlay - recommended (restart app to apply)"
+        isChecked = settingsPrefs.getBoolean("hw_overlay", true)
         setOnCheckedChangeListener { _, on -> settingsPrefs.edit().putBoolean("hw_overlay", on).apply() }
     }
     val cbFlip = CheckBox(activity).apply {
@@ -87,7 +91,7 @@ internal fun MainActivity.showGoLiveDialog() {
         setOnCheckedChangeListener { _, on -> settingsPrefs.edit().putBoolean("hw_overlay_flip", on).apply() }
     }
 
-    listOf(etTitle, etDesc, spinner, sectionTitle, TextView(activity).apply { text = "Resolution:" }, resSpinner, TextView(activity).apply { text = "Frame Rate:" }, fpsSpinner, TextView(activity).apply { text = "Bitrate:" }, bitSpinner, btnTime, thumbWrapper, btnThumbnail, cbMicFx, cbHwOverlay, cbFlip, btnConfirmLive).forEach { 
+    listOf(etTitle, etDesc, spinner, sectionTitle, TextView(activity).apply { text = "Resolution:" }, resSpinner, TextView(activity).apply { text = "Frame Rate:" }, fpsSpinner, TextView(activity).apply { text = "Bitrate:" }, bitSpinner, btnTime, thumbWrapper, btnThumbnail, perfHeading, cbMicFx, cbHwOverlay, cbFlip, btnConfirmLive).forEach { 
         val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         lp.bottomMargin = (8 * resources.displayMetrics.density).toInt()
         it.layoutParams = lp
