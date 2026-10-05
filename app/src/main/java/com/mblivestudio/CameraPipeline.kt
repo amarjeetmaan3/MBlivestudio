@@ -2,9 +2,12 @@ package com.mblivestudio
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
@@ -63,17 +66,18 @@ internal fun MainActivity.tryStartCameraPreview() {
     }
 
     // AUDIO: clean sample rate + the microphone's own noise suppressor and echo canceller.
-    // - 44100 Hz is natively supported by phone/tablet audio hardware (32000 had to be resampled -> crackle)
+    // - 48000 Hz is what phone/tablet audio hardware runs natively (odd rates like 32000 get resampled -> crackle)
     // - 128 kbps AAC mono = YouTube's recommended audio bitrate
     // - Bluetooth (call-grade) mics only deliver 16 kHz, so keep 16 kHz / 64 kbps there
     var aReady = false
     val isBluetooth = detectedMicRoute == MicRoute.BLUETOOTH
 
-    val sampleRate = if (isBluetooth) 16000 else 44100
+    val sampleRate = if (isBluetooth) 16000 else 48000   // 48 kHz = the native rate of almost every phone/tablet (no resampling)
+    val micFx = getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE).getBoolean("mic_fx", true)
     val audioBitrate = if (isBluetooth) 64 * 1024 else 128 * 1024
 
     // 1) best: clean rate + noise suppressor + echo canceller
-    try { aReady = rtmpCamera.prepareAudio(audioBitrate, sampleRate, false, true, true) } catch (_: Exception) {}
+    try { aReady = rtmpCamera.prepareAudio(audioBitrate, sampleRate, false, micFx, micFx) } catch (_: Exception) {}
     // 2) same rate without the hardware effects (some devices refuse them)
     if (!aReady) {
         try { aReady = rtmpCamera.prepareAudio(audioBitrate, sampleRate, false, false, false) } catch (_: Exception) {}
@@ -92,9 +96,18 @@ internal fun MainActivity.tryStartCameraPreview() {
         cameraLayoutFilter.setBackgroundColor(0.07f, 0.07f, 0.07f)
         rtmpCamera.getGlInterface().setFilter(cameraLayoutFilter)
 
-        imageFilterRender.setScale(100f, 100f)
-        imageFilterRender.setPosition(0f, 0f)
-        rtmpCamera.getGlInterface().addFilter(imageFilterRender)
+        if (useHardwareOverlay) {
+            // GPU overlay: no bitmap copies. Crash guard: if the app dies within 15 s of starting like this,
+            // the next launch switches hardware overlay off by itself.
+            rtmpCamera.getGlInterface().addFilter(overlaySurfaceFilter)
+            val prefs = getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+            prefs.edit().putBoolean("hw_overlay_pending", true).apply()
+            overlayMainHandler.postDelayed({ prefs.edit().putBoolean("hw_overlay_pending", false).apply() }, 15000)
+        } else {
+            imageFilterRender.setScale(100f, 100f)
+            imageFilterRender.setPosition(0f, 0f)
+            rtmpCamera.getGlInterface().addFilter(imageFilterRender)
+        }
 
         try {
             rtmpCamera.startPreview()
@@ -135,17 +148,22 @@ internal fun MainActivity.canvasFor(bitmap: Bitmap): Canvas {
     return if (bitmap === bitmapA) canvasA!! else canvasB!!
 }
 
-// SMART RENDER ENGINE v2
-// Goals: (1) moving overlays (ticker, lower third, web graphics) move at an EVEN pace,
-//        (2) the device never gets overloaded by overlay drawing - audio & video come first.
-// How: frames are scheduled on a fixed clock (start-to-start, not "after the last one finished"),
-//      the overlay thread runs at a slightly lower priority, and the frame rate steps down
-//      automatically when drawing gets slow (30 -> 24 -> 20 -> 15 -> 10 fps) and back up when it is easy again.
+internal const val SETTINGS_PREFS = "MBLiveSettings"
+private val overlayMainHandler = Handler(Looper.getMainLooper())
+
+// SMART RENDER ENGINE v3
+// - Overlay Views are drawn ONLY on the UI thread (drawing them from another thread made the overlay flicker,
+//   vanish for a moment and show half-finished frames, and made the on-screen overlay jitter).
+// - Moving overlays (ticker, lower third, web graphics) are scheduled on a fixed clock for an even pace.
+// - The frame rate steps down automatically when drawing gets slow (30 -> 24 -> 20 -> 15 -> 10 fps) and back up again.
+// - Hardware overlay (beta): drawn by the GPU straight into a Surface, no bitmap copy to the GPU.
+//   Fallback mode: a bitmap capped at 1280 px on its long side (a quarter of the data of 1080p).
 private val OVERLAY_INTERVALS_MS = longArrayOf(33L, 42L, 50L, 67L, 100L)   // 30, 24, 20, 15, 10 fps
 @Volatile private var overlayLevel = 0
 @Volatile private var overlayCostAvgMs = 0f
 @Volatile private var overlayEasyStreak = 0
 @Volatile private var overlayLastWasEmpty = false
+@Volatile private var overlayRetries = 0
 
 internal fun MainActivity.updateSnapshot(delay: Long = 100) {
     if (!rtmpCamera.isOnPreview) return
@@ -153,92 +171,119 @@ internal fun MainActivity.updateSnapshot(delay: Long = 100) {
     pendingRefresh = true
 
     val smartDelay = if (isBackgrounded) maxOf(delay, 1000L) else delay
+    overlayMainHandler.postDelayed({ renderOverlayFrame() }, smartDelay)
+}
 
-    // Executing the heavy bitmap creation on a separate, lower-priority background thread
-    backgroundOverlayHandler.postDelayed({
-        val frameStart = SystemClock.uptimeMillis()
-        try {
-            val w = streamWidth.coerceAtLeast(1)
-            val h = streamHeight.coerceAtLeast(1)
+private fun MainActivity.renderOverlayFrame() {
+    val frameStart = SystemClock.uptimeMillis()
+    var retryNeeded = false
+    try {
+        val w = streamWidth.coerceAtLeast(1)
+        val h = streamHeight.coerceAtLeast(1)
+        var ready = true
 
-            if (isBackgrounded) {
-                // UI measurements must briefly ping the main thread
-                runOnUiThread {
-                    try {
-                        val cw = if (overlayContainer.width > 0) overlayContainer.width else w
-                        val ch = if (overlayContainer.height > 0) overlayContainer.height else h
-                        overlayContainer.measure(
-                            View.MeasureSpec.makeMeasureSpec(cw, View.MeasureSpec.EXACTLY),
-                            View.MeasureSpec.makeMeasureSpec(ch, View.MeasureSpec.EXACTLY)
-                        )
-                        overlayContainer.layout(0, 0, cw, ch)
-                    } catch (e: Exception) {}
-                }
-            } else if (overlayContainer.width == 0 || overlayContainer.height == 0) {
-                pendingRefresh = false
-                return@postDelayed
-            }
+        if (isBackgrounded) {
+            try {
+                val cw = if (overlayContainer.width > 0) overlayContainer.width else w
+                val ch = if (overlayContainer.height > 0) overlayContainer.height else h
+                overlayContainer.measure(
+                    View.MeasureSpec.makeMeasureSpec(cw, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(ch, View.MeasureSpec.EXACTLY)
+                )
+                overlayContainer.layout(0, 0, cw, ch)
+            } catch (e: Exception) {}
+        } else if (overlayContainer.width == 0 || overlayContainer.height == 0) {
+            ready = false
+            retryNeeded = true
+        }
 
+        if (ready) {
             // Nothing on screen and the last frame was already empty -> no work at all
             val isEmpty = overlayContainer.childCount == 0
             if (!(isEmpty && overlayLastWasEmpty)) {
-                useBufferA = !useBufferA
-                val targetBitmap = if (useBufferA) {
-                    if (bitmapA == null || bitmapA!!.isRecycled || bitmapA!!.width != w || bitmapA!!.height != h) {
-                        bitmapA?.recycle(); bitmapA = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888); canvasA = Canvas(bitmapA!!)
-                    }
-                    bitmapA!!
+                val result = if (useHardwareOverlay) drawHardwareOverlay(w, h) else drawBitmapOverlay(w, h)
+                if (result == 0) {
+                    overlayLastWasEmpty = isEmpty
+                    overlayRetries = 0
                 } else {
-                    if (bitmapB == null || bitmapB!!.isRecycled || bitmapB!!.width != w || bitmapB!!.height != h) {
-                        bitmapB?.recycle(); bitmapB = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888); canvasB = Canvas(bitmapB!!)
-                    }
-                    bitmapB!!
+                    retryNeeded = true   // surface not ready yet / previous frame not picked up yet
                 }
-
-                targetBitmap.eraseColor(Color.TRANSPARENT)
-                drawOverlayToStreamBitmap(targetBitmap) // heavy drawing happens off the main thread
-                imageFilterRender.setImage(targetBitmap)
-                overlayLastWasEmpty = isEmpty
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        } finally {
-            pendingRefresh = false
-
-            // ---- adapt the frame rate to how expensive drawing is on THIS device ----
-            val cost = (SystemClock.uptimeMillis() - frameStart).toFloat()
-            overlayCostAvgMs = if (overlayCostAvgMs == 0f) cost else overlayCostAvgMs * 0.8f + cost * 0.2f
-            val interval = OVERLAY_INTERVALS_MS[overlayLevel]
-            if (overlayCostAvgMs > interval * 0.7f && overlayLevel < OVERLAY_INTERVALS_MS.size - 1) {
-                overlayLevel++            // too slow -> fewer, evenly spaced frames
-                overlayEasyStreak = 0
-            } else if (overlayCostAvgMs < interval * 0.3f) {
-                overlayEasyStreak++
-                if (overlayEasyStreak >= 90 && overlayLevel > 0) { overlayLevel--; overlayEasyStreak = 0 }   // plenty of room -> smoother again
-            } else {
-                overlayEasyStreak = 0
-            }
-
-            // ---- do we need another frame? (moving things: web overlay, lower-third ticker) ----
-            var needsContinuousLoop = false
-            try {
-                for (i in 0 until overlayContainer.childCount) {
-                    val tag = overlayContainer.getChildAt(i)?.tag
-                    if (tag == "WEB_OVERLAY" || tag == "LOWER_THIRD") {
-                        needsContinuousLoop = true
-                        break
-                    }
-                }
-            } catch (e: Exception) {}
-
-            if (refreshQueued || (needsContinuousLoop && !isBackgrounded)) {
-                refreshQueued = false
-                // fixed clock: next frame starts one interval after THIS frame started
-                val elapsed = SystemClock.uptimeMillis() - frameStart
-                updateSnapshot(maxOf(2L, OVERLAY_INTERVALS_MS[overlayLevel] - elapsed))
             }
         }
-    }, smartDelay)
+    } catch (e: Exception) {
+        e.printStackTrace()
+    } finally {
+        pendingRefresh = false
+
+        // ---- adapt the frame rate to how expensive drawing is on THIS device ----
+        val cost = (SystemClock.uptimeMillis() - frameStart).toFloat()
+        overlayCostAvgMs = if (overlayCostAvgMs == 0f) cost else overlayCostAvgMs * 0.8f + cost * 0.2f
+        val interval = OVERLAY_INTERVALS_MS[overlayLevel]
+        if (overlayCostAvgMs > interval * 0.7f && overlayLevel < OVERLAY_INTERVALS_MS.size - 1) {
+            overlayLevel++
+            overlayEasyStreak = 0
+        } else if (overlayCostAvgMs < interval * 0.3f) {
+            overlayEasyStreak++
+            if (overlayEasyStreak >= 90 && overlayLevel > 0) { overlayLevel--; overlayEasyStreak = 0 }
+        } else {
+            overlayEasyStreak = 0
+        }
+
+        // ---- do we need another frame? (moving things: web overlay, lower-third ticker) ----
+        var needsContinuousLoop = false
+        try {
+            for (i in 0 until overlayContainer.childCount) {
+                val tag = overlayContainer.getChildAt(i)?.tag
+                if (tag == "WEB_OVERLAY" || tag == "LOWER_THIRD") {
+                    needsContinuousLoop = true
+                    break
+                }
+            }
+        } catch (e: Exception) {}
+
+        val wantRetry = retryNeeded && overlayRetries++ < 150
+        if (wantRetry || refreshQueued || (needsContinuousLoop && !isBackgrounded)) {
+            refreshQueued = false
+            val elapsed = SystemClock.uptimeMillis() - frameStart
+            updateSnapshot(maxOf(2L, OVERLAY_INTERVALS_MS[overlayLevel] - elapsed))
+        }
+    }
+}
+
+// 0 = drawn, otherwise "try again shortly"
+private fun MainActivity.drawHardwareOverlay(w: Int, h: Int): Int {
+    val sourceW = overlayContainer.width.toFloat()
+    val sourceH = overlayContainer.height.toFloat()
+    if (sourceW <= 0f || sourceH <= 0f) return 2
+    overlaySurfaceFilter.setBufferSize(w, h)
+    val fillScale = maxOf(sourceW / w, sourceH / h)
+    val xOffset = (sourceW - w * fillScale) / 2f
+    val yOffset = (sourceH - h * fillScale) / 2f
+    return overlaySurfaceFilter.drawView(overlayContainer, 1f / fillScale, -xOffset, -yOffset)
+}
+
+private fun MainActivity.drawBitmapOverlay(w: Int, h: Int): Int {
+    val f = minOf(1f, 1280f / maxOf(w, h).toFloat())
+    val bw = (w * f).toInt().coerceAtLeast(1)
+    val bh = (h * f).toInt().coerceAtLeast(1)
+
+    useBufferA = !useBufferA
+    val targetBitmap = if (useBufferA) {
+        if (bitmapA == null || bitmapA!!.isRecycled || bitmapA!!.width != bw || bitmapA!!.height != bh) {
+            bitmapA?.recycle(); bitmapA = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888); canvasA = Canvas(bitmapA!!)
+        }
+        bitmapA!!
+    } else {
+        if (bitmapB == null || bitmapB!!.isRecycled || bitmapB!!.width != bw || bitmapB!!.height != bh) {
+            bitmapB?.recycle(); bitmapB = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888); canvasB = Canvas(bitmapB!!)
+        }
+        bitmapB!!
+    }
+
+    targetBitmap.eraseColor(Color.TRANSPARENT)
+    drawOverlayToStreamBitmap(targetBitmap)
+    imageFilterRender.setImage(targetBitmap)
+    return 0
 }
 
 internal fun MainActivity.applyCameraLayout(rect: FloatArray) { 
