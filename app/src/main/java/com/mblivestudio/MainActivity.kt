@@ -91,11 +91,11 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
 
     internal var retryCount = 0
-    internal val MAX_RETRIES = 3
+    internal val MAX_RETRIES = 120   // ~20 minutes of reconnect attempts
     internal var generatedRtmpUrl: String? = null
 
     // Background Thread for Overlays to save Audio CPU Buffer
-    internal val overlayThread = android.os.HandlerThread("OverlayThread").apply { start() }
+    internal val overlayThread = android.os.HandlerThread("OverlayThread", 5).apply { start() }
     internal val backgroundOverlayHandler = android.os.Handler(overlayThread.looper)
     
     internal var pendingRefresh = false
@@ -436,7 +436,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 try { rtmpCamera.setZoom(detector.scaleFactor) } catch (e: Exception) {}
                 return true
             }
-        })
+ })
 
         openGlView.setOnTouchListener { _, event ->
             if (event.action == MotionEvent.ACTION_DOWN) {
@@ -477,11 +477,20 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
     override fun onConnectionSuccess() { 
         try { StreamingService.start(this@MainActivity) } catch (e: Exception) {} 
-        runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "Connected! Going live on YouTube...", Toast.LENGTH_LONG).show(); startStudioTimer() }; ensureBroadcastGoesLive() 
+        runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "Connected! Going live on YouTube...", Toast.LENGTH_LONG).show(); if (!timerRunning) startStudioTimer() }; ensureBroadcastGoesLive() 
     }
     
     override fun onConnectionFailed(reason: String) {
-        if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) { retryCount++; runOnUiThread { btnGoLive.text = "RETRYING ($retryCount/3)..." }; Thread { Thread.sleep(2000); try { rtmpCamera.startStream(generatedRtmpUrl!!) } catch (e: Exception) {} }.start() } else { StreamingService.stop(this@MainActivity); runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; unlockOrientation(); tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show(); stopChatPolling(); stopStudioTimer() } }
+        if (retryCount < MAX_RETRIES && generatedRtmpUrl != null) {
+            retryCount++
+            val waitMs = minOf(2000L + retryCount * 500L, 10000L)   // 2.5s, 3s, 3.5s ... max 10s
+            runOnUiThread { btnGoLive.text = "RECONNECTING ($retryCount)..." }
+            Thread {
+                try { Thread.sleep(waitMs) } catch (e: InterruptedException) {}
+                val url = generatedRtmpUrl   // null means the user stopped the stream meanwhile
+                if (url != null) { try { rtmpCamera.startStream(url) } catch (e: Exception) {} }
+            }.start()
+        } else { StreamingService.stop(this@MainActivity); runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; unlockOrientation(); tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show(); stopChatPolling(); stopStudioTimer() } }
     }
     
     override fun onDisconnect() { StreamingService.stop(this@MainActivity); runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F")); try { rtmpCamera.stopPreview() } catch (e: Exception) {}; unlockOrientation(); tryStartCameraPreview(); stopChatPolling(); stopStudioTimer() } }
@@ -552,11 +561,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     override fun onAuthSuccess() { runOnUiThread { Toast.makeText(this, "Auth Success", Toast.LENGTH_SHORT).show() } }
     override fun onConnectionStarted(url: String) {}
     
-    override fun onNewBitrate(bitrate: Long) { 
-        if (rtmpCamera.isStreaming) { 
-            try { rtmpCamera.setVideoBitrateOnFly(bitrate.toInt()) } catch (e: Exception) {} 
-        } 
-    }
+    // Quality fix: 'bitrate' here is what was actually SENT in the last second, not a recommendation.
+    // Feeding it back to the encoder made the target sink in calm scenes, so fast motion looked blocky.
+    // The bitrate chosen in the Go Live dialog now stays fixed for the whole stream.
+    override fun onNewBitrate(bitrate: Long) { }
 }
 
 internal fun MainActivity.setupSmart16by9Layout() {
