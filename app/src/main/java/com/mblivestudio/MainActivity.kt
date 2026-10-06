@@ -491,9 +491,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         try { StreamingService.start(this@MainActivity) } catch (e: Exception) {} 
         runOnUiThread { retryCount = 0; btnGoLive.text = "STOP STREAM"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#E53935")); Toast.makeText(this@MainActivity, "Connected! Going live on YouTube...", Toast.LENGTH_LONG).show(); if (!timerRunning) startStudioTimer() }
         // keep the microphone threads from ever being starved (ticks / crackle); a second pass once everything has started
-        val boosted = AudioBoost.apply()
-        runOnUiThread { Toast.makeText(this, "Audio priority boosted: $boosted thread(s)", Toast.LENGTH_SHORT).show() }
-        Handler(Looper.getMainLooper()).postDelayed({ AudioBoost.apply() }, 3000); ensureBroadcastGoesLive() 
+        AudioBoost.apply()
+        Handler(Looper.getMainLooper()).postDelayed({ AudioBoost.apply() }, 3000)
+        runOnUiThread { StreamStats.start(this) }   // shows when the library has to throw away frames (network too slow)
+         ensureBroadcastGoesLive() 
     }
     
     override fun onConnectionFailed(reason: String) {
