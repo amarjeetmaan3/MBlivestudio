@@ -581,7 +581,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
     // Quality fix: 'bitrate' here is what was actually SENT in the last second, not a recommendation.
     // Feeding it back to the encoder made the target sink in calm scenes, so fast motion looked blocky.
     // The bitrate chosen in the Go Live dialog now stays fixed for the whole stream.
-    override fun onNewBitrate(bitrate: Long) { }
+    override fun onNewBitrate(bitrate: Long) { StreamStats.lastBitrateBps = bitrate }
 }
 
 internal fun MainActivity.setupSmart16by9Layout() {
