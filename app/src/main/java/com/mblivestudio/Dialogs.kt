@@ -85,6 +85,11 @@ internal fun MainActivity.showGoLiveDialog() {
         isChecked = settingsPrefs.getBoolean("hw_overlay", true)
         setOnCheckedChangeListener { _, on -> settingsPrefs.edit().putBoolean("hw_overlay", on).apply() }
     }
+    val cbAudioEngine = CheckBox(activity).apply {
+        text = "Audio engine - beta (restart app to apply)"
+        isChecked = settingsPrefs.getBoolean("audio_engine", false)
+        setOnCheckedChangeListener { _, on -> settingsPrefs.edit().putBoolean("audio_engine", on).apply() }
+    }
     val btnMicLab = Button(activity).apply {
         text = "Mic Lab - test the microphone (not while streaming)"
         setOnClickListener { MicLab.show(activity) }
@@ -95,7 +100,7 @@ internal fun MainActivity.showGoLiveDialog() {
         setOnCheckedChangeListener { _, on -> settingsPrefs.edit().putBoolean("hw_overlay_flip", on).apply() }
     }
 
-    listOf(etTitle, etDesc, spinner, sectionTitle, TextView(activity).apply { text = "Resolution:" }, resSpinner, TextView(activity).apply { text = "Frame Rate:" }, fpsSpinner, TextView(activity).apply { text = "Bitrate:" }, bitSpinner, btnTime, thumbWrapper, btnThumbnail, perfHeading, cbMicFx, cbHwOverlay, cbFlip, btnMicLab, btnConfirmLive).forEach { 
+    listOf(etTitle, etDesc, spinner, sectionTitle, TextView(activity).apply { text = "Resolution:" }, resSpinner, TextView(activity).apply { text = "Frame Rate:" }, fpsSpinner, TextView(activity).apply { text = "Bitrate:" }, bitSpinner, btnTime, thumbWrapper, btnThumbnail, perfHeading, cbMicFx, cbHwOverlay, cbFlip, cbAudioEngine, btnMicLab, btnConfirmLive).forEach { 
         val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         lp.bottomMargin = (8 * resources.displayMetrics.density).toInt()
         it.layoutParams = lp
