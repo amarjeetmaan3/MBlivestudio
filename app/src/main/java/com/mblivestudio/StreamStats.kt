@@ -46,6 +46,9 @@ internal object StreamStats {
 
     private fun q(v: Long?): String = v?.toString() ?: "?"
 
+    /** number of audio frames the sender has sent so far (null if the library does not expose it) */
+    fun sentAudio(cam: Any): Long? = num(cam, "getSentAudioFrames")
+
     private fun ensureHud(activity: MainActivity): TextView {
         val existing = hud
         if (existing != null && existing.parent != null) return existing
@@ -119,6 +122,7 @@ internal object StreamStats {
                     }
                     if (sa != null && sv != null) { lastSentAudio = sa; lastSentVideo = sv; lastSampleAt = nowMs }
                     if (items != null && cache != null) sb.append("\nQUEUE   $items / $cache")
+                    sb.append("\n").append(AudioEngine.statusLine())
                     if (events.isNotEmpty()) {
                         sb.append("\nLAST DROPS (time since live):")
                         for (e in events) sb.append("\n  ").append(e)
