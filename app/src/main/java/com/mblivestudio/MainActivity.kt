@@ -267,6 +267,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
             Toast.makeText(this, "Hardware overlay was switched off (app closed unexpectedly).", Toast.LENGTH_LONG).show()
         }
         useHardwareOverlay = appPrefs.getBoolean("hw_overlay", true)
+        AudioEngine.enabled = appPrefs.getBoolean("audio_engine", false)
         overlaySurfaceFilter.flipY = appPrefs.getBoolean("hw_overlay_flip", false)
 
         imageFilterRender = ImageObjectFilterRender()
@@ -420,8 +421,8 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
 
         btnMicToggle.setImageResource(R.drawable.ic_mic_on)
         btnMicToggle.setOnClickListener {
-            if (isAudioMuted) { rtmpCamera.enableAudio(); isAudioMuted = false; btnMicToggle.setImageResource(R.drawable.ic_mic_on) } 
-            else { rtmpCamera.disableAudio(); isAudioMuted = true; btnMicToggle.setImageResource(R.drawable.ic_mic_off) }
+            if (isAudioMuted) { rtmpCamera.enableAudio(); isAudioMuted = false; AudioEngine.muted = false; btnMicToggle.setImageResource(R.drawable.ic_mic_on) } 
+            else { rtmpCamera.disableAudio(); isAudioMuted = true; AudioEngine.muted = true; btnMicToggle.setImageResource(R.drawable.ic_mic_off) }
         }
 
         btnSwitchCamera.setOnClickListener { try { rtmpCamera.switchCamera() } catch (e: Exception) { e.printStackTrace() } }
@@ -493,6 +494,7 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
         // keep the microphone threads from ever being starved (ticks / crackle); a second pass once everything has started
         AudioBoost.apply()
         Handler(Looper.getMainLooper()).postDelayed({ AudioBoost.apply() }, 3000)
+        AudioEngine.start(this)                      // beta: own capture + exact AAC frames (only if switched on)
         runOnUiThread { StreamStats.start(this) }   // shows when the library has to throw away frames (network too slow)
          ensureBroadcastGoesLive() 
     }
@@ -507,10 +509,10 @@ class MainActivity : Activity(), ConnectChecker, SurfaceHolder.Callback {
                 val url = generatedRtmpUrl   // null means the user stopped the stream meanwhile
                 if (url != null) { try { rtmpCamera.startStream(url) } catch (e: Exception) {} }
             }.start()
-        } else { StreamingService.stop(this@MainActivity); runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; unlockOrientation(); tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show(); stopChatPolling(); stopStudioTimer() } }
+        } else { AudioEngine.stop(); StreamingService.stop(this@MainActivity); runOnUiThread { try { rtmpCamera.stopPreview() } catch (e: Exception) {}; unlockOrientation(); tryStartCameraPreview(); btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; try { rtmpCamera.stopStream() } catch (e: Exception) {}; Toast.makeText(this@MainActivity, "RTMP TIMEOUT: $reason", Toast.LENGTH_LONG).show(); stopChatPolling(); stopStudioTimer() } }
     }
     
-    override fun onDisconnect() { StreamingService.stop(this@MainActivity); runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F")); try { rtmpCamera.stopPreview() } catch (e: Exception) {}; unlockOrientation(); tryStartCameraPreview(); stopChatPolling(); stopStudioTimer() } }
+    override fun onDisconnect() { AudioEngine.stop(); StreamingService.stop(this@MainActivity); runOnUiThread { btnGoLive.text = "GO LIVE"; btnGoLive.isEnabled = true; btnGoLive.setBackgroundColor(Color.parseColor("#D32F2F")); try { rtmpCamera.stopPreview() } catch (e: Exception) {}; unlockOrientation(); tryStartCameraPreview(); stopChatPolling(); stopStudioTimer() } }
     
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) { super.onRequestPermissionsResult(requestCode, permissions, grantResults); tryStartCameraPreview() }
 
