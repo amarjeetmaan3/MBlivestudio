@@ -76,18 +76,22 @@ internal fun MainActivity.tryStartCameraPreview() {
     val micFx = getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE).getBoolean("mic_fx", true)
     val audioBitrate = if (isBluetooth) 64 * 1024 else 128 * 1024
 
+    AudioEngine.preparedRate = 0
     // 1) best: clean rate + noise suppressor + echo canceller
     try { aReady = rtmpCamera.prepareAudio(audioBitrate, sampleRate, false, micFx, micFx) } catch (_: Exception) {}
+    if (aReady) AudioEngine.preparedRate = sampleRate
     // 2) same rate without the hardware effects (some devices refuse them)
     if (!aReady) {
         try { aReady = rtmpCamera.prepareAudio(audioBitrate, sampleRate, false, false, false) } catch (_: Exception) {}
+        if (aReady) AudioEngine.preparedRate = sampleRate
     }
     // 3) old safe settings
     if (!aReady) {
         try { aReady = rtmpCamera.prepareAudio(64 * 1024, 16000, false, false, false) } catch (_: Exception) {}
+        if (aReady) AudioEngine.preparedRate = 16000
     }
     if (!aReady) {
-        try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { e.printStackTrace() }
+        try { aReady = rtmpCamera.prepareAudio() } catch (e: Exception) { e.printStackTrace() }   // library default format: engine stays off
     }
 
     if (isSuccess && aReady) {
